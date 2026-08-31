@@ -36,10 +36,9 @@ function makeRow(input) {
     const songKey = input.songKey ?? `song-${++autoSongId}`;
     return {
         archiveId: input.archiveId ?? "",
-        archiveOrder: input.archiveOrder ?? null,
+        archiveOrder: input.archiveOrder ?? 1,
         songKey,
         bookmarkSongKey: input.bookmarkSongKey ?? songKey,
-        sourceIndex: input.sourceIndex ?? 0,
         dateKey: input.dateKey ?? null,
         format: input.format ?? "配信",
         streamRole: input.streamRole ?? "",

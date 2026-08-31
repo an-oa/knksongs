@@ -8,6 +8,11 @@ import {
 } from "../lib/storage/search-state-schema.mjs";
 import { collectSearchBooleanFilterState } from "../lib/search-boolean-filters.mjs";
 import type {
+    BookmarkLoadResult,
+    BookmarkSaveFailure,
+    BookmarkSaveResult
+} from "./bookmark-persistence.mjs";
+import type {
     AppDataState,
     AppUiState,
     AppUiElements,
@@ -56,6 +61,7 @@ type StorageActionResult = {
     songCount?: number;
     limit?: number;
     bookmarkName?: string;
+    version?: number;
 };
 
 type StorageControllerInput = {
@@ -63,8 +69,11 @@ type StorageControllerInput = {
     ui: StorageUiState;
     searchFiltersController: StorageSearchFiltersController;
     bookmarkPersistenceController: {
-        loadBookmarksFromStorage: () => void;
-        saveBookmarks: () => void;
+        loadBookmarksFromStorage: () => BookmarkLoadResult;
+        saveBookmarks: (bookmarks?: Record<string, BookmarkRecord>) => BookmarkSaveResult;
+        replaceBookmarksFromConfirmedImport: (
+            bookmarks: Record<string, BookmarkRecord>
+        ) => BookmarkSaveResult;
     };
     constants: StorageConstants;
     callbacks: StorageCallbacks;
@@ -94,7 +103,8 @@ export function createStorageController({
     } = constants;
     const {
         loadBookmarksFromStorage,
-        saveBookmarks
+        saveBookmarks,
+        replaceBookmarksFromConfirmedImport
     } = bookmarkPersistenceController;
     const {
         getDateSelectValue,
@@ -103,6 +113,7 @@ export function createStorageController({
         cancelScheduledSearch,
         scheduleSearch
     } = callbacks;
+    let preservedUnsupportedActiveBookmarkId: string | null = null;
     /**
      * 成功時の共通レスポンスを組み立てる。
      * @param {Partial<StorageActionResult> | undefined} [extra]
@@ -123,6 +134,17 @@ export function createStorageController({
         extra: Partial<StorageActionResult> | undefined = undefined
     ): StorageActionResult {
         return { ok: false, reason, ...(extra || {}) };
+    }
+
+    /**
+     * 永続化層の保存失敗をブックマーク操作の失敗結果へ変換する。
+     * @param result 保存失敗の内容
+     */
+    function buildBookmarkSaveFailure(result: BookmarkSaveFailure): StorageActionResult {
+        return buildActionFail(
+            result.reason,
+            "version" in result ? { version: result.version } : undefined
+        );
     }
 
     /**
@@ -148,6 +170,7 @@ export function createStorageController({
     function parseBookmarkImportText(text: unknown): StorageActionResult {
         return parseBookmarkImportJsonText(text, {
             songRows: data.allSongsRaw,
+            storageVersion: BOOKMARK_STORAGE_VERSION,
             maxBookmarkCount: MAX_BOOKMARK_COUNT,
             maxSongsPerBookmark: MAX_SONGS_PER_BOOKMARK,
             maxBookmarkNameLength: MAX_BOOKMARK_NAME_LENGTH
@@ -171,18 +194,25 @@ export function createStorageController({
         const parsed = parseBookmarkImportText(text);
         if (!parsed.ok) return parsed;
 
-        const hadActiveBookmark = Boolean(data.activeBookmark);
-        data.bookmarks = parsed.bookmarks;
-        const activeBookmarkWasRemoved = Boolean(
-            data.activeBookmark && !Object.hasOwn(data.bookmarks, data.activeBookmark)
-        );
-        saveBookmarks();
+        const importedBookmarks = parsed.bookmarks || {};
+        const saveResult = replaceBookmarksFromConfirmedImport(importedBookmarks);
+        if (saveResult.ok === false) return buildBookmarkSaveFailure(saveResult);
+
+        const previousActiveBookmarkId = data.activeBookmark || preservedUnsupportedActiveBookmarkId;
+        data.bookmarks = importedBookmarks;
+        const nextActiveBookmarkId = previousActiveBookmarkId &&
+            Object.hasOwn(data.bookmarks, previousActiveBookmarkId)
+            ? previousActiveBookmarkId
+            : null;
+        const activeBookmarkWasRemoved = previousActiveBookmarkId !== null && nextActiveBookmarkId === null;
+        preservedUnsupportedActiveBookmarkId = null;
+        data.activeBookmark = nextActiveBookmarkId;
         if (activeBookmarkWasRemoved) {
             applyActiveBookmark(null);
         } else {
             renderBookmarks();
         }
-        if (!activeBookmarkWasRemoved && (hadActiveBookmark || data.activeBookmark)) {
+        if (!activeBookmarkWasRemoved && data.activeBookmark) {
             scheduleSearch({ immediate: true });
         }
         return buildActionOk({
@@ -205,8 +235,15 @@ export function createStorageController({
         if (songIndex <= -1) {
             return buildActionFail("song_not_found");
         }
-        bookmark.songs.splice(songIndex, 1);
-        saveBookmarks();
+        const nextSongs = bookmark.songs.slice();
+        nextSongs.splice(songIndex, 1);
+        const nextBookmarks = {
+            ...data.bookmarks,
+            [bookmarkId]: { ...bookmark, songs: nextSongs }
+        };
+        const saveResult = saveBookmarks(nextBookmarks);
+        if (saveResult.ok === false) return buildBookmarkSaveFailure(saveResult);
+        data.bookmarks = nextBookmarks;
         renderBookmarks();
         if (data.activeBookmark === bookmarkId) {
             scheduleSearch({ immediate: true });
@@ -227,8 +264,13 @@ export function createStorageController({
         if (bookmark.songs.length >= MAX_SONGS_PER_BOOKMARK) {
             return buildActionFail("max_songs_per_bookmark", { limit: MAX_SONGS_PER_BOOKMARK });
         }
-        bookmark.songs.push(songKey);
-        saveBookmarks();
+        const nextBookmarks = {
+            ...data.bookmarks,
+            [bookmarkId]: { ...bookmark, songs: [...bookmark.songs, songKey] }
+        };
+        const saveResult = saveBookmarks(nextBookmarks);
+        if (saveResult.ok === false) return buildBookmarkSaveFailure(saveResult);
+        data.bookmarks = nextBookmarks;
         renderBookmarks();
         if (data.activeBookmark === bookmarkId) {
             scheduleSearch({ immediate: true });
@@ -250,12 +292,17 @@ export function createStorageController({
         if (!nameValidation.ok) return nameValidation;
         const now = Date.now();
         const newId = `p_${now}`;
-        data.bookmarks[newId] = {
-            name: nameValidation.name,
-            songs: Array.isArray(initialSongs) ? initialSongs.slice() : [],
-            createdAt: now
+        const nextBookmarks = {
+            ...data.bookmarks,
+            [newId]: {
+                name: nameValidation.name,
+                songs: Array.isArray(initialSongs) ? initialSongs.slice() : [],
+                createdAt: now
+            }
         };
-        saveBookmarks();
+        const saveResult = saveBookmarks(nextBookmarks);
+        if (saveResult.ok === false) return buildBookmarkSaveFailure(saveResult);
+        data.bookmarks = nextBookmarks;
         renderBookmarks();
         return buildActionOk({ id: newId });
     }
@@ -288,8 +335,11 @@ export function createStorageController({
         const bookmark = data.bookmarks[bookmarkId];
         if (!bookmark) return buildActionFail("bookmark_not_found");
         const wasActive = data.activeBookmark === bookmarkId;
-        delete data.bookmarks[bookmarkId];
-        saveBookmarks();
+        const nextBookmarks = { ...data.bookmarks };
+        delete nextBookmarks[bookmarkId];
+        const saveResult = saveBookmarks(nextBookmarks);
+        if (saveResult.ok === false) return buildBookmarkSaveFailure(saveResult);
+        data.bookmarks = nextBookmarks;
         if (wasActive) {
             applyActiveBookmark(null);
         } else {
@@ -315,8 +365,13 @@ export function createStorageController({
             return buildActionOk({ changed: false });
         }
 
-        bookmark.name = nameValidation.name;
-        saveBookmarks();
+        const nextBookmarks = {
+            ...data.bookmarks,
+            [bookmarkId]: { ...bookmark, name: nameValidation.name }
+        };
+        const saveResult = saveBookmarks(nextBookmarks);
+        if (saveResult.ok === false) return buildBookmarkSaveFailure(saveResult);
+        data.bookmarks = nextBookmarks;
         renderBookmarks();
         if (data.activeBookmark === bookmarkId) {
             scheduleSearch({ immediate: true });
@@ -348,7 +403,7 @@ export function createStorageController({
                 dateFrom: getDateValueForStorage("from"),
                 dateTo: getDateValueForStorage("to"),
                 formats: searchFiltersController.getSelectedFormatValues(),
-                activeBookmarkId: data.activeBookmark
+                activeBookmarkId: data.activeBookmark || preservedUnsupportedActiveBookmarkId
             });
             localStorage.setItem(SEARCH_STATE_KEY, JSON.stringify(payload));
         } catch (e) {
@@ -361,6 +416,7 @@ export function createStorageController({
      * @param {string | null} activeBookmarkId
      */
     function applyActiveBookmark(activeBookmarkId: string | null): void {
+        preservedUnsupportedActiveBookmarkId = null;
         data.activeBookmark = activeBookmarkId;
         saveSearchState();
         renderBookmarks();
@@ -391,7 +447,7 @@ export function createStorageController({
      * @returns {StorageActionResult}
      */
     function clearActiveBookmark(): StorageActionResult {
-        const changed = data.activeBookmark !== null;
+        const changed = data.activeBookmark !== null || preservedUnsupportedActiveBookmarkId !== null;
         applyActiveBookmark(null);
         return buildActionOk({ changed });
     }
@@ -399,7 +455,9 @@ export function createStorageController({
     /**
      * 保存済み検索条件を UI と state へ復元する。
      */
-    function restoreSearchStateFromStorage(): void {
+    function restoreSearchStateFromStorage(bookmarkLoadResult: BookmarkLoadResult): void {
+        preservedUnsupportedActiveBookmarkId = null;
+        if (!bookmarkLoadResult.supported) data.activeBookmark = null;
         try {
             const raw = localStorage.getItem(SEARCH_STATE_KEY);
             if (!raw) return;
@@ -418,11 +476,17 @@ export function createStorageController({
             if (dateUi.bounds) {
                 applyPendingDateValues();
             }
-            const activeBookmarkId = parsed.activeBookmarkId &&
+            const canValidateActiveBookmark = bookmarkLoadResult.supported;
+            const activeBookmarkId = canValidateActiveBookmark && parsed.activeBookmarkId &&
                 Object.hasOwn(data.bookmarks, parsed.activeBookmarkId)
                 ? parsed.activeBookmarkId
                 : null;
-            const activeBookmarkWasInvalid = parsed.activeBookmarkId !== null && activeBookmarkId === null;
+            const activeBookmarkWasInvalid = canValidateActiveBookmark &&
+                parsed.activeBookmarkId !== null &&
+                activeBookmarkId === null;
+            preservedUnsupportedActiveBookmarkId = canValidateActiveBookmark
+                ? null
+                : parsed.activeBookmarkId;
             data.activeBookmark = activeBookmarkId;
             searchUiState.userTouchedQuery = true;
             searchUiState.userTouchedFilters = true;
@@ -443,8 +507,8 @@ export function createStorageController({
      * ブックマークと検索条件を読み込み、参照を照合して一度だけ一覧を描画する。
      */
     function restorePersistedState(): void {
-        loadBookmarksFromStorage();
-        restoreSearchStateFromStorage();
+        const bookmarkLoadResult = loadBookmarksFromStorage();
+        restoreSearchStateFromStorage(bookmarkLoadResult);
         renderBookmarks();
     }
 

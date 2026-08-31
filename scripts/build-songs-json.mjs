@@ -99,7 +99,7 @@ async function resolveGeneratedAt(options, contentHash) {
             return existingMeta.generatedAt;
         }
     } catch {
-        // 初回生成や旧・不正なmetaの場合は現在時刻からVersion 2成果物を作る。
+        // 初回生成や旧・不正なmetaの場合は現在時刻から現行schemaの成果物を作る。
     }
     return (options.now?.() ?? new Date()).toISOString();
 }

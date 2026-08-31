@@ -14,31 +14,27 @@ function createLookupUiState() {
     return {
         songMapByBookmarkKey: new Map(),
         songMapByKey: new Map(),
-        songMapByLegacyIndex: new Map(),
         songLookupSourceRef: null
     };
 }
 
-test("song lookup: resolves bookmark key, song key, and legacy source index", () => {
+test("song lookup: resolves bookmark and song keys", () => {
     const lookupUi = createLookupUiState();
     const rows = [
         {
             songKey: "arch1::1",
             bookmarkSongKey: "videoA::1",
-            sourceIndex: 1,
             title: "青い月"
         },
         {
             songKey: "arch2::2",
             bookmarkSongKey: "videoB::2",
-            sourceIndex: 2,
             title: "赤い星"
         }
     ];
 
     assert.equal(resolveSongRef(lookupUi, rows, "videoA::1"), rows[0]);
     assert.equal(resolveSongRef(lookupUi, rows, "arch2::2"), rows[1]);
-    assert.equal(resolveSongRef(lookupUi, rows, 1), rows[0]);
     assert.equal(resolveSongRef(lookupUi, rows, "missing"), null);
 });
 
@@ -48,13 +44,11 @@ test("song lookup: resolves bookmark song refs in saved order", () => {
         {
             songKey: "arch1::1",
             bookmarkSongKey: "videoA::1",
-            sourceIndex: 1,
             title: "青い月"
         },
         {
             songKey: "arch2::2",
             bookmarkSongKey: "videoB::2",
-            sourceIndex: 2,
             title: "赤い星"
         }
     ];
@@ -71,7 +65,6 @@ test("song lookup: rebuilds maps when the source rows reference changes", () => 
         {
             songKey: "arch1::1",
             bookmarkSongKey: "videoA::1",
-            sourceIndex: 1,
             title: "青い月"
         }
     ];
@@ -79,7 +72,6 @@ test("song lookup: rebuilds maps when the source rows reference changes", () => 
         {
             songKey: "arch2::2",
             bookmarkSongKey: "videoB::2",
-            sourceIndex: 2,
             title: "赤い星"
         }
     ];

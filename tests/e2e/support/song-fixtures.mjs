@@ -5,8 +5,8 @@
  */
 export function createScrollableResultSongs(count) {
     return Array.from({ length: count }, (_, index) => {
-        const sourceIndex = index + 1;
-        const paddedIndex = String(sourceIndex).padStart(2, "0");
+        const songNumber = index + 1;
+        const paddedIndex = String(songNumber).padStart(2, "0");
         const month = 2 + Math.floor(index / 28);
         const day = (index % 28) + 1;
         const date = `2024/${String(month).padStart(2, "0")}/${String(day).padStart(2, "0")}`;
@@ -18,11 +18,10 @@ export function createScrollableResultSongs(count) {
             dateKey: 20240000 + (month * 100) + day,
             archiveId: `scroll-archive-${paddedIndex}`,
             archiveOrder: 1,
-            sourceIndex,
             videoId,
             songKey: `scroll-archive-${paddedIndex}::1`,
             bookmarkSongKey: `${videoId}::1`,
-            legacySongKey: `scroll-archive-${paddedIndex}::1::https://www.youtube.com/watch?v=${videoId}&t=${sourceIndex}s`,
+            legacySongKey: `scroll-archive-${paddedIndex}::1::https://www.youtube.com/watch?v=${videoId}&t=${songNumber}s`,
             format: "配信",
             streamRole: "",
             videoOrientation: "",
@@ -32,7 +31,7 @@ export function createScrollableResultSongs(count) {
             artist,
             titleYomi: title,
             artistYomi: artist,
-            url: `https://www.youtube.com/watch?v=${videoId}&t=${sourceIndex}s`,
+            url: `https://www.youtube.com/watch?v=${videoId}&t=${songNumber}s`,
             endSeconds: null,
             titleNorm: title.toLowerCase(),
             artistNorm: artist.toLowerCase(),

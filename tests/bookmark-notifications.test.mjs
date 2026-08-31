@@ -17,7 +17,6 @@ function createNotificationUiState() {
         lookup: {
             songMapByBookmarkKey: new Map(),
             songMapByKey: new Map(),
-            songMapByLegacyIndex: new Map(),
             songLookupSourceRef: null
         }
     };
@@ -33,7 +32,6 @@ function createNotificationDataState() {
             {
                 songKey: "song-z",
                 bookmarkSongKey: "bookmark-song-z",
-                sourceIndex: 30,
                 title: "透明な朝"
             }
         ],

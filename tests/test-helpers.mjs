@@ -451,7 +451,6 @@ export function setGlobalValue(name, value) {
 
 export function makeRenderRow(input) {
     return {
-        sourceIndex: input.sourceIndex,
         songKey: input.songKey,
         bookmarkSongKey: input.bookmarkSongKey ?? input.songKey,
         title: input.title || "title",

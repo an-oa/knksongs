@@ -1,60 +1,19 @@
 import { normalizeStreamRole } from "./stream-role.mjs";
 import { parseDateKey } from "./date-key.mjs";
 import { normalizeForSearch } from "./search-normalization.mjs";
+import {
+    buildBookmarkSongKey,
+    buildLegacySongKey,
+    buildSongKey,
+    parseArchiveOrder
+} from "./song-identity.mjs";
 import { assertSongsDataQuality } from "./songs-data-quality.mjs";
 import { extractYoutubeInfo } from "./youtube-url.mjs";
 
-/**
- * 現在仕様の曲キー（archiveId + archiveOrder）を生成する。
- * @param {*} input
- */
-function buildSongKey(input) {
-    const { archiveId, archiveOrder } = input;
-    const orderPart = Number.isFinite(archiveOrder) ? String(archiveOrder) : "";
-    return [
-        String(archiveId || "").trim(),
-        orderPart
-    ].join("::");
-}
-
-/**
- * ブックマーク保存用の曲キー（videoId + archiveOrder）を生成する。
- * videoId を抽出できない場合は従来の songKey 形式へフォールバックする。
- * @param {*} input
- */
-function buildBookmarkSongKey(input) {
-    const { videoId, archiveId, archiveOrder } = input;
-    const keyHead = String(videoId || "").trim() || String(archiveId || "").trim();
-    const orderPart = Number.isFinite(archiveOrder) ? String(archiveOrder) : "";
-    return [
-        keyHead,
-        orderPart
-    ].join("::");
-}
-
-/**
- * 旧仕様互換の曲キー（archiveId + archiveOrder + url）を生成する。
- * @param {*} input
- */
-function buildLegacySongKey(input) {
-    const { archiveId, archiveOrder, url } = input;
-    const orderPart = Number.isFinite(archiveOrder) ? String(archiveOrder) : "";
-    return [
-        String(archiveId || "").trim(),
-        orderPart,
-        String(url || "").trim()
-    ].join("::");
-}
-
-/**
- * アーカイブ順序の値を整数として解析し、無効値は `null` を返す。
- * @param {*} raw
- */
-function parseArchiveOrder(raw) {
-    if (!raw) return null;
-    const value = Number.parseInt(String(raw).trim(), 10);
-    return Number.isFinite(value) ? value : null;
-}
+type CsvSongCandidate = {
+    song: Omit<Song, "archiveOrder"> & { archiveOrder: number | null };
+    csvRowNumber: number;
+};
 
 /**
  * 画面の向き列を正規化し、既知の値のみ返す。
@@ -166,7 +125,7 @@ export function parseCsvToSongs(csvText) {
     const idx = (n) => idxMap[n];
     const endTimeIndex = header.includes("終了時刻") ? idx("終了時刻") : -1;
     const streamRoleIndex = header.includes("配信上の立場") ? idx("配信上の立場") : -1;
-    const songs = [];
+    const candidates: CsvSongCandidate[] = [];
     for (let i = 0; i < body.length; i++) {
         const r = body[i];
         const memo = r[idx("メモ")] || "";
@@ -185,12 +144,11 @@ export function parseCsvToSongs(csvText) {
         const archiveOrder = parseArchiveOrder(r[idx("##")]);
         const { videoId } = extractYoutubeInfo(url);
         const legacySongKey = buildLegacySongKey({ archiveId, archiveOrder, url });
-        songs.push({
+        const song: CsvSongCandidate["song"] = {
             date: r[idx("配信日")],
             dateKey: parseDateKey(r[idx("配信日")]),
             archiveId,
             archiveOrder,
-            sourceIndex: i,
             videoId,
             songKey: buildSongKey({ archiveId, archiveOrder }),
             bookmarkSongKey: buildBookmarkSongKey({ videoId, archiveId, archiveOrder }),
@@ -210,8 +168,9 @@ export function parseCsvToSongs(csvText) {
             artistNorm: normalizeForSearch(artist),
             titleYomiNorm: normalizeForSearch(titleYomi),
             artistYomiNorm: normalizeForSearch(artistYomi)
-        });
+        };
+        candidates.push({ song, csvRowNumber: i + 2 });
     }
-    assertSongsDataQuality(songs);
-    return songs;
+    assertSongsDataQuality(candidates);
+    return candidates.map((candidate) => candidate.song as Song);
 }

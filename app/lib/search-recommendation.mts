@@ -396,7 +396,8 @@ function getRecommendedSongArchiveKey(row: Song): string {
 }
 
 /**
- * 候補行が現在行より新しい順序かどうかを判定する。
+ * 候補行のarchiveOrderが現在行より大きいかを判定する。
+ * 同値の場合は先に走査したCSV上側の行を代表として残す。
  * @param candidate 比較候補行
  * @param current 現在の代表行
  * @returns 比較候補を代表行にするか
@@ -404,8 +405,7 @@ function getRecommendedSongArchiveKey(row: Song): string {
 function isHigherArchiveOrder(candidate: Song, current: Song): boolean {
     const candidateOrder = candidate.archiveOrder ?? -1;
     const currentOrder = current.archiveOrder ?? -1;
-    if (candidateOrder !== currentOrder) return candidateOrder > currentOrder;
-    return candidate.sourceIndex > current.sourceIndex;
+    return candidateOrder > currentOrder;
 }
 
 /**

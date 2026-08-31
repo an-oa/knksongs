@@ -17,10 +17,9 @@ function makeRow(input) {
     const songKey = input.songKey ?? `song-${++autoSongId}`;
     return {
         archiveId: input.archiveId ?? "",
-        archiveOrder: input.archiveOrder ?? null,
+        archiveOrder: input.archiveOrder ?? 1,
         songKey,
         bookmarkSongKey: input.bookmarkSongKey ?? songKey,
-        sourceIndex: input.sourceIndex ?? 0,
         dateKey: input.dateKey ?? null,
         format: input.format ?? "配信",
         streamRole: input.streamRole ?? "",
@@ -35,9 +34,9 @@ function makeRow(input) {
 
 test("pickRecommendedSongs: prefers 歌みた rows over 配信 and ショート for the same song", () => {
     const rows = [
-        makeRow({ archiveId: "a1", sourceIndex: 1, title: "群青", artist: "A", format: "配信" }),
-        makeRow({ archiveId: "a2", sourceIndex: 2, title: "群青", artist: "A", format: "ショート" }),
-        makeRow({ archiveId: "a3", sourceIndex: 3, title: "群青", artist: "A", format: "歌みた" })
+        makeRow({ archiveId: "a1", title: "群青", artist: "A", format: "配信" }),
+        makeRow({ archiveId: "a2", title: "群青", artist: "A", format: "ショート" }),
+        makeRow({ archiveId: "a3", title: "群青", artist: "A", format: "歌みた" })
     ];
 
     const picked = pickRecommendedSongs(rows, { count: 10, minPerformanceCount: 2 });
@@ -48,11 +47,11 @@ test("pickRecommendedSongs: prefers 歌みた rows over 配信 and ショート 
 
 test("pickRecommendedSongs: excludes ゲスト rows from recommendation candidates", () => {
     const rows = [
-        makeRow({ archiveId: "a1", sourceIndex: 1, title: "群青", artist: "A", format: "配信", streamRole: "ゲスト" }),
-        makeRow({ archiveId: "a2", sourceIndex: 2, title: "群青", artist: "A", format: "配信", streamRole: "ゲスト" }),
-        makeRow({ archiveId: "a3", sourceIndex: 3, title: "群青", artist: "A", format: "配信", streamRole: "ゲスト" }),
-        makeRow({ archiveId: "a4", sourceIndex: 4, title: "青空", artist: "B", format: "配信" }),
-        makeRow({ archiveId: "a5", sourceIndex: 5, title: "青空", artist: "B", format: "配信" })
+        makeRow({ archiveId: "a1", title: "群青", artist: "A", format: "配信", streamRole: "ゲスト" }),
+        makeRow({ archiveId: "a2", title: "群青", artist: "A", format: "配信", streamRole: "ゲスト" }),
+        makeRow({ archiveId: "a3", title: "群青", artist: "A", format: "配信", streamRole: "ゲスト" }),
+        makeRow({ archiveId: "a4", title: "青空", artist: "B", format: "配信" }),
+        makeRow({ archiveId: "a5", title: "青空", artist: "B", format: "配信" })
     ];
 
     const picked = pickRecommendedSongs(rows, { count: 10, minPerformanceCount: 2 });
@@ -64,9 +63,9 @@ test("pickRecommendedSongs: excludes ゲスト rows from recommendation candidat
 
 test("pickRecommendedSongs: keeps the latest row within the same archive", () => {
     const rows = [
-        makeRow({ archiveId: "a1", archiveOrder: 1, sourceIndex: 1, title: "群青", artist: "A", format: "配信" }),
-        makeRow({ archiveId: "a1", archiveOrder: 2, sourceIndex: 2, title: "群青", artist: "A", format: "配信" }),
-        makeRow({ archiveId: "a2", archiveOrder: 1, sourceIndex: 3, title: "群青", artist: "A", format: "配信" })
+        makeRow({ archiveId: "a1", archiveOrder: 1, title: "群青", artist: "A", format: "配信" }),
+        makeRow({ archiveId: "a1", archiveOrder: 2, title: "群青", artist: "A", format: "配信" }),
+        makeRow({ archiveId: "a2", archiveOrder: 1, title: "群青", artist: "A", format: "配信" })
     ];
     const originalRandom = Math.random;
     Math.random = () => 0;
@@ -76,7 +75,36 @@ test("pickRecommendedSongs: keeps the latest row within the same archive", () =>
         assert.equal(picked.length, 1);
         assert.equal(picked[0].archiveId, "a1");
         assert.equal(picked[0].archiveOrder, 2);
-        assert.equal(picked[0].sourceIndex, 2);
+    } finally {
+        Math.random = originalRandom;
+    }
+});
+
+test("pickRecommendedSongs: keeps the upper CSV row when archive order is duplicated", () => {
+    const upperRow = makeRow({
+        archiveId: "a1",
+        archiveOrder: 2,
+        bookmarkSongKey: "upper::2",
+        title: "群青",
+        artist: "A"
+    });
+    const rows = [
+        upperRow,
+        makeRow({
+            archiveId: "a1",
+            archiveOrder: 2,
+            bookmarkSongKey: "lower::2",
+            title: "群青",
+            artist: "A"
+        }),
+        makeRow({ archiveId: "a2", archiveOrder: 1, title: "群青", artist: "A" })
+    ];
+    const originalRandom = Math.random;
+    Math.random = () => 0;
+    try {
+        const picked = pickRecommendedSongs(rows, { count: 10, minPerformanceCount: 2 });
+
+        assert.equal(picked[0], upperRow);
     } finally {
         Math.random = originalRandom;
     }
@@ -86,7 +114,6 @@ test("reconcileRecommendedSearchCache: keeps an admitted song after its archive 
     const cached = makeRow({
         songKey: "a1::1",
         archiveId: "a1",
-        sourceIndex: 1,
         title: "群青",
         artist: "A",
         format: "配信"
@@ -94,14 +121,13 @@ test("reconcileRecommendedSearchCache: keeps an admitted song after its archive 
     const latestCachedRow = makeRow({
         songKey: "a1::1",
         archiveId: "a1",
-        sourceIndex: 10,
         title: "群青",
         artist: "A",
         format: "配信"
     });
     const latestRows = [
         latestCachedRow,
-        makeRow({ songKey: "a2::1", archiveId: "a2", sourceIndex: 2, title: "群青", artist: "A" })
+        makeRow({ songKey: "a2::1", archiveId: "a2", title: "群青", artist: "A" })
     ];
 
     const reconciled = reconcileRecommendedSearchCache(
@@ -119,18 +145,16 @@ test("reconcileRecommendedSearchCache: replaces a removed archive with the same 
     const cached = makeRow({
         songKey: "a1::1",
         archiveId: "a1",
-        sourceIndex: 1,
         title: "群青",
         artist: "A"
     });
     const sameSongRows = [
-        makeRow({ songKey: "a2::1", archiveId: "a2", sourceIndex: 2, title: "群青", artist: "A" }),
-        makeRow({ songKey: "a3::1", archiveId: "a3", sourceIndex: 3, title: "群青", artist: "A" })
+        makeRow({ songKey: "a2::1", archiveId: "a2", title: "群青", artist: "A" }),
+        makeRow({ songKey: "a3::1", archiveId: "a3", title: "群青", artist: "A" })
     ];
     const otherEligibleRows = [1, 2, 3].map((index) => makeRow({
         songKey: `b${index}::1`,
         archiveId: `b${index}`,
-        sourceIndex: 10 + index,
         title: "青空",
         artist: "B"
     }));
@@ -158,7 +182,6 @@ test("reconcileRecommendedSearchCache: replaces only a vanished song group and p
     const replacementRows = [1, 2, 3].map((index) => makeRow({
         songKey: `c${index}::1`,
         archiveId: `c${index}`,
-        sourceIndex: index,
         title: "補充曲",
         artist: "C"
     }));

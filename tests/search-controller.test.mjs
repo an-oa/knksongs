@@ -28,7 +28,6 @@ function createSearchUiState(input) {
         lookup: {
             songMapByBookmarkKey: new Map(),
             songMapByKey: new Map(),
-            songMapByLegacyIndex: new Map(),
             songLookupSourceRef: null
         }
     };
@@ -58,10 +57,9 @@ function makeRow(input) {
     const songKey = input.songKey ?? `song-${++autoSongId}`;
     return {
         archiveId: input.archiveId ?? "",
-        archiveOrder: input.archiveOrder ?? null,
+        archiveOrder: input.archiveOrder ?? 1,
         songKey,
         bookmarkSongKey: input.bookmarkSongKey ?? songKey,
-        sourceIndex: input.sourceIndex ?? 0,
         dateKey: input.dateKey ?? null,
         format: input.format ?? "配信",
         streamRole: input.streamRole ?? "",
@@ -90,9 +88,9 @@ function createSearchCallbacks(input) {
 
 test("createSearchController: active bookmark also applies search criteria", () => {
     const rows = [
-        makeRow({ songKey: "s1", sourceIndex: 1, title: "青い月", artist: "A", format: "配信" }),
-        makeRow({ songKey: "s2", sourceIndex: 2, title: "赤い星", artist: "B", format: "歌みた" }),
-        makeRow({ songKey: "s3", sourceIndex: 3, title: "赤い空", artist: "C", format: "配信" })
+        makeRow({ songKey: "s1", title: "青い月", artist: "A", format: "配信" }),
+        makeRow({ songKey: "s2", title: "赤い星", artist: "B", format: "歌みた" }),
+        makeRow({ songKey: "s3", title: "赤い空", artist: "C", format: "配信" })
     ];
     const data = {
         allSongsRaw: rows,
@@ -209,9 +207,9 @@ test("createSearchController: direct search synchronizes restored query validati
 
 test("createSearchController: active bookmark resolves rows by bookmarkSongKey", () => {
     const rows = [
-        makeRow({ songKey: "arch1::1", bookmarkSongKey: "videoA::1", sourceIndex: 1, title: "青い月", artist: "A", format: "配信" }),
-        makeRow({ songKey: "arch2::2", bookmarkSongKey: "videoB::2", sourceIndex: 2, title: "赤い星", artist: "B", format: "歌みた" }),
-        makeRow({ songKey: "arch3::3", bookmarkSongKey: "videoC::3", sourceIndex: 3, title: "白い空", artist: "C", format: "配信" })
+        makeRow({ songKey: "arch1::1", bookmarkSongKey: "videoA::1", title: "青い月", artist: "A", format: "配信" }),
+        makeRow({ songKey: "arch2::2", bookmarkSongKey: "videoB::2", title: "赤い星", artist: "B", format: "歌みた" }),
+        makeRow({ songKey: "arch3::3", bookmarkSongKey: "videoC::3", title: "白い空", artist: "C", format: "配信" })
     ];
     const data = {
         allSongsRaw: rows,
@@ -263,7 +261,6 @@ test("createSearchController: active bookmark uses incremental display limit", (
     const rows = Array.from({ length: 5 }, (_, index) =>
         makeRow({
             songKey: `s${index + 1}`,
-            sourceIndex: index + 1,
             title: `曲${index + 1}`,
             artist: "A",
             format: "配信"
@@ -318,9 +315,9 @@ test("createSearchController: active bookmark uses incremental display limit", (
 
 test("createSearchController: an empty quoted query uses recommendation mode for オリ曲", () => {
     const rows = [
-        makeRow({ archiveId: "a1", sourceIndex: 1, title: "覚声", artist: "PSYBELL", format: "オリ曲" }),
-        makeRow({ archiveId: "a2", sourceIndex: 2, title: "覚声", artist: "PSYBELL", format: "オリ曲" }),
-        makeRow({ archiveId: "a3", sourceIndex: 3, title: "覚声", artist: "PSYBELL", format: "オリ曲" })
+        makeRow({ archiveId: "a1", title: "覚声", artist: "PSYBELL", format: "オリ曲" }),
+        makeRow({ archiveId: "a2", title: "覚声", artist: "PSYBELL", format: "オリ曲" }),
+        makeRow({ archiveId: "a3", title: "覚声", artist: "PSYBELL", format: "オリ曲" })
     ];
     const data = {
         allSongsRaw: rows,
@@ -367,7 +364,7 @@ test("createSearchController: an empty quoted query uses recommendation mode for
 
 test("createSearchController: single オリ曲 performance is eligible for recommendation", () => {
     const rows = [
-        makeRow({ archiveId: "a1", sourceIndex: 1, title: "覚声", artist: "PSYBELL", format: "オリ曲" })
+        makeRow({ archiveId: "a1", title: "覚声", artist: "PSYBELL", format: "オリ曲" })
     ];
     const data = {
         allSongsRaw: rows,
@@ -416,7 +413,6 @@ test("createSearchController: recommendation count expands to the responsive dis
     const rows = Array.from({ length: 30 }, (_, index) =>
         makeRow({
             archiveId: `a${index + 1}`,
-            sourceIndex: index + 1,
             title: `おすすめ${index + 1}`,
             artist: "A",
             format: "配信"
@@ -506,7 +502,6 @@ test("createSearchController: recommendation expansion dedupes by recommendation
         const rows = [
             makeRow({
                 archiveId: "same-a1",
-                sourceIndex: 1,
                 title: "同じ曲",
                 artist: "A",
                 songKey: "same-a1",
@@ -514,7 +509,6 @@ test("createSearchController: recommendation expansion dedupes by recommendation
             }),
             makeRow({
                 archiveId: "same-a2",
-                sourceIndex: 2,
                 title: "同じ曲",
                 artist: "A",
                 songKey: "same-a2",
@@ -522,7 +516,6 @@ test("createSearchController: recommendation expansion dedupes by recommendation
             }),
             makeRow({
                 archiveId: "other-b1",
-                sourceIndex: 3,
                 title: "別の曲",
                 artist: "B",
                 songKey: "other-b1",
@@ -530,7 +523,6 @@ test("createSearchController: recommendation expansion dedupes by recommendation
             }),
             makeRow({
                 archiveId: "other-b2",
-                sourceIndex: 4,
                 title: "別の曲",
                 artist: "B",
                 songKey: "other-b2",
@@ -597,7 +589,6 @@ test("createSearchController: recommendation count is capped by available recomm
     const rows = Array.from({ length: 7 }, (_, index) =>
         makeRow({
             archiveId: `cap${index + 1}`,
-            sourceIndex: index + 1,
             title: `候補${index + 1}`,
             artist: "A",
             format: "配信"

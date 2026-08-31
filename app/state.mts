@@ -12,7 +12,7 @@ export const DEFAULT_FORMATS = ["配信", "歌みた", "ショート", "切り�
 // payload 内の version は schema version で、この key 名とは独立して更新する。
 export const SEARCH_STATE_KEY = "searchStateV1";
 export const BOOKMARK_STORAGE_KEY = "bookmarksV1";
-export const BOOKMARK_STORAGE_VERSION = 2;
+export const BOOKMARK_STORAGE_VERSION = 3;
 export const MAX_BOOKMARK_COUNT = 20;
 export const MAX_SONGS_PER_BOOKMARK = 120;
 export const MAX_BOOKMARK_NAME_LENGTH = 64;
@@ -67,11 +67,10 @@ export const appState: AppState = {
         lookup: {
             songMapByBookmarkKey: new Map(),
             songMapByKey: new Map(),
-            songMapByLegacyIndex: new Map(),
             songLookupSourceRef: null
         },
         render: {
-            cardEntriesBySourceKey: new Map()
+            cardEntriesBySongKey: new Map()
         },
         settingsPanel: {
             returnFocusEl: null

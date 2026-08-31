@@ -66,6 +66,7 @@ type RenderCallbacksInput = {
     getYoutubeController: () => ReturnType<typeof createYoutubeController>;
     getSidebarController: () => ReturnType<typeof createSidebarController>;
     getStorageController: () => ReturnType<typeof createStorageController>;
+    getBookmarkUiController: () => ReturnType<typeof createBookmarkUiController> | null;
 };
 
 type StorageCallbacksInput = {
@@ -125,7 +126,8 @@ function createSearchCallbacks({
 function createRenderCallbacks({
     getYoutubeController,
     getSidebarController,
-    getStorageController
+    getStorageController,
+    getBookmarkUiController
 }: RenderCallbacksInput): Parameters<typeof createRenderController>[0]["callbacks"] {
     return {
         updateThumbnail: (thumbDiv, yt) => getYoutubeController().updateThumbnail(thumbDiv, yt),
@@ -135,7 +137,11 @@ function createRenderCallbacks({
         openBookmarkModal: (songKey) => getSidebarController().openBookmarkModal(songKey),
         setupScrollObserver: () => getYoutubeController().setupScrollObserver(),
         removeSongFromActiveBookmark: (songKey) => getSidebarController().removeSongFromActiveBookmark(songKey),
-        saveBookmarks: () => getStorageController().saveBookmarks()
+        saveBookmarks: (bookmarks) => getStorageController().saveBookmarks(bookmarks),
+        notifyBookmarkSaveError: (result) => {
+            const bookmarkUiController = getBookmarkUiController();
+            if (bookmarkUiController) bookmarkUiController.notifyBookmarkSaveError(result);
+        }
     };
 }
 
@@ -282,11 +288,12 @@ function createAppControllers() {
     });
 
     /**
-     * storageController と sidebarController は先に作る controller の callback から
+     * storageController、sidebarController、bookmarkUiController は先に作る controller の callback から
      * 遅延参照するため、生成後に代入する。
      */
     let storageController: ReturnType<typeof createStorageController>;
     let sidebarController: ReturnType<typeof createSidebarController>;
+    let bookmarkUiController: ReturnType<typeof createBookmarkUiController> | null = null;
 
     /**
      * appDataState.currentResults を DOM の検索結果カードへ反映する controller。
@@ -300,7 +307,8 @@ function createAppControllers() {
         callbacks: createRenderCallbacks({
             getYoutubeController: () => youtubeController,
             getSidebarController: () => sidebarController,
-            getStorageController: () => storageController
+            getStorageController: () => storageController,
+            getBookmarkUiController: () => bookmarkUiController
         })
     });
 
@@ -342,12 +350,6 @@ function createAppControllers() {
             STOP_PLAYBACK_ON_SCROLL_OUT
         }
     });
-
-    /**
-     * ブックマークパネル UI controller の遅延参照。
-     * storageController と sidebarController の callbacks から相互参照するため、生成後に代入する。
-     */
-    let bookmarkUiController: ReturnType<typeof createBookmarkUiController> | null = null;
 
     /**
      * 曲データの取得元を束ねる data source。

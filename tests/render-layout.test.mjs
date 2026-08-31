@@ -53,12 +53,11 @@ function createRenderUiState(input) {
             scrollObserver: input.scrollObserver ?? null
         },
         render: {
-            cardEntriesBySourceKey: input.cardEntriesBySourceKey ?? new Map()
+            cardEntriesBySongKey: input.cardEntriesBySongKey ?? new Map()
         },
         lookup: {
             songMapByBookmarkKey: new Map(),
             songMapByKey: new Map(),
-            songMapByLegacyIndex: new Map(),
             songLookupSourceRef: null
         }
     };
@@ -79,7 +78,8 @@ function createRenderCallbacks(input) {
         openBookmarkModal: callbacks.openBookmarkModal || (() => {}),
         setupScrollObserver: callbacks.setupScrollObserver || (() => {}),
         removeSongFromActiveBookmark: callbacks.removeSongFromActiveBookmark || (() => {}),
-        saveBookmarks: callbacks.saveBookmarks || (() => {})
+        saveBookmarks: callbacks.saveBookmarks || (() => ({ ok: true })),
+        notifyBookmarkSaveError: callbacks.notifyBookmarkSaveError || (() => {})
     };
 }
 
@@ -120,7 +120,7 @@ test("render: empty results stop active playback", () => {
 test("render: active card kept in next nodes does not stop playback", () => {
     const cleanup = installFakeDom();
     try {
-        const row = makeRenderRow({ songKey: "a::1", sourceIndex: 1 });
+        const row = makeRenderRow({ songKey: "a::1"});
         const data = {
             currentResults: [row],
             displayLimit: 10,
@@ -145,7 +145,7 @@ test("render: active card kept in next nodes does not stop playback", () => {
         });
 
         controller.updateDisplay();
-        const entry = ui.render.cardEntriesBySourceKey.get(`song:${row.songKey}`);
+        const entry = ui.render.cardEntriesBySongKey.get(row.songKey);
         assert.ok(entry);
 
         ui.playback.activeThumb = entry.thumbDiv;
@@ -161,8 +161,8 @@ test("render: active card kept in next nodes does not stop playback", () => {
 test("render: active card hidden from next nodes stops playback", () => {
     const cleanup = installFakeDom();
     try {
-        const rowA = makeRenderRow({ songKey: "a::1", sourceIndex: 1 });
-        const rowB = makeRenderRow({ songKey: "b::2", sourceIndex: 2, url: "https://youtu.be/video2" });
+        const rowA = makeRenderRow({ songKey: "a::1"});
+        const rowB = makeRenderRow({ songKey: "b::2", url: "https://youtu.be/video2" });
         const data = {
             currentResults: [rowA],
             displayLimit: 10,
@@ -187,7 +187,7 @@ test("render: active card hidden from next nodes stops playback", () => {
         });
 
         controller.updateDisplay();
-        const entryA = ui.render.cardEntriesBySourceKey.get(`song:${rowA.songKey}`);
+        const entryA = ui.render.cardEntriesBySongKey.get(rowA.songKey);
         assert.ok(entryA);
         ui.playback.activeThumb = entryA.thumbDiv;
         ui.playback.activeThumb.appendChild(document.createElement("iframe"));
@@ -245,8 +245,8 @@ test("render: result cards and empty state use list semantics", () => {
 test("render: cards keep fixed columns while preserving DOM order", () => {
     const cleanup = installFakeDom();
     try {
-        const rowA = makeRenderRow({ songKey: "a::1", sourceIndex: 1 });
-        const rowB = makeRenderRow({ songKey: "b::2", sourceIndex: 2, url: "https://www.youtube.com/shorts/video2" });
+        const rowA = makeRenderRow({ songKey: "a::1"});
+        const rowB = makeRenderRow({ songKey: "b::2", url: "https://www.youtube.com/shorts/video2" });
         const data = {
             currentResults: [rowA, rowB],
             displayLimit: 10,
@@ -268,8 +268,8 @@ test("render: cards keep fixed columns while preserving DOM order", () => {
         ui.el.resultList._rect = { top: 0, bottom: 200, left: 0, right: 700, width: 700, height: 200 };
 
         controller.updateDisplay();
-        const entryA = ui.render.cardEntriesBySourceKey.get(`song:${rowA.songKey}`);
-        const entryB = ui.render.cardEntriesBySourceKey.get(`song:${rowB.songKey}`);
+        const entryA = ui.render.cardEntriesBySongKey.get(rowA.songKey);
+        const entryB = ui.render.cardEntriesBySongKey.get(rowB.songKey);
         assert.equal(ui.el.resultList.children[0], entryA.card);
         assert.equal(ui.el.resultList.children[1], entryB.card);
         assert.equal(entryA.card.style.width, "344px");
@@ -290,10 +290,10 @@ test("render: card height changes only shift cards in the same column", () => {
     const cleanup = installFakeDom();
     try {
         const rows = [
-            makeRenderRow({ songKey: "a::1", sourceIndex: 1 }),
-            makeRenderRow({ songKey: "b::2", sourceIndex: 2 }),
-            makeRenderRow({ songKey: "c::3", sourceIndex: 3 }),
-            makeRenderRow({ songKey: "d::4", sourceIndex: 4 })
+            makeRenderRow({ songKey: "a::1"}),
+            makeRenderRow({ songKey: "b::2"}),
+            makeRenderRow({ songKey: "c::3"}),
+            makeRenderRow({ songKey: "d::4"})
         ];
         const data = {
             currentResults: rows,
@@ -316,10 +316,10 @@ test("render: card height changes only shift cards in the same column", () => {
         ui.el.resultList._rect = { top: 0, bottom: 200, left: 0, right: 700, width: 700, height: 200 };
 
         controller.updateDisplay();
-        const entryA = ui.render.cardEntriesBySourceKey.get("song:a::1");
-        const entryB = ui.render.cardEntriesBySourceKey.get("song:b::2");
-        const entryC = ui.render.cardEntriesBySourceKey.get("song:c::3");
-        const entryD = ui.render.cardEntriesBySourceKey.get("song:d::4");
+        const entryA = ui.render.cardEntriesBySongKey.get("a::1");
+        const entryB = ui.render.cardEntriesBySongKey.get("b::2");
+        const entryC = ui.render.cardEntriesBySongKey.get("c::3");
+        const entryD = ui.render.cardEntriesBySongKey.get("d::4");
         assert.ok(entryA);
         assert.ok(entryB);
         assert.ok(entryC);
@@ -353,7 +353,7 @@ test("render: card height changes only shift cards in the same column", () => {
 test("render: refreshLayout shrinks container height after card height decreases", () => {
     const cleanup = installFakeDom();
     try {
-        const row = makeRenderRow({ songKey: "a::1", sourceIndex: 1 });
+        const row = makeRenderRow({ songKey: "a::1"});
         const data = {
             currentResults: [row],
             displayLimit: 10,
@@ -373,7 +373,7 @@ test("render: refreshLayout shrinks container height after card height decreases
         });
 
         controller.updateDisplay();
-        const entry = ui.render.cardEntriesBySourceKey.get(`song:${row.songKey}`);
+        const entry = ui.render.cardEntriesBySongKey.get(row.songKey);
         entry.card._scrollHeight = 400;
         controller.refreshLayout();
         assert.equal(ui.el.resultList.style.height, "400px");
@@ -391,14 +391,12 @@ test("render: adds footer tags for collaboration, relay, and harmony", () => {
     try {
         const collabRow = makeRenderRow({
             songKey: "song:collab",
-            sourceIndex: 1,
             streamRole: "ホスト"
         });
         collabRow.isRelay = true;
         collabRow.isHarmony = true;
         const soloRow = makeRenderRow({
             songKey: "song:solo",
-            sourceIndex: 2,
             streamRole: ""
         });
         const data = {
@@ -421,8 +419,8 @@ test("render: adds footer tags for collaboration, relay, and harmony", () => {
 
         controller.updateDisplay();
 
-        const collabEntry = ui.render.cardEntriesBySourceKey.get("song:song:collab");
-        const soloEntry = ui.render.cardEntriesBySourceKey.get("song:song:solo");
+        const collabEntry = ui.render.cardEntriesBySongKey.get("song:collab");
+        const soloEntry = ui.render.cardEntriesBySongKey.get("song:solo");
         const collabTags = Array.from(collabEntry.card.querySelectorAll(".tag")).map((tag) => tag.textContent);
         const soloTags = Array.from(soloEntry.card.querySelectorAll(".tag")).map((tag) => tag.textContent);
 
@@ -441,7 +439,6 @@ test("render: explicit video orientation overrides URL heuristic", () => {
     try {
         const row = makeRenderRow({
             songKey: "a::1",
-            sourceIndex: 1,
             url: "https://youtu.be/video1",
             videoOrientation: "vertical"
         });
@@ -480,9 +477,9 @@ test("render: playSongByKey expands display limit and starts playback for hidden
     const cleanup = installFakeDom();
     try {
         const rows = [
-            makeRenderRow({ songKey: "song:1", sourceIndex: 1, url: "https://youtu.be/video1" }),
-            makeRenderRow({ songKey: "song:2", sourceIndex: 2, url: "https://youtu.be/video2" }),
-            makeRenderRow({ songKey: "song:3", sourceIndex: 3, url: "https://youtu.be/video3" })
+            makeRenderRow({ songKey: "song:1", url: "https://youtu.be/video1" }),
+            makeRenderRow({ songKey: "song:2", url: "https://youtu.be/video2" }),
+            makeRenderRow({ songKey: "song:3", url: "https://youtu.be/video3" })
         ];
         const data = {
             currentResults: rows,
@@ -521,7 +518,7 @@ test("render: playSongByKey expands display limit and starts playback for hidden
         assert.deepEqual(playCalls[0].options, {
             playbackMode: "autoplay"
         });
-        const entry = ui.render.cardEntriesBySourceKey.get("song:song:3");
+        const entry = ui.render.cardEntriesBySongKey.get("song:3");
         assert.ok(entry);
         assert.equal(playCalls[0].thumbDiv, entry.thumbDiv);
     } finally {
@@ -533,11 +530,11 @@ test("render: playSongByKey expands display limit in increment-sized chunks", as
     const cleanup = installFakeDom();
     try {
         const rows = [
-            makeRenderRow({ songKey: "song:1", sourceIndex: 1 }),
-            makeRenderRow({ songKey: "song:2", sourceIndex: 2 }),
-            makeRenderRow({ songKey: "song:3", sourceIndex: 3 }),
-            makeRenderRow({ songKey: "song:4", sourceIndex: 4 }),
-            makeRenderRow({ songKey: "song:5", sourceIndex: 5 })
+            makeRenderRow({ songKey: "song:1"}),
+            makeRenderRow({ songKey: "song:2"}),
+            makeRenderRow({ songKey: "song:3"}),
+            makeRenderRow({ songKey: "song:4"}),
+            makeRenderRow({ songKey: "song:5"})
         ];
         const data = {
             currentResults: rows,
@@ -598,7 +595,6 @@ test("bookmark: observes result tail and increases by RESULT_DISPLAY_BATCH_SIZE 
     };
     try {
         const rows = Array.from({ length: 100 }, (_, index) => ({
-            sourceIndex: index + 1,
             songKey: `song-${index + 1}`,
             title: `曲${index + 1}`,
             artist: "artist",
@@ -705,7 +701,6 @@ test("render: result tail fallback increases display limit without IntersectionO
     };
     try {
         const rows = Array.from({ length: 60 }, (_, index) => makeRenderRow({
-            sourceIndex: index + 1,
             songKey: `song-${index + 1}`,
             url: `https://youtu.be/video${index + 1}`
         }));
@@ -761,7 +756,6 @@ test("render: result tail fallback listens to the nearest scrollable ancestor", 
     };
     try {
         const rows = Array.from({ length: 60 }, (_, index) => makeRenderRow({
-            sourceIndex: index + 1,
             songKey: `song-${index + 1}`,
             url: `https://youtu.be/video${index + 1}`
         }));
@@ -828,8 +822,8 @@ test("render: result tail fallback listens to the nearest scrollable ancestor", 
 test("render: drag handle is bookmark-only and reorder works in both directions with persistence", () => {
     const cleanup = installFakeDom();
     try {
-        const rowA = makeRenderRow({ songKey: "a::1", sourceIndex: 1, title: "A" });
-        const rowB = makeRenderRow({ songKey: "b::2", sourceIndex: 2, title: "B", url: "https://youtu.be/video2" });
+        const rowA = makeRenderRow({ songKey: "a::1", title: "A" });
+        const rowB = makeRenderRow({ songKey: "b::2", title: "B", url: "https://youtu.be/video2" });
         const data = {
             currentResults: [rowA, rowB],
             displayLimit: 10,
@@ -855,12 +849,13 @@ test("render: drag handle is bookmark-only and reorder works in both directions 
             callbacks: createRenderCallbacks({
                 saveBookmarks: () => {
                     saveCount += 1;
+                    return { ok: true };
                 }
             })
         });
 
         controller.updateDisplay();
-        const normalEntryA = ui.render.cardEntriesBySourceKey.get(`song:${rowA.songKey}`);
+        const normalEntryA = ui.render.cardEntriesBySongKey.get(rowA.songKey);
         assert.ok(normalEntryA);
         assert.equal(normalEntryA.dragHandle.hidden, true);
         assert.equal(normalEntryA.dragHandle.draggable, false);
@@ -869,8 +864,8 @@ test("render: drag handle is bookmark-only and reorder works in both directions 
 
         data.activeBookmark = "bm1";
         controller.updateDisplay();
-        const entryA = ui.render.cardEntriesBySourceKey.get(`song:${rowA.songKey}`);
-        const entryB = ui.render.cardEntriesBySourceKey.get(`song:${rowB.songKey}`);
+        const entryA = ui.render.cardEntriesBySongKey.get(rowA.songKey);
+        const entryB = ui.render.cardEntriesBySongKey.get(rowB.songKey);
         assert.ok(entryA);
         assert.ok(entryB);
         assert.equal(entryA.dragHandle.hidden, false);
@@ -912,13 +907,74 @@ test("render: drag handle is bookmark-only and reorder works in both directions 
     }
 });
 
+test("render: drag reorder forwards reload-required save failures without changing state", () => {
+    const cleanup = installFakeDom();
+    try {
+        const rowA = makeRenderRow({ songKey: "a::1", title: "A" });
+        const rowB = makeRenderRow({ songKey: "b::2", title: "B" });
+        const data = {
+            currentResults: [rowA, rowB],
+            displayLimit: 10,
+            activeBookmark: "bm1",
+            bookmarks: {
+                bm1: {
+                    name: "test",
+                    songs: [rowA.songKey, rowB.songKey]
+                }
+            }
+        };
+        const ui = createRenderUiState({
+            el: {
+                resultList: document.createElement("div"),
+                resultTailSentinel: document.createElement("div")
+            }
+        });
+        const saveFailure = { ok: false, reason: "storage_reload_required" };
+        const notifiedFailures = [];
+        const controller = createRenderController({
+            data,
+            ui,
+            isAllFormatsSelected: () => true,
+            callbacks: createRenderCallbacks({
+                saveBookmarks: () => saveFailure,
+                notifyBookmarkSaveError: (result) => notifiedFailures.push(result)
+            })
+        });
+
+        controller.updateDisplay();
+        const entryA = ui.render.cardEntriesBySongKey.get(rowA.songKey);
+        const entryB = ui.render.cardEntriesBySongKey.get(rowB.songKey);
+        assert.ok(entryA);
+        assert.ok(entryB);
+
+        const transfer = createDataTransferMock();
+        invokeListener(entryA.dragHandle, "dragstart", {
+            currentTarget: entryA.dragHandle,
+            target: entryA.dragHandle,
+            dataTransfer: transfer,
+            preventDefault() {}
+        });
+        invokeListener(entryB.card, "drop", {
+            target: entryB.card,
+            dataTransfer: transfer,
+            preventDefault() {}
+        });
+
+        assert.deepEqual(data.currentResults.map((row) => row.songKey), [rowA.songKey, rowB.songKey]);
+        assert.deepEqual(data.bookmarks.bm1.songs, [rowA.songKey, rowB.songKey]);
+        assert.deepEqual(notifiedFailures, [saveFailure]);
+    } finally {
+        cleanup();
+    }
+});
+
 test("render: active playback card can move back left without jumping to the end", () => {
     const cleanup = installFakeDom();
     try {
-        const rowA = makeRenderRow({ songKey: "a::1", bookmarkSongKey: "videoA::1", sourceIndex: 1, title: "A" });
-        const rowB = makeRenderRow({ songKey: "b::2", bookmarkSongKey: "videoB::2", sourceIndex: 2, title: "B" });
-        const rowC = makeRenderRow({ songKey: "c::3", bookmarkSongKey: "videoC::3", sourceIndex: 3, title: "C" });
-        const rowD = makeRenderRow({ songKey: "d::4", bookmarkSongKey: "videoD::4", sourceIndex: 4, title: "D" });
+        const rowA = makeRenderRow({ songKey: "a::1", bookmarkSongKey: "videoA::1", title: "A" });
+        const rowB = makeRenderRow({ songKey: "b::2", bookmarkSongKey: "videoB::2", title: "B" });
+        const rowC = makeRenderRow({ songKey: "c::3", bookmarkSongKey: "videoC::3", title: "C" });
+        const rowD = makeRenderRow({ songKey: "d::4", bookmarkSongKey: "videoD::4", title: "D" });
         const data = {
             currentResults: [rowA, rowB, rowC, rowD],
             displayLimit: 10,
@@ -941,13 +997,13 @@ test("render: active playback card can move back left without jumping to the end
             ui,
             isAllFormatsSelected: () => true,
             callbacks: createRenderCallbacks({
-                saveBookmarks: () => {}
+                saveBookmarks: () => ({ ok: true })
             })
         });
 
         controller.updateDisplay();
-        const entryA = ui.render.cardEntriesBySourceKey.get(`song:${rowA.songKey}`);
-        const entryB = ui.render.cardEntriesBySourceKey.get(`song:${rowB.songKey}`);
+        const entryA = ui.render.cardEntriesBySongKey.get(rowA.songKey);
+        const entryB = ui.render.cardEntriesBySongKey.get(rowB.songKey);
         assert.ok(entryA);
         assert.ok(entryB);
 

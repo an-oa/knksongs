@@ -9,7 +9,6 @@ export function createSongFixture(overrides = {}) {
         dateKey: 20260311,
         archiveId: "archive-1",
         archiveOrder: 1,
-        sourceIndex: 0,
         videoId: "abc123def45",
         songKey: "archive-1::1",
         bookmarkSongKey: "abc123def45::1",

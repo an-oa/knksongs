@@ -66,6 +66,7 @@
     - インポートは現在のブックマークを全置き換えします。
   - ブックマーク保存用の曲参照は `videoId::##` を優先し、既存データの `archiveId::##` は読み込み時に段階移行します。
   - 最新データに対応する曲が一時的に存在しない参照は削除せず保存し、その曲が再び配信データへ含まれた場合に復帰できるようにします。
+  - 行位置が変わると別の曲を指す旧形式の数値参照は、誤変換や上限件数の消費を避けるため読み込み時に除外します。
   - 一方で画面内部のカード識別や描画再利用には、従来どおり `archiveId::##` ベースの `songKey` を使い続けます。
   - 上限は「ブックマーク数: 最大20件」「1ブックマークあたり: 最大120曲」「ブックマーク名: 最大64文字」です。
 - 初期表示(おすすめ)があります。
@@ -130,7 +131,7 @@ flowchart TD
 - 通常の起動時は有効なJSONキャッシュを先に表示し、その後で事前生成された `data/songs.json` と
   `data/songs-meta.json` の鮮度をバックグラウンド確認します。有効なキャッシュがない場合は、両ファイルを
   並行取得して初期表示の待ち時間を抑えます。
-- `songs.json` / `songs-meta.json` はschema Version 2として、同じ `contentHash` とUTC ISO 8601形式の
+- `songs.json` / `songs-meta.json` はschema Version 3として、同じ `contentHash` とUTC ISO 8601形式の
   `generatedAt` を持ちます。hashが一致する場合は日時を参照せず、hashが異なる場合は生成日時で新旧を判断します。
   `generatedAt` はcontentHashが変わった場合だけ更新するため、CSVに変更がない定期生成では差分が発生しません。
 - 手元のJSONキャッシュがmetaと同じ内容か、metaより新しいと判断できれば、大きい `songs.json` の再取得を避けます。
@@ -139,18 +140,21 @@ flowchart TD
 - metaはresponse受信と本文読込に各2秒、JSON本体はresponse受信に2秒・本文読込に30秒、CSVは
   response受信に3秒・本文読込に30秒の期限を設けます。大きい本文を2～3秒で切断せず、responseや本文が
   停止した場合は期限後に後続の取得元へ進みます。
-- 実際に配布された全期間のVersion 1 JSONキャッシュはフォールバックとして読み込みます。
-  初期形式に存在しない `contentHash` は比較不能、`streamRole` は空文字として扱い、現在の必須構造へ正規化します。
+- 現在より古いschemaのJSONキャッシュは削除し、キャッシュがない場合と同じく公開JSON、
+  ネットワークCSVの順に再取得します。
 - 公開スプレッドシートのCSVは、事前生成JSONの元データかつJSON取得失敗時のフォールバックとして参照します(`app/config.mts` の `PUBLIC_CSV_URL` で指定し、実行時は `_build/app/config.mjs` に生成された module を読みます)。
   有効なJSONキャッシュがあれば即時表示と公開JSONのバックグラウンド確認を行い、キャッシュがなければ
   公開JSON、ネットワークCSVの順に試します。CSVはキャッシュしません。
   旧バージョンが保存したCSVキャッシュは起動時に削除します。
 - CSVの `配信上の立場` は曲データの `streamRole` としてJSONへ保持します。
 - CSVから公開対象曲を変換した直後に、必須文字列、YouTube URL・動画ID、再生範囲を全件検証します。
-  問題がある場合はCSV行番号を報告し、どちらのJSONも書き換えません。開始位置`0`と終了位置`null`は、
+  `archiveOrder`と曲参照キーの生成規則・一意性も検証します。問題がある場合はCSV行番号を報告し、
+  どちらのJSONも書き換えません。開始位置`0`と終了位置`null`は、
   動画全体を再生する正常値として扱います。ブラウザのCSVフォールバックも同じ変換・検証を使用します。
+  行番号は検証中だけ曲候補と対にして保持し、曲データや`songs.json`へは出力しません。
 - `npm run validate:songs-json` は曲データの意味を再判定せず、2つの派生JSONの構文、
-  各曲の必須フィールドと型を含むスキーマ、`contentHash`と`generatedAt`同士、
+  各曲の必須フィールド・型・未知フィールドと曲参照キーの一意性を含むスキーマ、
+  `contentHash`と`generatedAt`同士、
   および曲配列から再計算したhashとの一致を検証します。
 - `.github/workflows/update-songs-json.yml` は GitHub Actions 上で `npm run build:songs-json` と
   `npm run validate:songs-json` を実行し、`data/songs.json` / `data/songs-meta.json` だけに

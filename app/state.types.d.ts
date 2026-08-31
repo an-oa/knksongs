@@ -10,8 +10,8 @@ import type { RecommendedSearchCache } from "./lib/search-recommendation.mjs";
 export type BookmarkRecord = {
   /** ユーザーが付けたブックマーク名。 */
   name: string;
-  /** 曲を指す現在形式のキー、または旧形式の sourceIndex。 */
-  songs: Array<string | number>;
+  /** 曲を指す現在形式または移行可能な旧文字列形式のキー。 */
+  songs: string[];
   /** ブックマーク作成時刻。旧データでは存在しない場合がある。 */
   createdAt?: number;
 };
@@ -165,8 +165,6 @@ export type LookupUiRuntimeState = {
   songMapByBookmarkKey: Map<string, Song>;
   /** 現在の songKey から曲を引くマップ。 */
   songMapByKey: Map<string, Song>;
-  /** 旧形式の sourceIndex から曲を引くマップ。 */
-  songMapByLegacyIndex: Map<number, Song>;
   /** ルックアップマップの元になった曲配列参照。 */
   songLookupSourceRef: Song[] | null;
 };
@@ -190,8 +188,8 @@ export type RenderCardEntry = {
 
 /** 検索結果描画で再利用する DOM キャッシュ。 */
 export type RenderUiRuntimeState = {
-  /** 曲の表示キーから既存カード DOM を引くマップ。 */
-  cardEntriesBySourceKey: Map<string, RenderCardEntry>;
+  /** songKeyから既存カードDOMを引くマップ。 */
+  cardEntriesBySongKey: Map<string, RenderCardEntry>;
 };
 
 /** 設定パネルを閉じた後のフォーカス復帰先。 */

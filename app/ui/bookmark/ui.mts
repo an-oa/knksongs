@@ -12,6 +12,7 @@ import type { AppDataState, AppUiState } from "../../state.types";
 export type BookmarkUiActionResult = {
     ok: boolean;
     reason?: string;
+    version?: number;
     limit?: number;
     text?: string;
     fileName?: string;
@@ -138,12 +139,42 @@ export function createBookmarkUiController({ data, ui, callbacks }: BookmarkUiCo
     }
 
     /**
+     * ブックマーク永続化の失敗を理由別のメッセージで通知する。
+     * @param {BookmarkUiActionResult} result
+     * @returns {boolean}
+     */
+    function notifyIfBookmarkSaveError(result) {
+        if (!result || result.ok) return false;
+        if (result.reason === "unsupported_storage_version") {
+            alert("このアプリより新しい形式のブックマークが保存されているため、変更できません。");
+            return true;
+        }
+        if (result.reason === "storage_reload_required") {
+            alert("別のタブでブックマークが更新された可能性があります。画面を再読み込みしてから、もう一度お試しください。");
+            return true;
+        }
+        if (result.reason === "storage_write_failed") {
+            alert("ブックマークを保存できませんでした。ブラウザのストレージ設定をご確認ください。");
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * 外部操作から受け取ったブックマーク保存失敗を共通文言で通知する。
+     */
+    function notifyBookmarkSaveError(result: BookmarkUiActionCallbackResult): boolean {
+        return notifyIfBookmarkSaveError(normalizeActionResult(result));
+    }
+
+    /**
      * リネーム失敗時に理由別メッセージを表示し、通知したかどうかを返す。
      * @param {BookmarkUiActionResult} result
      * @returns {boolean}
      */
     function notifyIfRenameError(result) {
         if (!result || result.ok) return false;
+        if (notifyIfBookmarkSaveError(result)) return true;
         if (result.reason === "empty_name") {
             alert("ブックマーク名を入力してください。");
             return true;
@@ -166,6 +197,7 @@ export function createBookmarkUiController({ data, ui, callbacks }: BookmarkUiCo
      */
     function notifyIfAddSongError(result) {
         if (!result || result.ok) return false;
+        if (notifyIfBookmarkSaveError(result)) return true;
         if (notifyIfLimitError(result)) return true;
         if (result.reason === "duplicate_song") {
             alert("この曲はすでに選択したブックマークに追加されています。");
@@ -401,7 +433,9 @@ export function createBookmarkUiController({ data, ui, callbacks }: BookmarkUiCo
                         if (result.ok) {
                             bookmarkNotifications.notifyBookmarkDeleted(bookmark.name);
                         } else {
-                            notifyIfBookmarkNotFoundError(result);
+                            if (!notifyIfBookmarkSaveError(result)) {
+                                notifyIfBookmarkNotFoundError(result);
+                            }
                         }
                     }
                     return;
@@ -464,7 +498,9 @@ export function createBookmarkUiController({ data, ui, callbacks }: BookmarkUiCo
             nameInput.focus();
             return;
         }
-        notifyIfLimitError(result);
+        if (!notifyIfBookmarkSaveError(result)) {
+            notifyIfLimitError(result);
+        }
     }
 
     /**
@@ -586,7 +622,9 @@ export function createBookmarkUiController({ data, ui, callbacks }: BookmarkUiCo
         const result = normalizeActionResult(onRemoveSongFromBookmark(bookmarkId, songKey));
         if (result.ok && bookmarkName) {
             bookmarkNotifications.notifySongRemovedFromBookmark(bookmarkName, songKey);
+            return;
         }
+        notifyIfBookmarkSaveError(result);
     }
 
     return {
@@ -597,6 +635,7 @@ export function createBookmarkUiController({ data, ui, callbacks }: BookmarkUiCo
         closeBookmarkModal,
         setActiveBookmark,
         clearActiveBookmark,
+        notifyBookmarkSaveError,
         removeSongFromActiveBookmark
     };
 }

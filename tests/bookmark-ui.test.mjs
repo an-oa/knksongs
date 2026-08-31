@@ -74,7 +74,6 @@ function createBookmarkUiState() {
         lookup: {
             songMapByBookmarkKey: new Map(),
             songMapByKey: new Map(),
-            songMapByLegacyIndex: new Map(),
             songLookupSourceRef: null
         },
         bookmarkPanel: {
@@ -107,7 +106,6 @@ function createBookmarkHarness(input) {
             {
                 songKey: "song-z",
                 bookmarkSongKey: "song-z",
-                sourceIndex: 30,
                 title: "透明な朝"
             }
         ],
@@ -181,7 +179,7 @@ function createBookmarkHarness(input) {
             calls.exportBookmarkCount += 1;
             return options.onExportBookmarksResult || {
                 ok: true,
-                text: "{\"version\":2,\"bookmarks\":{}}\n"
+                text: "{\"version\":3,\"bookmarks\":{}}\n"
             };
         },
         onPreviewBookmarkImport(text) {
@@ -422,6 +420,92 @@ test("bookmark ui: create form success notifies created bookmark", () => {
     }
 });
 
+test("bookmark ui: unsupported storage version shows an error without a success notification", () => {
+    const restoreDom = installFakeDom();
+    const previousAlert = globalThis.alert;
+    const alerts = [];
+    globalThis.alert = (message) => {
+        alerts.push(String(message));
+    };
+    try {
+        const { ui, controller } = createBookmarkHarness({
+            onCreateBookmark: () => ({
+                ok: false,
+                reason: "unsupported_storage_version",
+                version: 4
+            })
+        });
+        controller.setupBookmarkHandlers();
+        ui.el.bookmarkPanelNewName.value = "Not persisted";
+
+        invokeListener(ui.el.bookmarkPanelCreateBtn, "click", {});
+
+        assert.deepEqual(alerts, [
+            "このアプリより新しい形式のブックマークが保存されているため、変更できません。"
+        ]);
+        assert.equal(ui.el.bookmarkPanelNewName.value, "Not persisted");
+        assert.equal(ui.el.bookmarkNotificationRegion.childElementCount, 0);
+    } finally {
+        globalThis.alert = previousAlert;
+        restoreDom();
+    }
+});
+
+test("bookmark ui: stale loaded storage state asks for a reload without a success notification", () => {
+    const restoreDom = installFakeDom();
+    const previousAlert = globalThis.alert;
+    const alerts = [];
+    globalThis.alert = (message) => {
+        alerts.push(String(message));
+    };
+    try {
+        const { ui, controller } = createBookmarkHarness({
+            onCreateBookmark: () => ({
+                ok: false,
+                reason: "storage_reload_required"
+            })
+        });
+        controller.setupBookmarkHandlers();
+        ui.el.bookmarkPanelNewName.value = "Not persisted";
+
+        invokeListener(ui.el.bookmarkPanelCreateBtn, "click", {});
+
+        assert.deepEqual(alerts, [
+            "別のタブでブックマークが更新された可能性があります。画面を再読み込みしてから、もう一度お試しください。"
+        ]);
+        assert.equal(ui.el.bookmarkPanelNewName.value, "Not persisted");
+        assert.equal(ui.el.bookmarkNotificationRegion.childElementCount, 0);
+    } finally {
+        globalThis.alert = previousAlert;
+        restoreDom();
+    }
+});
+
+test("bookmark ui: public save error notifier asks for a reload", () => {
+    const restoreDom = installFakeDom();
+    const previousAlert = globalThis.alert;
+    const alerts = [];
+    globalThis.alert = (message) => {
+        alerts.push(String(message));
+    };
+    try {
+        const { controller } = createBookmarkHarness();
+
+        const didNotify = controller.notifyBookmarkSaveError({
+            ok: false,
+            reason: "storage_reload_required"
+        });
+
+        assert.equal(didNotify, true);
+        assert.deepEqual(alerts, [
+            "別のタブでブックマークが更新された可能性があります。画面を再読み込みしてから、もう一度お試しください。"
+        ]);
+    } finally {
+        globalThis.alert = previousAlert;
+        restoreDom();
+    }
+});
+
 test("bookmark ui: removing a song from active bookmark notifies bookmark name and song title", () => {
     const restoreDom = installFakeDom();
     try {
@@ -530,7 +614,7 @@ test("bookmark ui: export button saves the JSON payload with a default filename"
 
         assert.equal(calls.exportBookmarkCount, 1);
         assert.equal(calls.savedFiles.length, 1);
-        assert.equal(calls.savedFiles[0].text, "{\"version\":2,\"bookmarks\":{}}\n");
+        assert.equal(calls.savedFiles[0].text, "{\"version\":3,\"bookmarks\":{}}\n");
         assert.match(calls.savedFiles[0].fileName, /^knksongs-bookmarks-\d{8}\.json$/);
         assert.equal(calls.savedFiles[0].mimeType, "application/json");
         assert.equal(ui.el.bookmarkPanelError.hidden, true);

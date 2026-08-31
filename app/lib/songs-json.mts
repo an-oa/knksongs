@@ -1,22 +1,12 @@
-export const SONGS_JSON_SCHEMA_VERSION = 2;
+import { validateSongIdentities, type SongIdentityIssue } from "./song-identity.mjs";
 
-const LEGACY_SONGS_JSON_SCHEMA_VERSION = 1;
+export const SONGS_JSON_SCHEMA_VERSION = 3;
 
-type CurrentSongsJsonArtifactMetadata = {
+export type SongsJsonArtifactMetadata = {
     schemaVersion: typeof SONGS_JSON_SCHEMA_VERSION;
     contentHash: string;
     generatedAt: string;
 };
-
-type LegacySongsJsonArtifactMetadata = {
-    schemaVersion: typeof LEGACY_SONGS_JSON_SCHEMA_VERSION;
-    contentHash: string | null;
-    generatedAt: null;
-};
-
-export type SongsJsonArtifactMetadata =
-    | CurrentSongsJsonArtifactMetadata
-    | LegacySongsJsonArtifactMetadata;
 
 export type SongsJsonPayload = SongsJsonArtifactMetadata & {
     songs: Song[];
@@ -28,14 +18,13 @@ export type SongsJsonArtifactFreshness =
     | "candidate-older"
     | "incomparable";
 
-type SongFieldKind = "string" | "number" | "nullable-number" | "boolean" | "video-orientation";
+type SongFieldKind = "string" | "integer" | "nullable-number" | "boolean" | "video-orientation";
 
 const SONG_FIELD_KINDS = {
     date: "string",
     dateKey: "nullable-number",
     archiveId: "string",
-    archiveOrder: "nullable-number",
-    sourceIndex: "number",
+    archiveOrder: "integer",
     videoId: "string",
     songKey: "string",
     bookmarkSongKey: "string",
@@ -102,37 +91,15 @@ function parseJsonObject(jsonText: string): Record<string, unknown> {
 
 /**
  * 曲データJSONのschemaVersionを検証する。
- * Version 1は既存キャッシュのフォールバック利用に限って読み込み互換を保つ。
+ * 旧schemaは保存済みキャッシュを破棄して再取得するため受け付けない。
  * @param schemaVersion 検証するschema version
  * @returns 検証済みschema version
  */
-function parseSupportedSchemaVersion(
-    schemaVersion: unknown
-): typeof LEGACY_SONGS_JSON_SCHEMA_VERSION | typeof SONGS_JSON_SCHEMA_VERSION {
-    if (
-        schemaVersion !== LEGACY_SONGS_JSON_SCHEMA_VERSION &&
-        schemaVersion !== SONGS_JSON_SCHEMA_VERSION
-    ) {
+function parseSupportedSchemaVersion(schemaVersion: unknown): typeof SONGS_JSON_SCHEMA_VERSION {
+    if (schemaVersion !== SONGS_JSON_SCHEMA_VERSION) {
         throw new Error(`unsupported songs json schema: ${schemaVersion}`);
     }
     return schemaVersion;
-}
-
-/**
- * schema versionに応じてcontentHashを検証する。
- * 初期のVersion 1に存在しなかったcontentHashはnullへ正規化する。
- * @param schemaVersion 検証済みschema version
- * @param contentHash 検証するhash
- * @returns 検証済みhash、またはhashを持たない旧schemaを表すnull
- */
-function parseContentHashForSchema(
-    schemaVersion: typeof LEGACY_SONGS_JSON_SCHEMA_VERSION | typeof SONGS_JSON_SCHEMA_VERSION,
-    contentHash: unknown
-): string | null {
-    if (schemaVersion === LEGACY_SONGS_JSON_SCHEMA_VERSION && contentHash === undefined) {
-        return null;
-    }
-    return parseContentHash(contentHash);
 }
 
 /**
@@ -142,7 +109,7 @@ function parseContentHashForSchema(
  */
 function matchesSongFieldKind(fieldKind: SongFieldKind, value: unknown): boolean {
     if (fieldKind === "string") return typeof value === "string";
-    if (fieldKind === "number") return typeof value === "number" && Number.isFinite(value);
+    if (fieldKind === "integer") return typeof value === "number" && Number.isSafeInteger(value);
     if (fieldKind === "nullable-number") {
         return value === null || (typeof value === "number" && Number.isFinite(value));
     }
@@ -157,7 +124,7 @@ function matchesSongFieldKind(fieldKind: SongFieldKind, value: unknown): boolean
  */
 function describeSongFieldKind(fieldKind: SongFieldKind): string {
     if (fieldKind === "string") return "a string";
-    if (fieldKind === "number") return "a finite number";
+    if (fieldKind === "integer") return "an integer";
     if (fieldKind === "nullable-number") return "a finite number or null";
     if (fieldKind === "boolean") return "a boolean";
     return 'one of "", "vertical", or "landscape"';
@@ -175,6 +142,11 @@ function assertSongStructure(song: unknown, index: number): asserts song is Song
         throw new Error(`${location} must be an object`);
     }
     const songRecord = song as Record<string, unknown>;
+    for (const fieldName of Object.keys(songRecord)) {
+        if (!Object.hasOwn(SONG_FIELD_KINDS, fieldName)) {
+            throw new Error(`${location}.${fieldName} is not allowed`);
+        }
+    }
     for (const fieldName of Object.keys(SONG_FIELD_KINDS) as (keyof Song)[]) {
         if (!Object.hasOwn(songRecord, fieldName)) {
             throw new Error(`${location}.${fieldName} is required`);
@@ -186,36 +158,34 @@ function assertSongStructure(song: unknown, index: number): asserts song is Song
     }
 }
 
-/**
- * 初期のVersion 1で存在しなかったstreamRoleを空文字へ正規化する。
- * ほかの構造エラーは後続の検証へ渡す。
- * @param song 正規化する曲要素
- * @returns Version 1の不足フィールドを補った曲要素
- */
-function normalizeLegacySong(song: unknown): unknown {
-    if (!song || typeof song !== "object" || Array.isArray(song)) return song;
-    if (Object.hasOwn(song, "streamRole")) return song;
-    return { ...song, streamRole: "" };
+/** 曲識別子の問題をJSON配列位置付きの診断へ変換する。 */
+function formatSongIdentityIssue(issue: SongIdentityIssue): string {
+    const location = `songs json payload songs[${issue.index}]`;
+    if (issue.kind === "invalid-archive-order") {
+        return `${location}.archiveOrder must be an integer`;
+    }
+    if (issue.kind === "mismatched-key") {
+        return `${location}.${issue.fieldName} must equal ${JSON.stringify(issue.expected)}`;
+    }
+    return `${location}.${issue.fieldName} ${JSON.stringify(issue.value)} duplicates ` +
+        `songs json payload songs[${issue.firstIndex}].${issue.fieldName}`;
 }
 
 /**
- * songs値をschema versionに応じて正規化し、各曲要素の構造を確認する。
+ * songs値と各曲要素の構造を確認する。
  * @param songs 検証するsongs値
- * @param schemaVersion 検証済みschema version
  * @returns 検証済み曲配列
  */
-function parseSongsArray(
-    songs: unknown,
-    schemaVersion: typeof LEGACY_SONGS_JSON_SCHEMA_VERSION | typeof SONGS_JSON_SCHEMA_VERSION
-): Song[] {
+function parseSongsArray(songs: unknown): Song[] {
     if (!Array.isArray(songs)) {
         throw new Error("songs json payload requires a songs array");
     }
-    const normalizedSongs = schemaVersion === LEGACY_SONGS_JSON_SCHEMA_VERSION
-        ? songs.map(normalizeLegacySong)
-        : songs;
-    normalizedSongs.forEach((song, index) => assertSongStructure(song, index));
-    return normalizedSongs;
+    songs.forEach((song, index) => assertSongStructure(song, index));
+    const identityIssue = validateSongIdentities(songs)[0];
+    if (identityIssue) {
+        throw new Error(formatSongIdentityIssue(identityIssue));
+    }
+    return songs;
 }
 
 /**
@@ -234,7 +204,7 @@ export function buildSongsJsonPayload(
         schemaVersion: SONGS_JSON_SCHEMA_VERSION,
         contentHash: parseContentHash(contentHash),
         generatedAt: parseGeneratedAt(generatedAt),
-        songs: parseSongsArray(songs, SONGS_JSON_SCHEMA_VERSION)
+        songs: parseSongsArray(songs)
     };
 }
 
@@ -266,10 +236,9 @@ export function compareSongsJsonArtifactFreshness(
     candidate: SongsJsonArtifactMetadata,
     reference: SongsJsonArtifactMetadata
 ): SongsJsonArtifactFreshness {
-    if (candidate.contentHash !== null && candidate.contentHash === reference.contentHash) {
+    if (candidate.contentHash === reference.contentHash) {
         return "same-content";
     }
-    if (!candidate.generatedAt || !reference.generatedAt) return "incomparable";
     const candidateTimestamp = Date.parse(candidate.generatedAt);
     const referenceTimestamp = Date.parse(reference.generatedAt);
     if (candidateTimestamp > referenceTimestamp) return "candidate-newer";
@@ -285,20 +254,11 @@ export function compareSongsJsonArtifactFreshness(
 export function parseSongsJsonPayload(jsonText: string): SongsJsonPayload {
     const payload = parseJsonObject(jsonText);
     const schemaVersion = parseSupportedSchemaVersion(payload.schemaVersion);
-    const songs = parseSongsArray(payload.songs, schemaVersion);
-    if (schemaVersion === LEGACY_SONGS_JSON_SCHEMA_VERSION) {
-        return {
-            schemaVersion,
-            contentHash: parseContentHashForSchema(schemaVersion, payload.contentHash),
-            generatedAt: null,
-            songs
-        };
-    }
     return {
         schemaVersion,
         contentHash: parseContentHash(payload.contentHash),
         generatedAt: parseGeneratedAt(payload.generatedAt),
-        songs
+        songs: parseSongsArray(payload.songs)
     };
 }
 
@@ -310,13 +270,6 @@ export function parseSongsJsonPayload(jsonText: string): SongsJsonPayload {
 export function parseSongsJsonMetaPayload(jsonText: string): SongsJsonArtifactMetadata {
     const payload = parseJsonObject(jsonText);
     const schemaVersion = parseSupportedSchemaVersion(payload.schemaVersion);
-    if (schemaVersion === LEGACY_SONGS_JSON_SCHEMA_VERSION) {
-        return {
-            schemaVersion,
-            contentHash: parseContentHashForSchema(schemaVersion, payload.contentHash),
-            generatedAt: null
-        };
-    }
     return {
         schemaVersion,
         contentHash: parseContentHash(payload.contentHash),

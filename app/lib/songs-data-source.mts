@@ -261,7 +261,6 @@ export function createSongsDataSource(input: SongsDataSourceInput) {
         await setCachedSongsJsonText(jsonText);
         const hasSameDisplayedContent = Boolean(
             previousPayload &&
-            previousPayload.contentHash !== null &&
             previousPayload.contentHash === payload.contentHash
         );
         if (hasSameDisplayedContent) return null;

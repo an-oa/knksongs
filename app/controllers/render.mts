@@ -3,8 +3,13 @@ import { hasStreamRole } from "../lib/stream-role.mjs";
 import { tracePlayback } from "../lib/playback-debug.mjs";
 import { scheduleScrollElementIntoView } from "../lib/results-scroll.mjs";
 import { createBookmarkDragReorderController } from "../lib/render/drag-reorder.mjs";
+import type {
+    BookmarkDragReorderSaveFailure,
+    BookmarkDragReorderSaveResult
+} from "../lib/render/drag-reorder.mjs";
 import { applyMasonryLayout } from "../lib/render/masonry-layout.mjs";
 import { createResultTailObserver } from "../lib/render/result-tail-observer.mjs";
+import { getBookmarkSongRef } from "../lib/song-identity.mjs";
 import {
     createYoutubePlaybackStartResult,
     YOUTUBE_PLAYBACK_START_STATUS
@@ -72,7 +77,10 @@ type RenderCallbacks = {
     openBookmarkModal: (songKey: string) => void;
     setupScrollObserver: () => void;
     removeSongFromActiveBookmark: (songKey: string) => void;
-    saveBookmarks: () => void;
+    saveBookmarks: (
+        bookmarks: AppDataState["bookmarks"]
+    ) => BookmarkDragReorderSaveResult;
+    notifyBookmarkSaveError: (result: BookmarkDragReorderSaveFailure) => void;
 };
 
 type RenderControllerInput = {
@@ -105,6 +113,7 @@ export function createRenderController({
     const setupScrollObserver = callbacks.setupScrollObserver;
     const removeSongFromActiveBookmark = callbacks.removeSongFromActiveBookmark;
     const saveBookmarks = callbacks.saveBookmarks;
+    const notifyBookmarkSaveError = callbacks.notifyBookmarkSaveError;
     const displayBatchSize = Number.isFinite(resultDisplayBatchSize) && resultDisplayBatchSize > 0
         ? Math.max(1, Math.floor(resultDisplayBatchSize))
         : DEFAULT_RESULT_DISPLAY_BATCH_SIZE;
@@ -112,6 +121,7 @@ export function createRenderController({
         data,
         getBookmarkSongRef: (row) => getBookmarkSongRef(row),
         saveBookmarks,
+        onSaveFailure: notifyBookmarkSaveError,
         updateDisplay: () => updateDisplay()
     });
     const resultTailObservationController = createResultTailObserver({
@@ -221,19 +231,6 @@ export function createRenderController({
                 openBookmarkModal(bookmarkSongRef);
             };
         }
-    }
-
-    /**
-     * 行データからブックマーク保存に使う参照キーを返す。
-     * @param {Song | null | undefined} row
-     * @returns {string}
-     */
-    function getBookmarkSongRef(row) {
-        if (!row || typeof row !== "object") return "";
-        if (typeof row.bookmarkSongKey === "string" && row.bookmarkSongKey) {
-            return row.bookmarkSongKey;
-        }
-        return typeof row.songKey === "string" ? row.songKey : "";
     }
 
     /**
@@ -377,7 +374,7 @@ export function createRenderController({
      */
     function getCardEntryBySongKey(songKey) {
         if (!songKey) return null;
-        return renderUi.cardEntriesBySourceKey.get(`song:${songKey}`) || null;
+        return renderUi.cardEntriesBySongKey.get(songKey) || null;
     }
 
     /**
@@ -482,15 +479,13 @@ export function createRenderController({
      * @returns {ResultNodeBuildResult}
      */
     function buildResultNodes(results: Song[]): ResultNodeBuildResult {
-        const nextEntriesBySourceKey = new Map();
+        const nextEntriesBySongKey = new Map<string, RenderCardEntry>();
         const entries = [];
         const nodes = [];
         for (let i = 0; i < results.length; i++) {
             const row = results[i];
-            const rowKey = row && typeof row.songKey === "string" && row.songKey
-                ? `song:${row.songKey}`
-                : (row && Number.isFinite(row.sourceIndex) ? `src:${row.sourceIndex}` : `idx:${i}`);
-            let entry = renderUi.cardEntriesBySourceKey.get(rowKey);
+            const rowKey = row.songKey;
+            let entry = renderUi.cardEntriesBySongKey.get(rowKey);
             if (!entry) entry = createCardElements();
 
             entry.card.dataset.songKey = row.songKey;
@@ -501,11 +496,11 @@ export function createRenderController({
             entry.dragHandle.draggable = isBookmarkActive;
 
             updateCardFromRow(entry, results[i], i);
-            nextEntriesBySourceKey.set(rowKey, entry);
+            nextEntriesBySongKey.set(rowKey, entry);
             entries.push(entry);
             nodes.push(entry.card);
         }
-        renderUi.cardEntriesBySourceKey = nextEntriesBySourceKey;
+        renderUi.cardEntriesBySongKey = nextEntriesBySongKey;
         return { nodes, entries };
     }
 

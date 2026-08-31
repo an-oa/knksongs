@@ -83,10 +83,9 @@ function createSongsJson(
             dateKey: 20260311,
             archiveId,
             archiveOrder: 1,
-            sourceIndex: 0,
             videoId: "abc123def45",
             songKey,
-            bookmarkSongKey: `abc123def45::${songKey}`,
+            bookmarkSongKey: "abc123def45::1",
             legacySongKey: `${songKey}::https://www.youtube.com/watch?v=abc123def45&t=10s`,
             format: "配信",
             streamRole: "",
@@ -108,27 +107,17 @@ function createSongsJson(
 }
 
 /**
- * Version 1末期の互換確認用JSON文字列を返す。
+ * 直前schemaのキャッシュ確認用JSON文字列を返す。
  * @param {string} songKey 曲識別子
  * @param {string} contentHash 内容hash
  * @returns {string}
  */
-function createFinalVersion1SongsJson(songKey, contentHash) {
+function createPreviousSchemaSongsJson(songKey, contentHash) {
     const payload = JSON.parse(createSongsJson(songKey, contentHash));
-    payload.schemaVersion = 1;
-    delete payload.generatedAt;
-    return JSON.stringify(payload);
-}
-
-/**
- * contentHashとstreamRoleがなかった初期Version 1の互換確認用JSON文字列を返す。
- * @param {string} songKey 曲識別子
- * @returns {string}
- */
-function createInitialVersion1SongsJson(songKey) {
-    const payload = JSON.parse(createFinalVersion1SongsJson(songKey, "sha256:unused"));
-    delete payload.contentHash;
-    for (const song of payload.songs) delete song.streamRole;
+    payload.schemaVersion -= 1;
+    payload.songs.forEach((song, index) => {
+        song.sourceIndex = index;
+    });
     return JSON.stringify(payload);
 }
 
@@ -665,18 +654,21 @@ test("songs data source: equal timestamps with mismatched hashes are rejected", 
     }
 });
 
-test("songs data source: initial Version 1 cache remains an undated fallback", async () => {
+test("songs data source: older schema cache is removed and handled as a cache miss", async () => {
     const previousFetch = globalThis.fetch;
+    const previousConsoleWarn = console.warn;
     try {
-        const legacyJson = createInitialVersion1SongsJson("legacy-archive::1");
+        const legacyJson = createPreviousSchemaSongsJson("legacy-archive::1", "sha256:legacy");
+        const freshJson = createSongsJson("fresh-archive::1", "sha256:fresh");
         const songsJsonCache = createFakeTextCacheStore(legacyJson);
         const fetchUrls = [];
+        console.warn = () => {};
         globalThis.fetch = async (url, options) => {
             fetchUrls.push([url, options]);
             if (url === "data/songs-meta.json") {
                 return createResponse(createSongsMetaJson("sha256:fresh"));
             }
-            return createFailedResponse();
+            return createResponse(freshJson);
         };
         const results = [];
         const dataSource = createSongsDataSource({
@@ -689,23 +681,23 @@ test("songs data source: initial Version 1 cache remains an undated fallback", a
         assert.equal(await collectInitialAndRefreshSnapshots(dataSource, results), true);
 
         assertFetchCalls(fetchUrls, [
-            ["data/songs-meta.json", { cache: "no-cache", priority: "low" }],
-            ["data/songs.json", { cache: "no-cache", priority: "low" }]
+            ["data/songs-meta.json", { cache: "no-cache" }],
+            ["data/songs.json", { cache: "no-cache" }]
         ]);
-        assert.equal(songsJsonCache.peek(), legacyJson);
-        assert.equal(songsJsonCache.getRemoveCount(), 0);
-        assert.equal(results[0].source, "cache");
-        assert.equal(results[0].songs[0].songKey, "legacy-archive::1");
-        assert.equal(results[0].songs[0].streamRole, "");
+        assert.equal(songsJsonCache.peek(), freshJson);
+        assert.equal(songsJsonCache.getRemoveCount(), 1);
+        assert.equal(results[0].source, "network");
+        assert.equal(results[0].songs[0].songKey, "fresh-archive::1");
     } finally {
         globalThis.fetch = previousFetch;
+        console.warn = previousConsoleWarn;
     }
 });
 
-test("songs data source: initial Version 1 network json is not cached and falls back to csv", async () => {
+test("songs data source: older schema network json is not cached and falls back to csv", async () => {
     const previousFetch = globalThis.fetch;
     try {
-        const legacyJson = createInitialVersion1SongsJson("legacy-network::1");
+        const legacyJson = createPreviousSchemaSongsJson("legacy-network::1", "sha256:legacy");
         const songsJsonCache = createFakeTextCacheStore();
         globalThis.fetch = async (url) => {
             if (url === "data/songs.json") return createResponse(legacyJson);
@@ -758,7 +750,7 @@ test("songs data source: legacy localStorage json is migrated into the json cach
     const previousFetch = globalThis.fetch;
     try {
         const storage = createFakeLocalStorage();
-        const cachedJson = createFinalVersion1SongsJson("legacy-archive::1", "sha256:legacy");
+        const cachedJson = createSongsJson("legacy-archive::1", "sha256:legacy");
         const primarySongsJsonCache = createFakeTextCacheStore();
         const songsJsonCache = createLegacyLocalStorageSongsJsonCacheAdapter({
             cache: primarySongsJsonCache,

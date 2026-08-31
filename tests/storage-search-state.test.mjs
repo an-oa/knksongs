@@ -53,7 +53,7 @@ function createStorageControllerForTest(input) {
 /**
  * 選択中ブックマークの検索状態復元を検証する最小構成を作る。
  * @param {Record<string, object>} bookmarks
- * @param {{ activeBookmark?: string | null, dataReady?: boolean, pendingValues?: object | null }} [options]
+ * @param {{ activeBookmark?: string | null, dataReady?: boolean, pendingValues?: object | null, bookmarkStorageVersion?: number }} [options]
  * @returns {{ controller: object, data: object, getRenderCount: () => number, getScheduleCount: () => number, getCancelCount: () => number }}
  */
 function createActiveBookmarkRestoreHarness(bookmarks, options = {}) {
@@ -87,7 +87,8 @@ function createActiveBookmarkRestoreHarness(bookmarks, options = {}) {
         constants: {
             DEFAULT_FORMATS: ["配信"],
             SEARCH_STATE_KEY: "searchStateTest",
-            BOOKMARK_STORAGE_KEY: "bookmarksTest"
+            BOOKMARK_STORAGE_KEY: "bookmarksTest",
+            BOOKMARK_STORAGE_VERSION: options.bookmarkStorageVersion
         },
         callbacks: {
             getDateSelectValue: () => "",
@@ -342,6 +343,10 @@ test("restorePersistedState: restores an existing active bookmark and draws once
         const harness = createActiveBookmarkRestoreHarness({
             "bookmark-1": { name: "Favorites", songs: [], createdAt: 1 }
         });
+        globalThis.localStorage.setItem(
+            "bookmarksTest",
+            JSON.stringify(harness.data.bookmarks)
+        );
         globalThis.localStorage.setItem("searchStateTest", JSON.stringify({
             version: 6,
             formats: ["配信"],
@@ -380,6 +385,60 @@ test("restorePersistedState: clears and normalizes an active bookmark id that is
         assert.equal(normalizedSearchState.query, "群青");
         assert.equal(normalizedSearchState.dateFrom, "2024-02");
         assert.equal(normalizedSearchState.dateTo, "2024-03");
+    } finally {
+        globalThis.localStorage = prevLocalStorage;
+    }
+});
+
+test("restorePersistedState: preserves an active bookmark id from an unsupported future payload", () => {
+    const prevLocalStorage = globalThis.localStorage;
+    globalThis.localStorage = createFakeLocalStorage();
+    try {
+        const harness = createActiveBookmarkRestoreHarness({}, {
+            bookmarkStorageVersion: 3
+        });
+        const futureBookmarksText = JSON.stringify({
+            version: 4,
+            futureMetadata: { mode: "v4" },
+            bookmarks: {
+                future: {
+                    name: "Future payload",
+                    songs: ["future-song"],
+                    createdAt: 1,
+                    futureField: true
+                }
+            }
+        });
+        const searchStateText = JSON.stringify({
+            version: 6,
+            query: "群青",
+            formats: ["配信"],
+            activeBookmarkId: "future"
+        });
+        globalThis.localStorage.setItem("bookmarksTest", futureBookmarksText);
+        globalThis.localStorage.setItem("searchStateTest", searchStateText);
+
+        harness.controller.restorePersistedState();
+
+        assert.deepEqual(harness.data.bookmarks, {});
+        assert.equal(harness.data.activeBookmark, null);
+        assert.equal(globalThis.localStorage.getItem("bookmarksTest"), futureBookmarksText);
+        assert.equal(globalThis.localStorage.getItem("searchStateTest"), searchStateText);
+
+        harness.controller.saveSearchState();
+
+        assert.equal(
+            JSON.parse(globalThis.localStorage.getItem("searchStateTest")).activeBookmarkId,
+            "future"
+        );
+
+        const clearResult = harness.controller.clearActiveBookmark();
+
+        assert.deepEqual(clearResult, { ok: true, changed: true });
+        assert.equal(
+            JSON.parse(globalThis.localStorage.getItem("searchStateTest")).activeBookmarkId,
+            null
+        );
     } finally {
         globalThis.localStorage = prevLocalStorage;
     }

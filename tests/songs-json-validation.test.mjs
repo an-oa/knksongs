@@ -101,7 +101,7 @@ test("songs json artifacts: reject mismatched generated timestamps", () => {
     );
 });
 
-test("songs json artifacts: reject legacy schemas even though runtime cache parsing supports them", () => {
+test("songs json artifacts: reject older schemas", () => {
     const songs = [createSongFixture()];
     const contentHash = createSongsContentHash(songs);
     const songsJson = JSON.stringify({ schemaVersion: 1, contentHash, songs });
@@ -109,6 +109,6 @@ test("songs json artifacts: reject legacy schemas even though runtime cache pars
 
     assert.throws(
         () => validateSongsJsonArtifacts(songsJson, metaJson),
-        /must use the current schemaVersion/
+        /unsupported songs json schema/
     );
 });

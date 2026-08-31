@@ -15,7 +15,6 @@ function createSong(songKey) {
         dateKey: 20260311,
         archiveId,
         archiveOrder: 1,
-        sourceIndex: 0,
         videoId: "abc123",
         songKey,
         bookmarkSongKey: `abc123::${songKey}`,

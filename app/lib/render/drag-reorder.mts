@@ -20,10 +20,23 @@ type BookmarkDragEvent = {
     preventDefault: () => void;
 };
 
+export type BookmarkDragReorderSaveFailure = {
+    ok: false;
+    reason: string;
+    version?: number;
+};
+
+export type BookmarkDragReorderSaveResult =
+    | { ok: true }
+    | BookmarkDragReorderSaveFailure;
+
 type BookmarkDragReorderControllerInput = {
     data: BookmarkDragReorderDataState;
-    getBookmarkSongRef: (row: Song) => string | number | null | undefined;
-    saveBookmarks: () => void;
+    getBookmarkSongRef: (row: Song) => string;
+    saveBookmarks: (
+        bookmarks: Record<string, BookmarkRecord>
+    ) => BookmarkDragReorderSaveResult;
+    onSaveFailure: (result: BookmarkDragReorderSaveFailure) => void;
     updateDisplay: () => void;
 };
 
@@ -40,24 +53,31 @@ function getSongCardFromTarget(target: unknown): HTMLElement | null {
 
 /**
  * ブックマーク表示中のカードドラッグ並べ替えを扱うコントローラーを作成する。
- * @param {{ data: *, getBookmarkSongRef: Function, saveBookmarks: Function, updateDisplay: Function }} input
  */
 export function createBookmarkDragReorderController(input: BookmarkDragReorderControllerInput) {
-    const { data, getBookmarkSongRef, saveBookmarks, updateDisplay } = input;
+    const {
+        data,
+        getBookmarkSongRef,
+        saveBookmarks,
+        onSaveFailure,
+        updateDisplay
+    } = input;
 
     /**
-     * 現在の表示順をアクティブなブックマークの保存順へ反映する。
-     * @returns {boolean}
+     * 指定した結果順を反映したブックマーク曲順の候補を作る。
+     * @param bookmark 現在のブックマーク
+     * @param orderedResults 並べ替え後の検索結果
      */
-    function persistActiveBookmarkOrder(): boolean {
-        if (!data.activeBookmark) return false;
-        const bookmark = data.bookmarks[data.activeBookmark];
-        if (!bookmark || !Array.isArray(bookmark.songs) || bookmark.songs.length === 0) return false;
+    function buildReorderedBookmarkSongs(
+        bookmark: BookmarkRecord,
+        orderedResults: Song[]
+    ): string[] | null {
+        if (!Array.isArray(bookmark.songs) || bookmark.songs.length === 0) return null;
 
-        const orderedKeys = data.currentResults
+        const orderedKeys = orderedResults
             .map((row) => getBookmarkSongRef(row))
             .filter(Boolean);
-        if (orderedKeys.length === 0) return false;
+        if (orderedKeys.length === 0) return null;
 
         const reorderSet = new Set(orderedKeys);
         const queue = orderedKeys.slice();
@@ -67,9 +87,7 @@ export function createBookmarkDragReorderController(input: BookmarkDragReorderCo
         });
 
         const changed = nextSongs.some((songKey, idx) => songKey !== bookmark.songs[idx]);
-        if (!changed) return false;
-        bookmark.songs = nextSongs;
-        return true;
+        return changed ? nextSongs : null;
     }
 
     /**
@@ -135,7 +153,8 @@ export function createBookmarkDragReorderController(input: BookmarkDragReorderCo
      * @param {BookmarkDragEvent} event
      */
     function onDrop(event: BookmarkDragEvent): void {
-        if (!data.activeBookmark) return;
+        const bookmarkId = data.activeBookmark;
+        if (!bookmarkId) return;
         event.preventDefault();
         const draggedKey = event.dataTransfer.getData("text/plain");
         const targetCard = getSongCardFromTarget(event.target);
@@ -150,11 +169,27 @@ export function createBookmarkDragReorderController(input: BookmarkDragReorderCo
 
         if (fromIndex === -1 || toIndex === -1) return;
 
-        const [movedItem] = data.currentResults.splice(fromIndex, 1);
-        data.currentResults.splice(toIndex, 0, movedItem);
+        const bookmark = data.bookmarks[bookmarkId];
+        if (!bookmark) return;
 
-        persistActiveBookmarkOrder();
-        saveBookmarks();
+        const nextResults = data.currentResults.slice();
+        const [movedItem] = nextResults.splice(fromIndex, 1);
+        nextResults.splice(toIndex, 0, movedItem);
+        const nextSongs = buildReorderedBookmarkSongs(bookmark, nextResults);
+        if (!nextSongs) return;
+
+        const nextBookmarks = {
+            ...data.bookmarks,
+            [bookmarkId]: { ...bookmark, songs: nextSongs }
+        };
+        const saveResult = saveBookmarks(nextBookmarks);
+        if (saveResult.ok === false) {
+            onSaveFailure(saveResult);
+            return;
+        }
+
+        data.currentResults.splice(0, data.currentResults.length, ...nextResults);
+        data.bookmarks = nextBookmarks;
         updateDisplay();
     }
 
@@ -163,7 +198,6 @@ export function createBookmarkDragReorderController(input: BookmarkDragReorderCo
         onDragEnd,
         onDragOver,
         onDragLeave,
-        onDrop,
-        persistActiveBookmarkOrder
+        onDrop
     };
 }

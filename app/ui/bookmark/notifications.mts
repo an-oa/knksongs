@@ -115,10 +115,10 @@ export function createBookmarkNotificationController({
 
     /**
      * ブックマーク保存用の曲参照から通知に表示する曲名を返す。
-     * @param {string | number | null | undefined} songRef
+     * @param {string | null | undefined} songRef
      * @returns {string}
      */
-    function getSongTitleForNotification(songRef: string | number | null | undefined): string {
+    function getSongTitleForNotification(songRef: string | null | undefined): string {
         const song = resolveSongRef(lookupUi, data.allSongsRaw, songRef);
         const title = song && typeof song.title === "string" ? song.title.trim() : "";
         return title || "曲名不明";
@@ -143,12 +143,12 @@ export function createBookmarkNotificationController({
     /**
      * カードをブックマークへ保存した成功をユーザーへ通知する。
      * @param {string} bookmarkName
-     * @param {string | number | null | undefined} songRef
+     * @param {string | null | undefined} songRef
      * @param {{ createdBookmark?: boolean }} [options]
      */
     function notifySongSavedToBookmark(
         bookmarkName: string,
-        songRef: string | number | null | undefined,
+        songRef: string | null | undefined,
         options?: { createdBookmark?: boolean }
     ): void {
         const songTitle = getSongTitleForNotification(songRef);
@@ -162,11 +162,11 @@ export function createBookmarkNotificationController({
     /**
      * カードをブックマークから削除した成功をユーザーへ通知する。
      * @param {string} bookmarkName
-     * @param {string | number | null | undefined} songRef
+     * @param {string | null | undefined} songRef
      */
     function notifySongRemovedFromBookmark(
         bookmarkName: string,
-        songRef: string | number | null | undefined
+        songRef: string | null | undefined
     ): void {
         const songTitle = getSongTitleForNotification(songRef);
         showBookmarkNotification(`ブックマーク「${bookmarkName}」から「${songTitle}」を削除しました。`);
