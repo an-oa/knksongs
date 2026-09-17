@@ -30,7 +30,7 @@ test("pages artifact: records deployment SHA without rewriting assets", () => {
         }),
         {
             outputDir: "_site",
-            siteDir: ".",
+            siteDir: "_build",
             deploymentSha: "c2abca650af9fca8ff7a2ab28627ea3c3620d9b9"
         }
     );

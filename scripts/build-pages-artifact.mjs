@@ -10,7 +10,7 @@ import {
 } from "./lib/site-assets.mjs";
 
 const DEFAULT_OUTPUT_DIR = "_site";
-const DEFAULT_SITE_DIR = ".";
+const DEFAULT_SITE_DIR = "_build";
 const DEPLOYMENT_MARKER_FILE = "deployment.json";
 
 /**

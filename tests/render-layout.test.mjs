@@ -350,7 +350,7 @@ test("render: card height changes only shift cards in the same column", () => {
     }
 });
 
-test("render: refreshLayout shrinks container height after card height decreases", () => {
+test("render: refreshLayout shrinks multi-column container height after card height decreases", () => {
     const cleanup = installFakeDom();
     try {
         const row = makeRenderRow({ songKey: "a::1"});
@@ -372,6 +372,7 @@ test("render: refreshLayout shrinks container height after card height decreases
             callbacks: createRenderCallbacks()
         });
 
+        ui.el.resultList._clientWidth = 700;
         controller.updateDisplay();
         const entry = ui.render.cardEntriesBySongKey.get(row.songKey);
         entry.card._scrollHeight = 400;

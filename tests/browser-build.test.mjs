@@ -7,7 +7,8 @@ import { buildPagesArtifact } from "../scripts/build-pages-artifact.mjs";
 
 const htmlTemplate = '<head>\n<link rel="stylesheet" href="styles.css">\n  <script type="module" src="app/startup.mjs"></script>\n</head>';
 
-test("browser build: owns content-hashed URLs and publishes only browser artifacts", async (t) => {
+/** 独立した emit fixture と再ビルド用 helper を作り、テスト終了時に片付ける。 */
+async function createBrowserFixture(t) {
     const root = await mkdtemp(join(process.cwd(), "_build/browser-test-"));
     const outputDir = `_site/${relative(join(process.cwd(), "_build"), root)}`;
     t.after(async () => {
@@ -36,6 +37,11 @@ test("browser build: owns content-hashed URLs and publishes only browser artifac
         const html = await readFile(join(root, "index.html"), "utf8");
         return { files, sources, html };
     }
+    return { root, outputDir, bootstrap, compile };
+}
+
+test("browser build: owns content-hashed URLs and publishes only browser artifacts", async (t) => {
+    const { root, outputDir, bootstrap, compile } = await createBrowserFixture(t);
     const first = await compile();
     assert.equal(first.files.length, 3, "startup, UI, and one shared module");
     assert.ok(first.files.every((file) => /-[A-Z0-9]+\.mjs$/.test(file)));
@@ -67,4 +73,36 @@ test("browser build: owns content-hashed URLs and publishes only browser artifac
     const versioned = await compile({ cacheBuster: "release/v2" });
     assert.match(versioned.html, /styles\.css\?v=release%2Fv2/);
     assert.notDeepEqual(versioned.files, cssChanged.files, "explicit versions change JS hashes at build time");
+});
+
+test("browser build: preloads startup UI and static dependencies but excludes lazy chunks", async (t) => {
+    const { root, compile } = await createBrowserFixture(t);
+    await Promise.all([
+        writeFile(join(root, "app/startup.mjs"), 'import "./data.mjs"; void import("./bootstrap.mjs"); globalThis.loadHelp = () => import("./help.mjs");'),
+        writeFile(join(root, "app/bootstrap.mjs"), 'import { snapshot } from "./data.mjs"; import { shared } from "./shared.mjs"; snapshot.then(() => console.log(shared)); globalThis.loadSettings = () => import("./settings.mjs");'),
+        writeFile(join(root, "app/shared.mjs"), 'export const shared = Math.random();'),
+        writeFile(join(root, "app/lazy-shared.mjs"), 'export const lazy = Math.random();'),
+        writeFile(join(root, "app/settings.mjs"), 'import { shared } from "./shared.mjs"; import { lazy } from "./lazy-shared.mjs"; console.log("settings", shared, lazy);'),
+        writeFile(join(root, "app/help.mjs"), 'import { lazy } from "./lazy-shared.mjs"; console.log("help", lazy);')
+    ]);
+    const { html, files } = await compile();
+    const preloads = [...html.matchAll(/rel="modulepreload" href="([^"]+)"/g)].map((match) => match[1]);
+    const ui = files.find((file) => file.startsWith("bootstrap-"));
+    assert.ok(ui);
+    assert.ok(preloads.includes(`browser/${ui}`));
+    const startup = files.find((file) => file.startsWith("startup-"));
+    assert.ok(startup);
+    assert.ok(!preloads.includes(`browser/${startup}`));
+    const staticDependencies = new Set();
+    for (const file of [startup, ui]) {
+        const source = await readFile(join(root, "browser", file), "utf8");
+        for (const match of source.matchAll(/from"\.\/([^"]+)"/g)) {
+            staticDependencies.add(`browser/${match[1]}`);
+        }
+    }
+    assert.ok(staticDependencies.size >= 2, "covers startup data and UI-only shared dependencies");
+    assert.deepEqual(preloads, [`browser/${ui}`, ...staticDependencies].sort());
+    assert.ok(files.some((file) => file.startsWith("settings-")));
+    assert.ok(files.some((file) => file.startsWith("help-")));
+    assert.ok(files.length > preloads.length + 3, "lazy-only shared dependency is also emitted");
 });

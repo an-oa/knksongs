@@ -5,6 +5,7 @@ type SearchCoordinatorInput = {
     debounceMs: number;
     searchController: {
         search: () => void;
+        refreshRecommendedDisplay: () => boolean;
     };
 };
 
@@ -29,7 +30,14 @@ export function createSearchCoordinator({
      * 現在の曲データで検索を実行する。
      */
     function runSearch(): void {
+        cancelScheduledSearch();
         searchController.search();
+    }
+
+    /** 検索待機中は確定済み結果を保持し、それ以外はおすすめ表示の拡張を委譲する。 */
+    function refreshRecommendedDisplay(): boolean {
+        if (search.debounceId) return false;
+        return searchController.refreshRecommendedDisplay();
     }
 
     /**
@@ -51,6 +59,7 @@ export function createSearchCoordinator({
     return {
         cancelScheduledSearch,
         scheduleSearch,
+        refreshRecommendedDisplay,
         search: runSearch
     };
 }

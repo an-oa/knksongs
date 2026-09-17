@@ -9,8 +9,11 @@ import {
 import { resolveSongRefs } from "../lib/song-lookup.mjs";
 import { validateSearchQueryInput } from "../ui/search-query-validation.mjs";
 
-type SearchOutcomeApplyOptions = {
-    scrollToTop?: boolean;
+type SearchOutcome = {
+    mode: "recommended" | "search" | "bookmark";
+    results: Song[];
+    displayLimit: number;
+    label: string;
 };
 
 /**
@@ -35,6 +38,8 @@ export function createSearchController({
     const updateDisplay = callbacks.updateDisplay;
     const scrollResultsPaneToTop = callbacks.scrollResultsPaneToTop;
     const getRecommendedDisplayCount = callbacks.getRecommendedDisplayCount || (() => RANDOM_DISPLAY_COUNT);
+    // 確定時の結果とモードを保持する。追加表示後の上限は data.displayLimit を参照する。
+    let committedOutcome: SearchOutcome | null = null;
 
     /**
      * 検索入力の収集から結果反映までの処理を行う。
@@ -43,7 +48,8 @@ export function createSearchController({
         const searchInput = collectSearchInput();
         validateSearchQueryInput(ui.el.searchBox, ui.el.searchBoxError, searchInput.parsedQuery);
         const outcome = resolveSearchResults(searchInput.searchState, searchInput.parsedQuery);
-        applySearchOutcome(searchInput, outcome);
+        applySearchOutcome(outcome);
+        scrollResultsPaneToTop();
     }
 
     /**
@@ -54,27 +60,20 @@ export function createSearchController({
         const searchState = getSearchState();
         return {
             searchState,
-            parsedQuery: parseSearchQuery(searchState.queryRaw),
-            resultCountEl: ui.el.resultCount
+            parsedQuery: parseSearchQuery(searchState.queryRaw)
         };
     }
 
     /**
      * 検索結果を state と UI へ反映する。
-     * @param {SearchInput} searchInput
      * @param {SearchOutcome} outcome
-     * @param {SearchOutcomeApplyOptions} [options]
      */
-    function applySearchOutcome(
-        searchInput: SearchInput,
-        outcome: SearchOutcome,
-        options: SearchOutcomeApplyOptions = {}
-    ): void {
+    function applySearchOutcome(outcome: SearchOutcome): void {
         data.currentResults = outcome.results;
         data.displayLimit = outcome.displayLimit;
-        if (searchInput.resultCountEl) searchInput.resultCountEl.innerText = outcome.label;
+        committedOutcome = outcome;
+        if (ui.el.resultCount) ui.el.resultCount.innerText = outcome.label;
         updateDisplay();
-        if (options.scrollToTop !== false) scrollResultsPaneToTop();
     }
 
     /**
@@ -126,19 +125,14 @@ export function createSearchController({
                 );
                 return buildIncrementalSearchOutcome(
                     results,
-                    `ブックマーク: ${bookmark.name} (${results.length} 件)`
+                    `ブックマーク: ${bookmark.name} (${results.length} 件)`,
+                    "bookmark"
                 );
             }
         }
 
         if (isRecommendedMode(searchState, parsedQuery)) {
-            const recommendedDisplayCount = getRecommendedResultCount();
-            const results = pickRecommended(recommendedDisplayCount);
-            return {
-                results,
-                displayLimit: Math.min(results.length, recommendedDisplayCount),
-                label: "おすすめを表示中"
-            };
+            return buildRecommendedOutcome();
         }
 
         const results = filterSongsByCriteria(
@@ -154,14 +148,28 @@ export function createSearchController({
      * 段階表示用の件数上限を含む検索結果オブジェクトを作る。
      * @param {Song[]} results
      * @param {string} label
+     * @param mode 確定する検索モード
      * @returns {SearchOutcome}
      */
-    function buildIncrementalSearchOutcome(results: Song[], label: string): SearchOutcome {
+    function buildIncrementalSearchOutcome(
+        results: Song[],
+        label: string,
+        mode: "search" | "bookmark" = "search"
+    ): SearchOutcome {
         return {
+            mode,
             results,
-            displayLimit: Math.min(results.length, RESULT_DISPLAY_BATCH_SIZE),
+            displayLimit: Math.min(results.length, getInitialDisplayLimit(RESULT_DISPLAY_BATCH_SIZE)),
             label
         };
+    }
+
+    /** 初期描画件数を画面サイズに合わせ、未指定・不正値の場合は従来の件数を使う。 */
+    function getInitialDisplayLimit(defaultCount: number): number {
+        const count = callbacks.getInitialDisplayCount?.(defaultCount);
+        return Number.isFinite(count) && count >= 1
+            ? Math.min(defaultCount, Math.floor(count))
+            : defaultCount;
     }
 
     /**
@@ -172,6 +180,21 @@ export function createSearchController({
         const displayCount = getRecommendedDisplayCount();
         const count = Number.isFinite(displayCount) ? Math.floor(displayCount) : RANDOM_DISPLAY_COUNT;
         return Math.max(RANDOM_DISPLAY_COUNT, count);
+    }
+
+    /** 選曲件数と描画上限を個別に決め、リサイズ時は既存の選曲・追加表示を保持する。 */
+    function buildRecommendedOutcome(retainedResultCount = 0, retainedDisplayLimit = 0): SearchOutcome {
+        const recommendedCount = getRecommendedResultCount();
+        const results = pickRecommended(Math.max(recommendedCount, retainedResultCount));
+        return {
+            mode: "recommended",
+            results,
+            displayLimit: Math.min(results.length, Math.max(
+                retainedDisplayLimit,
+                getInitialDisplayLimit(recommendedCount)
+            )),
+            label: "おすすめを表示中"
+        };
     }
 
     /**
@@ -190,20 +213,18 @@ export function createSearchController({
     }
 
     /**
-     * おすすめ表示中だけ、現在の画面サイズに合わせて表示件数を再適用する。
+     * 確定済みのおすすめ結果で件数が増える場合だけ表示を更新する。
+     * 検索待機中の抑制は呼び出し元の検索 coordinator が担う。
      * リサイズ追随用のため、検索結果ペインのスクロール位置は維持する。
      * @returns {boolean}
      */
     function refreshRecommendedDisplay(): boolean {
-        const searchInput = collectSearchInput();
-        if (!isRecommendedMode(searchInput.searchState, searchInput.parsedQuery)) return false;
-        applySearchOutcome(
-            searchInput,
-            resolveSearchResults(searchInput.searchState, searchInput.parsedQuery),
-            {
-                scrollToTop: false
-            }
-        );
+        if (committedOutcome?.mode !== "recommended") return false;
+        const outcome = buildRecommendedOutcome(data.currentResults.length, data.displayLimit);
+        if (outcome.results.length === data.currentResults.length && outcome.displayLimit === data.displayLimit) {
+            return false;
+        }
+        applySearchOutcome(outcome);
         return true;
     }
 

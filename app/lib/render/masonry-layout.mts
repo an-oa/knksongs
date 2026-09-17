@@ -19,6 +19,12 @@ type MasonryVisibleCardCountOptions = MasonryLayoutOptions & {
     viewportHeight?: number;
 };
 
+type InitialResultDisplayOptions = {
+    defaultCount: number;
+    showThumbnails: boolean;
+    viewportHeight?: number;
+};
+
 type MasonryMetrics = {
     gapPx: number;
     minCardWidthPx: number;
@@ -176,7 +182,26 @@ export function estimateMasonryVisibleCardCount(
 }
 
 /**
- * DOM順を列固定で保ちつつカードを絶対配置する。
+ * 1列の初期描画を約2画面分（最低12件）に絞り、残りは既存の末尾監視で追加する。
+ * 複数列や寸法未確定時は呼び出し元の件数を保つ。おすすめの抽選件数は変更しない。
+ */
+export function estimateInitialResultDisplayCount(
+    container: unknown,
+    { defaultCount, showThumbnails, viewportHeight = getViewportHeight() }: InitialResultDisplayOptions
+): number {
+    if (!isHtmlElement(container)) return defaultCount;
+    const geometry = resolveMasonryGeometry(container as HTMLElement);
+    if (!geometry || geometry.columnCount !== 1 || !Number.isFinite(viewportHeight) || viewportHeight <= 0) {
+        return defaultCount;
+    }
+    const thumbnailHeight = showThumbnails ? geometry.columnWidth * (9 / 16) : 0;
+    const cardHeight = thumbnailHeight + geometry.cardContentHeightPx + geometry.gapPx;
+    const targetHeight = Math.max(0, viewportHeight * 2 - Math.max(0, geometry.containerRect.top));
+    return Math.min(defaultCount, Math.max(12, Math.ceil(targetHeight / cardHeight)));
+}
+
+/**
+ * 1列は通常フロー、複数列はDOM順を列固定で保つ絶対配置でカードを並べる。
  * @param {unknown} container
  * @param {{ gapPx?: number, minCardWidthPx?: number }} [options]
  */
@@ -193,18 +218,32 @@ export function applyMasonryLayout(container: unknown, options: MasonryLayoutOpt
     }
     const geometry = resolveMasonryGeometry(masonryContainer, options);
     if (!geometry) return;
+    masonryContainer.dataset.layoutColumns = String(geometry.columnCount);
+    if (geometry.columnCount === 1) {
+        // 1列ではブラウザの通常配置に任せ、カードの高さを測定しない。
+        masonryContainer.style.height = "";
+        for (const node of cards) {
+            node.style.width = "";
+            node.style.left = "";
+            node.style.top = "";
+            node.style.transform = "";
+            node.dataset.layoutColumn = "0";
+        }
+        return;
+    }
     const columnHeights = Array.from({ length: geometry.columnCount }, () => 0);
     for (const node of cards) {
         node.style.width = `${geometry.columnWidth}px`;
-        node.style.left = "0px";
-        node.style.top = "0px";
-        node.style.transform = "translate(0px, 0px)";
     }
+    // 幅の反映後に全カードの高さを一括で読み、位置の書き込みで再計算を挟まない。
+    const contentHeights = cards.map((node) => {
+        const scrollHeight = node.scrollHeight;
+        return Number.isFinite(scrollHeight) && scrollHeight > 0
+            ? scrollHeight
+            : node.getBoundingClientRect().height;
+    });
     for (let index = 0; index < cards.length; index++) {
         const node = cards[index];
-        const contentHeight = Number.isFinite(node.scrollHeight) && node.scrollHeight > 0
-            ? node.scrollHeight
-            : node.getBoundingClientRect().height;
         const columnIndex = index % geometry.columnCount;
         const top = columnHeights[columnIndex];
         const left = (geometry.columnWidth + geometry.gapPx) * columnIndex;
@@ -212,7 +251,7 @@ export function applyMasonryLayout(container: unknown, options: MasonryLayoutOpt
         node.style.top = `${top}px`;
         node.style.transform = "none";
         node.dataset.layoutColumn = String(columnIndex);
-        columnHeights[columnIndex] = top + contentHeight + geometry.gapPx;
+        columnHeights[columnIndex] = top + contentHeights[index] + geometry.gapPx;
     }
     const tallest = Math.max(...columnHeights);
     masonryContainer.style.height = `${Math.max(0, tallest - geometry.gapPx)}px`;
