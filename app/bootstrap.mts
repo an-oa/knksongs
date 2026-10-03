@@ -62,6 +62,7 @@ type RenderCallbacksInput = {
 };
 
 type StorageCallbacksInput = {
+    getRenderController: () => ReturnType<typeof createRenderController>;
     dateFilterController: ReturnType<typeof createDateFilterController>;
     searchCoordinator: ReturnType<typeof createSearchCoordinator>;
     getBookmarkUiController: () => ReturnType<typeof createBookmarkUiController> | null;
@@ -78,7 +79,6 @@ type SidebarCallbacksInput = {
     dateFilterController: ReturnType<typeof createDateFilterController>;
     markFilterTouched: ReturnType<typeof createSearchUiActions>["markFilterTouched"];
     markQueryTouched: ReturnType<typeof createSearchUiActions>["markQueryTouched"];
-    resetDateSelectGroup: ReturnType<typeof createSearchUiActions>["resetDateSelectGroup"];
     clearSearch: ReturnType<typeof createSearchUiActions>["clearSearch"];
     onOpenChange: (open: boolean) => void;
 };
@@ -133,7 +133,7 @@ function createRenderCallbacks({
         openBookmarkModal: (songKey) => getSidebarController().openBookmarkModal(songKey),
         setupScrollObserver: () => getYoutubeController().setupScrollObserver(),
         removeSongFromActiveBookmark: (songKey) => getSidebarController().removeSongFromActiveBookmark(songKey),
-        saveBookmarks: (bookmarks) => getStorageController().saveBookmarks(bookmarks),
+        moveSongInActiveBookmark: (fromSongKey, toSongKey) => getStorageController().moveSongInActiveBookmark(fromSongKey, toSongKey),
         notifyBookmarkSaveError: (result) => {
             const bookmarkUiController = getBookmarkUiController();
             if (bookmarkUiController) bookmarkUiController.notifyBookmarkSaveError(result);
@@ -145,6 +145,7 @@ function createRenderCallbacks({
  * storage controller から日付・検索実行・ブックマーク UI へ委譲する callback 群を作成する。
  */
 function createStorageCallbacks({
+    getRenderController,
     dateFilterController,
     searchCoordinator,
     getBookmarkUiController
@@ -152,6 +153,7 @@ function createStorageCallbacks({
     return {
         getDateSelectValue: (kind) => dateFilterController.getDateSelectValue(kind),
         applyPendingDateValues: () => dateFilterController.applyPendingDateValues(),
+        updateDisplay: () => getRenderController().updateDisplay(),
         renderBookmarks: () => {
             const bookmarkUiController = getBookmarkUiController();
             if (bookmarkUiController) bookmarkUiController.renderBookmarks();
@@ -196,7 +198,6 @@ function createSidebarCallbacks({
     dateFilterController,
     markFilterTouched,
     markQueryTouched,
-    resetDateSelectGroup,
     clearSearch,
     onOpenChange
 }: SidebarCallbacksInput): Parameters<typeof createSidebarController>[0]["callbacks"] {
@@ -205,9 +206,8 @@ function createSidebarCallbacks({
         isIOSWebKit: () => youtubeController.isIOSWebKit(),
         markFilterTouched,
         markQueryTouched,
-        clampDateInputsIfNeeded: () => dateFilterController.clampDateInputsIfNeeded(),
-        syncDateSelectOptions: (kind) => dateFilterController.syncDateSelectOptions(kind),
-        resetDateSelectGroup,
+        commitDateInputChange: (target, options) => dateFilterController.commitDateInputChange(target, options),
+        commitDateSelectionClear: (kind) => dateFilterController.commitDateSelectionClear(kind),
         clearSearch,
         onOpenChange
     };
@@ -260,7 +260,10 @@ function createAppControllers() {
     /**
      * 日付選択肢と選択中の期間を、検索処理とデータ更新処理から共有する controller。
      */
-    const dateFilterController = createDateFilterController({ ui: appUiState });
+    const dateFilterController = createDateFilterController({
+        ui: appUiState,
+        onDateSelectionChange: () => searchUiActions.markFilterTouched({ immediate: true })
+    });
 
     /**
      * 検索 UI から条件を読み取り、表示対象の曲配列を appDataState.currentResults へ反映する controller。
@@ -394,6 +397,7 @@ function createAppControllers() {
             MAX_BOOKMARK_NAME_LENGTH
         },
         callbacks: createStorageCallbacks({
+            getRenderController: () => renderController,
             dateFilterController,
             searchCoordinator,
             getBookmarkUiController: () => bookmarkUiController
@@ -444,7 +448,6 @@ function createAppControllers() {
             dateFilterController,
             markFilterTouched: searchUiActions.markFilterTouched,
             markQueryTouched: searchUiActions.markQueryTouched,
-            resetDateSelectGroup: searchUiActions.resetDateSelectGroup,
             clearSearch: searchUiActions.clearSearch,
             onOpenChange: autoHideHeaderController.handleSidebarOpenChange
         })

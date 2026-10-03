@@ -25,9 +25,8 @@ type SidebarControllerInput = {
         isIOSWebKit: () => boolean;
         markFilterTouched: (options?: { immediate?: boolean }) => void;
         markQueryTouched: () => void;
-        clampDateInputsIfNeeded: () => void;
-        syncDateSelectOptions: (kind?: string) => void;
-        resetDateSelectGroup: (kind: string) => void;
+        commitDateInputChange: (target: HTMLSelectElement, options?: { resetDependentValues?: boolean }) => void;
+        commitDateSelectionClear: (kind: string) => void;
         clearSearch: () => void;
         onOpenChange?: (open: boolean) => void;
     };
@@ -51,9 +50,8 @@ export function createSidebarController(input: SidebarControllerInput) {
         isIOSWebKit,
         markFilterTouched,
         markQueryTouched,
-        clampDateInputsIfNeeded,
-        syncDateSelectOptions,
-        resetDateSelectGroup,
+        commitDateInputChange,
+        commitDateSelectionClear,
         clearSearch,
         onOpenChange
     } = callbacks;
@@ -277,22 +275,12 @@ export function createSidebarController(input: SidebarControllerInput) {
                 const group = element.closest(".date-select-group");
                 const isYearChange = element === dateFromYear || element === dateToYear;
                 const isMonthChange = element === dateFromMonth || element === dateToMonth;
-                if (isIOS && group && isYearChange) {
+                if (isIOS && group && (isYearChange || isMonthChange)) {
                     group.classList.add("is-updating");
-                    const month = element === dateFromYear ? ui.el.dateFromMonth : ui.el.dateToMonth;
-                    const day = element === dateFromYear ? ui.el.dateFromDay : ui.el.dateToDay;
-                    if (month) month.value = "";
-                    if (day) day.value = "";
-                } else if (isIOS && group && isMonthChange) {
-                    group.classList.add("is-updating");
-                    const day = element === dateFromMonth ? ui.el.dateFromDay : ui.el.dateToDay;
-                    if (day) day.value = "";
                 } else {
                     moveDateFocusIfNeeded(element, dateFromYear, dateFromMonth, dateToYear, dateToMonth);
                 }
-                markFilterTouched({ immediate: true });
-                clampDateInputsIfNeeded();
-                syncDateSelectOptions();
+                commitDateInputChange(element, { resetDependentValues: isIOS });
                 if (isIOS && group && (isYearChange || isMonthChange)) {
                     requestAnimationFrame(() => {
                         requestAnimationFrame(() => {
@@ -301,14 +289,12 @@ export function createSidebarController(input: SidebarControllerInput) {
                     });
                 }
             });
-            element.addEventListener("blur", clampDateInputsIfNeeded);
         });
 
         [ui.el.clearDateFromBtn, ui.el.clearDateToBtn].forEach((button, index) => {
             if (!button) return;
             button.addEventListener("click", () => {
-                resetDateSelectGroup(index === 0 ? "from" : "to");
-                markFilterTouched({ immediate: true });
+                commitDateSelectionClear(index === 0 ? "from" : "to");
             });
         });
 

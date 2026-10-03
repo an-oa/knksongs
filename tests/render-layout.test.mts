@@ -6,6 +6,7 @@ import { createSearchController } from "../app/controllers/search.mts";
 import { extractYoutubeInfo } from "../app/lib/youtube-url.mts";
 import { createSearchFiltersController } from "../app/ui/search-filters/controller.mts";
 import { createDateFilterController } from "../app/ui/date/filter.mts";
+import { createBookmarkReorderFixture } from "./support/bookmark-reorder-fixture.mts";
 import {
     createYoutubePlaybackStartResult,
     YOUTUBE_PLAYBACK_START_STATUS
@@ -92,7 +93,7 @@ function createRenderCallbacks(input: Partial<Parameters<typeof createRenderCont
         openBookmarkModal: callbacks.openBookmarkModal || (() => {}),
         setupScrollObserver: callbacks.setupScrollObserver || (() => {}),
         removeSongFromActiveBookmark: callbacks.removeSongFromActiveBookmark || (() => {}),
-        saveBookmarks: callbacks.saveBookmarks || (() => ({ ok: true })),
+        moveSongInActiveBookmark: callbacks.moveSongInActiveBookmark || (() => ({ ok: true, changed: false })),
         notifyBookmarkSaveError: callbacks.notifyBookmarkSaveError || (() => {})
     };
 }
@@ -882,15 +883,17 @@ test("render: drag handle is bookmark-only and reorder works in both directions 
             }
         });
         let saveCount = 0;
+        const storageController = createBookmarkReorderFixture({
+            data,
+            saveBookmarks: () => { saveCount += 1; return { ok: true }; },
+            updateDisplay: () => controller.updateDisplay()
+        });
         const controller = createRenderController({
             data,
             ui,
             isAllFormatsSelected: () => true,
             callbacks: createRenderCallbacks({
-                saveBookmarks: () => {
-                    saveCount += 1;
-                    return { ok: true };
-                }
+                moveSongInActiveBookmark: storageController.moveSongInActiveBookmark
             })
         });
 
@@ -970,13 +973,13 @@ test("render: drag reorder forwards reload-required save failures without changi
             }
         });
         const saveFailure = { ok: false, reason: "storage_reload_required" } as const;
-        const notifiedFailures: import("../app/controllers/bookmark-persistence.mts").BookmarkSaveFailure[] = [];
+        const notifiedFailures: import("../app/controllers/storage.mts").StorageActionFailure[] = [];
         const controller = createRenderController({
             data,
             ui,
             isAllFormatsSelected: () => true,
             callbacks: createRenderCallbacks({
-                saveBookmarks: () => saveFailure,
+                moveSongInActiveBookmark: () => saveFailure,
                 notifyBookmarkSaveError: (result) => notifiedFailures.push(result)
             })
         });
@@ -1032,12 +1035,17 @@ test("render: active playback card can move back left without jumping to the end
                 resultTailSentinel: document.createElement("div")
             }
         });
+        const storageController = createBookmarkReorderFixture({
+            data,
+            saveBookmarks: () => ({ ok: true }),
+            updateDisplay: () => controller.updateDisplay()
+        });
         const controller = createRenderController({
             data,
             ui,
             isAllFormatsSelected: () => true,
             callbacks: createRenderCallbacks({
-                saveBookmarks: () => ({ ok: true })
+                moveSongInActiveBookmark: storageController.moveSongInActiveBookmark
             })
         });
 

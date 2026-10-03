@@ -1,5 +1,7 @@
 import { test, expect } from "@playwright/test";
 import { installNetworkMocks } from "./support/network-mocks.mts";
+import { routeSongsJsonFixture } from "./support/songs-network.mts";
+import { createScrollableResultSongs } from "./support/song-fixtures.mts";
 import { clickSidebarBackdrop, expectSidebarPopoverClosed, expectSidebarPopoverOpen, getControlLabel, openSidebar, openSettingsPanel, waitForInitialLoad } from "./support/ui-helpers.mts";
 
 test.beforeEach(async ({ page }) => {
@@ -41,6 +43,58 @@ test("theme toggle syncs native color scheme", async ({ page }) => {
     await expect
         .poll(() => page.evaluate(() => localStorage.getItem("theme")))
         .toBe("light");
+});
+
+test("date month change searches and stores the corrected selection", async ({ page }) => {
+    const dates = [20240210, 20240305, 20240320];
+    const songs = createScrollableResultSongs(3).map((song, index) => ({
+        ...song,
+        dateKey: dates[index],
+        date: ["2024/02/10", "2024/03/05", "2024/03/20"][index]
+    }));
+    await page.evaluate(() => localStorage.clear());
+    await routeSongsJsonFixture(page, songs);
+    await page.reload();
+    await waitForInitialLoad(page);
+    await openSidebar(page);
+    await page.locator("#dateFromYear").selectOption("2024");
+    await page.locator("#dateFromMonth").selectOption("02");
+    await page.locator("#dateFromDay").selectOption("10");
+    await page.locator("#dateFromMonth").selectOption("03");
+
+    await expect(page.locator("#dateFromDay")).toHaveValue("");
+    await expect(page.locator("#resultList .song-card")).toHaveCount(2);
+    await expect(page.locator("#resultList")).toContainText("Scroll Song 02");
+    await expect(page.locator("#resultList")).toContainText("Scroll Song 03");
+    expect(await page.evaluate(() => {
+        const saved = localStorage.getItem("searchStateV1");
+        return saved ? JSON.parse(saved).dateFrom : null;
+    })).toBe("2024-03");
+});
+
+test("storage failures allow initial results and setting changes", async ({ page }) => {
+    const errors: string[] = [];
+    page.on("pageerror", (error) => errors.push(error.message));
+    await page.addInitScript(() => {
+        Storage.prototype.getItem = () => { throw new Error("read denied"); };
+        Storage.prototype.setItem = () => { throw new Error("write denied"); };
+        Storage.prototype.removeItem = () => { throw new Error("remove denied"); };
+    });
+    await page.reload();
+    await waitForInitialLoad(page);
+    await openSidebar(page);
+    await expect(page.locator("#dateFromYear option[value='2024']")).toHaveCount(1);
+    await page.locator("#searchBox").fill("Artist");
+    await expect(page.locator("#resultList .song-card")).toHaveCount(6);
+    await page.locator("#open-settings-panel").click();
+    await getControlLabel(page, "#theme-toggle").click();
+    const checked = await page.locator("#theme-toggle").isChecked();
+    await expect(page.locator("html")).toHaveCSS("color-scheme", checked ? "dark" : "light");
+    await getControlLabel(page, "#thumbnail-toggle").click();
+    await expect(page.locator("#thumbnail-toggle")).toBeChecked();
+    await expect(page.locator("#playback-settings-group")).toBeVisible();
+    await expect(page.locator("#resultList .thumb img")).toHaveCount(6);
+    expect(errors).toEqual([]);
 });
 
 test("sidebar native popover backdrop click closes and restores focus", async ({ page }) => {

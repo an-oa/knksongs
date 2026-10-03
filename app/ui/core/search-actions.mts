@@ -9,7 +9,6 @@ type SearchActionEventOptions = Event | SearchScheduleOptions;
 
 type SearchActionsDateFilterController = {
     resetDateSelects: () => void;
-    resetDateSelectGroup: (kind: string) => void;
     hasDateSelection: () => boolean;
 };
 
@@ -53,14 +52,6 @@ export function createSearchUiActions({
     searchCoordinator,
     storageController
 }: SearchUiActionsInput) {
-    /**
-     * 指定側の日付セレクトをクリアして候補を同期する。
-     * @param {string} kind
-     */
-    function resetDateSelectGroup(kind: string): void {
-        dateFilterController.resetDateSelectGroup(kind);
-    }
-
     /**
      * 保留中の検索デバウンスタイマーを解除する。
      */
@@ -159,14 +150,15 @@ export function createSearchUiActions({
      * 検索語・フィルタ同期の結果に応じて再検索する。
      */
     function syncSearchUI(): void {
-        const shouldSearch = syncSearchQueryIfNeeded() || syncSearchFiltersIfNeeded();
+        const queryChanged = syncSearchQueryIfNeeded();
+        const filtersChanged = syncSearchFiltersIfNeeded();
+        const shouldSearch = queryChanged || filtersChanged;
         if (shouldSearch && search.dataReady) {
             searchCoordinator.scheduleSearch({ immediate: true });
         }
     }
 
     return {
-        resetDateSelectGroup,
         clearSearch,
         markFilterTouched,
         markQueryTouched,

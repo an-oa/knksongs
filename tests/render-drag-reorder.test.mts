@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createBookmarkDragReorderController } from "../app/lib/render/drag-reorder.mts";
+import { createBookmarkReorderFixture } from "./support/bookmark-reorder-fixture.mts";
 import {
     createDataTransferMock,
     installFakeDom,
@@ -11,7 +12,9 @@ import {
 function createDragHarness(options: {
     saveResult?: import("../app/controllers/bookmark-persistence.mts").BookmarkSaveResult;
 } = {}) {
-    const data: Parameters<typeof createBookmarkDragReorderController>[0]["data"] = {
+    const data: import("../app/state.types").AppDataState = {
+        allSongsRaw: [],
+        displayLimit: 48,
         activeBookmark: "bookmark-1",
         bookmarks: {
             "bookmark-1": {
@@ -29,25 +32,26 @@ function createDragHarness(options: {
     const calls = {
         save: 0,
         update: 0,
-        savedBookmarks: [] as Parameters<typeof createBookmarkDragReorderController>[0]["data"]["bookmarks"][],
-        saveFailures: [] as import("../app/controllers/bookmark-persistence.mts").BookmarkSaveFailure[]
+        savedBookmarks: [] as import("../app/state.types").AppDataState["bookmarks"][],
+        saveFailures: [] as import("../app/controllers/storage.mts").StorageActionFailure[]
     };
-    const controller = createBookmarkDragReorderController({
+    const storageController = createBookmarkReorderFixture({
         data,
-        getBookmarkSongRef: (row) => row.bookmarkSongKey,
         saveBookmarks: (bookmarks) => {
             calls.save += 1;
             calls.savedBookmarks.push(bookmarks);
             return options.saveResult ?? { ok: true };
         },
-        onSaveFailure: (result) => {
-            calls.saveFailures.push(result);
-        },
         updateDisplay: () => {
             calls.update += 1;
         }
     });
-    return { data, calls, controller };
+    const controller = createBookmarkDragReorderController({
+        data,
+        moveSongInActiveBookmark: storageController.moveSongInActiveBookmark,
+        onSaveFailure: (result) => calls.saveFailures.push(result)
+    });
+    return { data, calls, controller, storageController };
 }
 
 test("render drag reorder: drop reorders results and persists bookmark order", () => {
@@ -81,6 +85,27 @@ test("render drag reorder: drop reorders results and persists bookmark order", (
         assert.deepEqual(calls.savedBookmarks[0]["bookmark-1"].songs, ["song-b", "song-c", "song-a"]);
         assert.deepEqual(calls.saveFailures, []);
         assert.equal(calls.update, 1);
+    } finally {
+        cleanup();
+    }
+});
+
+test("bookmark reorder: moves only visible songs and keeps hidden songs in their slots", () => {
+    const cleanup = installFakeDom();
+    try {
+        const { data, storageController, calls } = createDragHarness();
+        const originalResults = data.currentResults;
+        data.displayLimit = 2;
+        data.bookmarks["bookmark-1"].songs = ["hidden-1", "song-a", "hidden-2", "song-b", "song-c", "hidden-3"];
+        assert.deepEqual(storageController.moveSongInActiveBookmark("a", "c"), { ok: true, changed: true });
+        assert.deepEqual(data.bookmarks["bookmark-1"].songs, ["hidden-1", "song-b", "hidden-2", "song-c", "song-a", "hidden-3"]);
+        assert.deepEqual(data.currentResults.map((row) => row.songKey), ["b", "c", "a"]);
+        assert.equal(calls.save, 1);
+        assert.equal(calls.update, 1);
+        assert.equal(data.currentResults, originalResults);
+        assert.equal(data.displayLimit, 2);
+        assert.deepEqual(storageController.moveSongInActiveBookmark("a", "b"), { ok: true, changed: true });
+        assert.deepEqual(data.bookmarks["bookmark-1"].songs, ["hidden-1", "song-a", "hidden-2", "song-b", "song-c", "hidden-3"]);
     } finally {
         cleanup();
     }

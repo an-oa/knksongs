@@ -1,4 +1,5 @@
 import { dateKeyToParts } from "../../lib/date-key.mjs";
+import { isHtmlElement } from "../../lib/dom-utils.mjs";
 import {
     getPartialDateKeyRange,
     normalizePartialDateParts
@@ -38,7 +39,10 @@ type DateFilterUiState = {
 /**
  * 日付フィルタ UI の初期化・同期・補正を扱うコントローラーを作成する。
  */
-export function createDateFilterController({ ui }: { ui: DateFilterUiState }) {
+export function createDateFilterController({ ui, onDateSelectionChange }: {
+    ui: DateFilterUiState;
+    onDateSelectionChange?: () => void;
+}) {
     const dateUi = ui.date;
 
     /**
@@ -484,6 +488,27 @@ export function createDateFilterController({ ui }: { ui: DateFilterUiState }) {
         clampDateInputsToBounds(dateUi.bounds.minKey, dateUi.bounds.maxKey);
     }
 
+    /** 入力変更に伴う下位値・上下限・候補の補正を終えてから確定を通知する。 */
+    function commitDateInputChange(target: HTMLSelectElement, options?: { resetDependentValues?: boolean }): void {
+        if (!isHtmlElement(target) || !Object.values(ui.el).includes(target)) return;
+        if (options?.resetDependentValues) {
+            for (const kind of ["from", "to"] as const) {
+                const { year, month, day } = getDateSelectElements(kind);
+                if (target === year && month) month.value = "";
+                if ((target === year || target === month) && day) day.value = "";
+            }
+        }
+        clampDateInputsIfNeeded();
+        syncDateSelectOptions();
+        onDateSelectionChange?.();
+    }
+
+    /** 指定側の日付をクリアし、候補を同期してから確定を通知する。 */
+    function commitDateSelectionClear(kind: string): void {
+        resetDateSelectGroup(kind);
+        onDateSelectionChange?.();
+    }
+
     return {
         hasDateSelection,
         getDateSelectValue,
@@ -495,6 +520,8 @@ export function createDateFilterController({ ui }: { ui: DateFilterUiState }) {
         applyPendingDateValues,
         applyDateInputRange,
         clampDateInputsToBounds,
-        clampDateInputsIfNeeded
+        clampDateInputsIfNeeded,
+        commitDateInputChange,
+        commitDateSelectionClear
     };
 }

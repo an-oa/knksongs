@@ -16,6 +16,11 @@ import type {
     SearchUiRuntimeState
 } from "../state.types";
 import type { PlaybackSettingDefinition } from "../lib/playback-settings/definitions.mjs";
+import {
+    getStoredSettingText,
+    removeStoredSetting,
+    setStoredSettingText
+} from "../lib/storage/settings-storage.mjs";
 
 type PlaybackSettingsUiElements = Pick<
     AppUiElements,
@@ -159,7 +164,7 @@ export function createPlaybackSettingsController({ ui, callbacks }: PlaybackSett
      * @returns {boolean}
      */
     function loadStoredBoolean(key: string, defaultValue: boolean): boolean {
-        const savedSetting = localStorage.getItem(key);
+        const savedSetting = getStoredSettingText(key);
         return savedSetting !== null ? (savedSetting === "true") : Boolean(defaultValue);
     }
 
@@ -168,7 +173,7 @@ export function createPlaybackSettingsController({ ui, callbacks }: PlaybackSett
      */
     function removeLegacyPlaybackSettingsStorage(): void {
         for (const key of LEGACY_PLAYBACK_SETTINGS_STORAGE_KEYS) {
-            localStorage.removeItem(key);
+            removeStoredSetting(key);
         }
     }
 
@@ -367,7 +372,7 @@ export function createPlaybackSettingsController({ ui, callbacks }: PlaybackSett
         if (!reduction.changed) return;
         applyPlaybackSettingValue(definition, reduction.nextValue);
         if (shouldPersist && definition.storageKey) {
-            localStorage.setItem(definition.storageKey, String(reduction.nextValue));
+            setStoredSettingText(definition.storageKey, String(reduction.nextValue));
         }
         runPlaybackSettingValueEffect(
             definition,

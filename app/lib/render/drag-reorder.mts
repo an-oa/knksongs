@@ -1,11 +1,8 @@
-import type { BookmarkSaveFailure, BookmarkSaveResult } from "../../controllers/bookmark-persistence.mjs";
+import type { StorageActionFailure, StorageActionResult } from "../../controllers/storage.mjs";
 import { isHtmlElement } from "../dom-utils.mjs";
-import type { BookmarkRecord } from "../../state.types";
 
 type BookmarkDragReorderDataState = {
     activeBookmark: string | null;
-    bookmarks: Record<string, BookmarkRecord>;
-    currentResults: Song[];
 };
 
 type BookmarkDragDataTransfer = {
@@ -23,12 +20,8 @@ type BookmarkDragEvent = {
 
 type BookmarkDragReorderControllerInput = {
     data: BookmarkDragReorderDataState;
-    getBookmarkSongRef: (row: Song) => string;
-    saveBookmarks: (
-        bookmarks: Record<string, BookmarkRecord>
-    ) => BookmarkSaveResult;
-    onSaveFailure: (result: BookmarkSaveFailure) => void;
-    updateDisplay: () => void;
+    moveSongInActiveBookmark: (fromSongKey: string, toSongKey: string) => StorageActionResult<{ ok: true; changed: boolean }>;
+    onSaveFailure: (result: StorageActionFailure) => void;
 };
 
 /**
@@ -48,38 +41,9 @@ function getSongCardFromTarget(target: unknown): HTMLElement | null {
 export function createBookmarkDragReorderController(input: BookmarkDragReorderControllerInput) {
     const {
         data,
-        getBookmarkSongRef,
-        saveBookmarks,
-        onSaveFailure,
-        updateDisplay
+        moveSongInActiveBookmark,
+        onSaveFailure
     } = input;
-
-    /**
-     * 指定した結果順を反映したブックマーク曲順の候補を作る。
-     * @param bookmark 現在のブックマーク
-     * @param orderedResults 並べ替え後の検索結果
-     */
-    function buildReorderedBookmarkSongs(
-        bookmark: BookmarkRecord,
-        orderedResults: Song[]
-    ): string[] | null {
-        if (!Array.isArray(bookmark.songs) || bookmark.songs.length === 0) return null;
-
-        const orderedKeys = orderedResults
-            .map((row) => getBookmarkSongRef(row))
-            .filter(Boolean);
-        if (orderedKeys.length === 0) return null;
-
-        const reorderSet = new Set(orderedKeys);
-        const queue = orderedKeys.slice();
-        const nextSongs = bookmark.songs.map((songKey) => {
-            if (!reorderSet.has(songKey)) return songKey;
-            return queue.shift() ?? songKey;
-        });
-
-        const changed = nextSongs.some((songKey, idx) => songKey !== bookmark.songs[idx]);
-        return changed ? nextSongs : null;
-    }
 
     /**
      * ドラッグ開始時に対象曲キーを dataTransfer へ保存する。
@@ -140,7 +104,7 @@ export function createBookmarkDragReorderController(input: BookmarkDragReorderCo
     }
 
     /**
-     * ドロップ先に合わせて結果順とブックマーク保存順を更新する。
+     * 移動元・移動先の曲キーをブックマーク操作 API へ通知する。
      * @param {BookmarkDragEvent} event
      */
     function onDrop(event: BookmarkDragEvent): void {
@@ -152,36 +116,13 @@ export function createBookmarkDragReorderController(input: BookmarkDragReorderCo
         if (!isHtmlElement(targetCard)) return;
         targetCard.classList.remove("drag-over");
 
-        const targetKey = targetCard.dataset.songKey;
-        if (draggedKey === targetKey) return;
-
-        const fromIndex = data.currentResults.findIndex((song) => song.songKey === draggedKey);
-        const toIndex = data.currentResults.findIndex((song) => song.songKey === targetKey);
-
-        if (fromIndex === -1 || toIndex === -1) return;
-
-        const bookmark = data.bookmarks[bookmarkId];
-        if (!bookmark) return;
-
-        const nextResults = data.currentResults.slice();
-        const [movedItem] = nextResults.splice(fromIndex, 1);
-        nextResults.splice(toIndex, 0, movedItem);
-        const nextSongs = buildReorderedBookmarkSongs(bookmark, nextResults);
-        if (!nextSongs) return;
-
-        const nextBookmarks = {
-            ...data.bookmarks,
-            [bookmarkId]: { ...bookmark, songs: nextSongs }
-        };
-        const saveResult = saveBookmarks(nextBookmarks);
+        const targetKey = targetCard.dataset.songKey || "";
+        if (!draggedKey || !targetKey || draggedKey === targetKey) return;
+        const saveResult = moveSongInActiveBookmark(draggedKey, targetKey);
         if (saveResult.ok === false) {
             onSaveFailure(saveResult);
             return;
         }
-
-        data.currentResults.splice(0, data.currentResults.length, ...nextResults);
-        data.bookmarks = nextBookmarks;
-        updateDisplay();
     }
 
     return {

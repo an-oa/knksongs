@@ -14,7 +14,8 @@ function createStorageControllerForTest(input: {
     data: Parameters<typeof createStorageController>[0]["data"];
     ui: Parameters<typeof createStorageController>[0]["ui"] & Parameters<typeof createSearchFiltersController>[0]["ui"];
     constants: Parameters<typeof createStorageController>[0]["constants"] & { BOOKMARK_STORAGE_KEY?: string };
-    callbacks: Omit<Parameters<typeof createStorageController>[0]["callbacks"], "cancelScheduledSearch"> & {
+    callbacks: Omit<Parameters<typeof createStorageController>[0]["callbacks"], "cancelScheduledSearch" | "updateDisplay"> & {
+        updateDisplay?: () => void;
         cancelScheduledSearch?: () => void;
     };
 }) {
@@ -29,6 +30,7 @@ function createStorageControllerForTest(input: {
         ...input,
         bookmarkPersistenceController,
         callbacks: {
+            updateDisplay: () => {},
             cancelScheduledSearch: () => {},
             ...input.callbacks
         },
@@ -53,6 +55,7 @@ function createActiveBookmarkRestoreHarness(bookmarks: Record<string, BookmarkRe
     let cancelCount = 0;
     const data: Parameters<typeof createStorageController>[0]["data"] = {
         allSongsRaw: [],
+        currentResults: [],
         bookmarks,
         activeBookmark: options.activeBookmark ?? null
     };
@@ -106,6 +109,7 @@ test("restorePersistedState: main branch payload restores into sliced ui state",
         let applyPendingCallCount = 0;
         const data: Parameters<typeof createStorageController>[0]["data"] = {
             allSongsRaw: [],
+            currentResults: [],
             bookmarks: {},
             activeBookmark: null
         };
@@ -206,6 +210,7 @@ test("saveSearchState: writes current schema version", () => {
         const controller = createStorageControllerForTest({
             data: {
                 allSongsRaw: [],
+                currentResults: [],
                 bookmarks: {
                     "bookmark-1": { name: "Favorites", songs: [], createdAt: 1 }
                 },
@@ -475,6 +480,7 @@ test("restorePersistedState: legacy all-format state includes recording in new d
         const controller = createStorageControllerForTest({
             data: {
                 allSongsRaw: [],
+                currentResults: [],
                 bookmarks: {},
                 activeBookmark: null
             },
@@ -549,6 +555,7 @@ test("restorePersistedState: current payload keeps recording unchecked when user
         const controller = createStorageControllerForTest({
             data: {
                 allSongsRaw: [],
+                currentResults: [],
                 bookmarks: {},
                 activeBookmark: null
             },
@@ -626,6 +633,7 @@ test("restorePersistedState: invalid saved formats fall back to defaults and syn
         const controller = createStorageControllerForTest({
             data: {
                 allSongsRaw: [],
+                currentResults: [],
                 bookmarks: {},
                 activeBookmark: null
             },

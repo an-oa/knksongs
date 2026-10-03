@@ -627,10 +627,10 @@ export function createYoutubeController({ ui, youtube, constants }: YoutubeContr
      * 指定サムネイルから共有プレーヤーを外して破棄する。
      */
     function detachSharedPlayback(thumbDiv: Element | null | undefined, options?: { stopPlayback?: boolean }) {
-        postPlaybackAdRestore.clear();
         if (!isSharedPlaybackMountedInThumb(thumbDiv)) {
             const sharedPlayback = getSharedPlaybackState();
             if (sharedPlayback.hostThumb === thumbDiv) {
+                postPlaybackAdRestore.clear();
                 sharedPlayback.hostThumb = null;
                 setSharedPlaybackSessionId(0);
             }
@@ -639,6 +639,7 @@ export function createYoutubeController({ ui, youtube, constants }: YoutubeContr
             });
             return false;
         }
+        postPlaybackAdRestore.clear();
         const iframe = syncSharedPlaybackIframe();
         const shouldStopPlayback = !(options && options.stopPlayback === false);
         tracePlayback("youtube", "detachSharedPlayback", {
@@ -768,7 +769,7 @@ export function createYoutubeController({ ui, youtube, constants }: YoutubeContr
         const previousSessionId = getPlaybackSessionId(thumbDiv);
         playbackStartAttempts.cancelForThumb(thumbDiv);
         applyPlaybackStateEvent({
-            type: "CLEAR_PLAYBACK",
+            type: "CANCEL_PLAYBACK",
             sessionId: previousSessionId
         });
         clearActiveThumb(thumbDiv);
@@ -952,7 +953,7 @@ export function createYoutubeController({ ui, youtube, constants }: YoutubeContr
         if (!activeThumb) return;
         if (!activeThumb.isConnected) {
             playbackUi.activeThumb = null;
-            applyPlaybackStateEvent({ type: "CLEAR_PLAYBACK" });
+            applyPlaybackStateEvent({ type: "STOP_PLAYBACK" });
             return;
         }
         tracePlayback("youtube", "restoreActivePlayback", {

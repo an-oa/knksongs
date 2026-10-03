@@ -26,6 +26,7 @@ function setupStorageController({
     let scheduleCount = 0;
     const data: Parameters<typeof createStorageController>[0]["data"] = {
         allSongsRaw: [],
+        currentResults: [],
         bookmarks: structuredClone(bookmarks || {}),
         activeBookmark: activeBookmark || null
     };
@@ -67,6 +68,7 @@ function setupStorageController({
             getDateSelectValue: () => "",
             applyPendingDateValues: () => {},
             renderBookmarks: () => { renderCount += 1; },
+            updateDisplay: () => {},
             cancelScheduledSearch: () => {},
             scheduleSearch: () => { scheduleCount += 1; }
         }

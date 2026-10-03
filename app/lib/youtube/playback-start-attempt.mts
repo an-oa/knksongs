@@ -254,12 +254,13 @@ export function createYoutubePlaybackStartAttemptManager(input: PlaybackStartAtt
     }
 
     /**
-     * 指定サムネイルに紐づく再生開始待ちを失敗扱いで閉じる。
+     * 有効なセッションを持つサムネイルの開始待ちと未確定記録だけを解除する。
      * @param {unknown} thumbDiv
      * @returns {boolean}
      */
     function cancelForThumb(thumbDiv: unknown) {
         const sessionId = getSessionIdForThumb(thumbDiv);
+        if (!Number.isFinite(sessionId) || sessionId <= 0) return false;
         const didClearUnconfirmedStart = clearUnconfirmedStart(sessionId);
         return settle(sessionId, createYoutubePlaybackStartResult(YOUTUBE_PLAYBACK_START_STATUS.FAILED)) ||
             didClearUnconfirmedStart;

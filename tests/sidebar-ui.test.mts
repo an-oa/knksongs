@@ -1,4 +1,5 @@
 import test from "node:test";
+import { createDateFilterController } from "../app/ui/date/filter.mts";
 import assert from "node:assert/strict";
 import { createSidebarController } from "../app/ui/sidebar/ui.mts";
 import { installFakeDom, invokeListener, installFakeAnimationFrames } from "./test-helpers.mts";
@@ -144,9 +145,8 @@ function createSidebarCallbacks(state: {
         isIOSWebKit: () => false,
         markFilterTouched: () => {},
         markQueryTouched: () => {},
-        clampDateInputsIfNeeded: () => {},
-        syncDateSelectOptions: () => {},
-        resetDateSelectGroup: () => {},
+        commitDateInputChange: () => {},
+        commitDateSelectionClear: () => {},
         clearSearch: () => {},
         onOpenChange: state.onOpenChange
     };
@@ -366,22 +366,16 @@ test("sidebar: ios year change clears lower date selects and removes updating cl
         ui.el.dateFromMonth.value = "03";
         ui.el.dateFromDay.value = "11";
         const markFilterTouchedArgs: ({ immediate?: boolean } | undefined)[] = [];
-        let clampCount = 0;
-        let syncCount = 0;
+        const dateController = createDateFilterController({
+            ui: { el: ui.el, date: { bounds: null, index: null, pendingValues: null } },
+            onDateSelectionChange: () => markFilterTouchedArgs.push({ immediate: true })
+        });
         const controller = createSidebarController({
             ui,
             callbacks: {
                 ...createSidebarCallbacks(),
                 isIOSWebKit: () => true,
-                markFilterTouched: (options) => {
-                    markFilterTouchedArgs.push(options);
-                },
-                clampDateInputsIfNeeded: () => {
-                    clampCount += 1;
-                },
-                syncDateSelectOptions: () => {
-                    syncCount += 1;
-                }
+                commitDateInputChange: dateController.commitDateInputChange
             }
         });
 
@@ -392,8 +386,6 @@ test("sidebar: ios year change clears lower date selects and removes updating cl
         assert.equal(ui.el.dateFromMonth.value, "");
         assert.equal(ui.el.dateFromDay.value, "");
         assert.deepEqual(markFilterTouchedArgs, [{ immediate: true }]);
-        assert.equal(clampCount, 1);
-        assert.equal(syncCount, 1);
 
         frames.advanceFrame();
         assert.equal(fromGroup.classList.contains("is-updating"), true);

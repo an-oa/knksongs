@@ -939,6 +939,138 @@ test("youtube: ended playback notifies song key for playback continuation", asyn
     }
 });
 
+test("youtube: updating another thumbnail preserves the active player's ended handling", async () => {
+    const cleanup = installFakeDom();
+    try {
+        const { ui, controller } = createYoutubeControllerHarness();
+        const players = installYoutubePlayerFixture();
+        const endedCalls: string[] = [];
+        controller.setPlaybackEndedHook(({ songKey }) => endedCalls.push(songKey));
+        const { thumbA, thumbB } = createTwoYoutubePlaybackThumbs(controller);
+        const cardA = thumbA.closest(".song-card");
+        assert.ok(cardA instanceof HTMLElement);
+        cardA.dataset.songKey = "song:a";
+        clickThumbnail(thumbA);
+        await setImmediate();
+        players[0].emitStateChange(globalThis.window.YT.PlayerState.PLAYING);
+
+        controller.updateThumbnail(thumbB, { videoId: "new-video", startSeconds: 0, isVertical: false });
+        assert.equal(ui.playback.activeThumb, thumbA);
+        assert.ok(thumbA.querySelector("iframe"));
+        players[0].emitStateChange(globalThis.window.YT.PlayerState.ENDED);
+        await setImmediate();
+
+        assert.deepEqual(endedCalls, ["song:a"]);
+        assert.equal(thumbA.querySelector("iframe"), null);
+        assert.ok(thumbA.querySelector("img"));
+        assert.equal(ui.playback.activeThumb, null);
+    } finally {
+        cleanup();
+    }
+});
+
+test("youtube: updating another thumbnail keeps playback start pending until PLAYING", async () => {
+    const cleanup = installFakeDom();
+    const fakeTimeouts = installFakeTimeouts();
+    try {
+        const { youtube, controller } = createYoutubeControllerHarness();
+        const players = installYoutubePlayerFixture();
+        const { thumbA, thumbB } = createTwoYoutubePlaybackThumbs(controller);
+        const startPromise = controller.playThumbnail(thumbA, { videoId: "video1", startSeconds: 5, isVertical: false });
+        await setImmediate();
+        const attempt = youtube.sharedPlayback?.playbackStartAttempt;
+        assert.ok(attempt);
+        const startTimeout = requireActiveTimeout(fakeTimeouts, DEFAULT_PLAYBACK_START_TIMEOUT_MS);
+
+        controller.updateThumbnail(thumbB, { videoId: "new-video", startSeconds: 0, isVertical: false });
+
+        assert.equal(youtube.sharedPlayback?.playbackStartAttempt, attempt);
+        assert.equal(startTimeout.cleared, false);
+        players[0].emitStateChange(globalThis.window.YT.PlayerState.PLAYING);
+        assert.deepEqual(await startPromise, playbackStartResult(YOUTUBE_PLAYBACK_START_STATUS.STARTED));
+    } finally {
+        fakeTimeouts.cleanup();
+        cleanup();
+    }
+});
+
+test("youtube: updating another thumbnail keeps an unconfirmed start record for a delayed error", async () => {
+    const cleanup = installFakeDom();
+    const fakeTimeouts = installFakeTimeouts();
+    try {
+        const { youtube, controller } = createYoutubeControllerHarness();
+        const players = installYoutubePlayerFixture();
+        const failedCalls: Parameters<Parameters<typeof controller.setPlaybackStartFailedHook>[0]>[0][] = [];
+        controller.setPlaybackStartFailedHook((payload) => failedCalls.push(payload));
+        const { thumbA, thumbB } = createTwoYoutubePlaybackThumbs(controller);
+        const cardA = thumbA.closest(".song-card");
+        assert.ok(cardA instanceof HTMLElement);
+        cardA.dataset.songKey = "song:unconfirmed";
+        const startPromise = controller.playThumbnail(thumbA, { videoId: "video1", startSeconds: 5, isVertical: false }, {
+            playbackMode: "autoplay"
+        });
+        await setImmediate();
+        requireActiveTimeout(fakeTimeouts, DEFAULT_PLAYBACK_START_TIMEOUT_MS).cb();
+        assertPlaybackStartStatus(await startPromise, YOUTUBE_PLAYBACK_START_STATUS.UNCONFIRMED);
+        const sessionId = Number(thumbA.dataset.playbackSessionId);
+
+        controller.updateThumbnail(thumbB, { videoId: "new-video", startSeconds: 0, isVertical: false });
+
+        assert.equal(youtube.sharedPlayback?.unconfirmedPlaybackStartSessionId, sessionId);
+        players[0].emitError(150);
+        await setImmediate();
+        assert.deepEqual(failedCalls, [{
+            songKey: "song:unconfirmed",
+            playbackMode: "autoplay",
+            wasPlaybackStartUnconfirmed: true
+        }]);
+        assert.equal(thumbA.querySelector("iframe"), null);
+    } finally {
+        fakeTimeouts.cleanup();
+        cleanup();
+    }
+});
+
+test("youtube: updating another thumbnail keeps the post-playback ad watch until a stop event", async () => {
+    const cleanup = installFakeDom();
+    const fakeTimeouts = installFakeTimeouts();
+    try {
+        const { ui, controller } = createYoutubeControllerHarness();
+        const players = installYoutubePlayerFixture({ readPlayerState: true, duration: 120 });
+        const endedCalls: string[] = [];
+        controller.setPlaybackEndedHook(({ songKey }) => endedCalls.push(songKey));
+        const { thumbA, thumbB } = createTwoYoutubePlaybackThumbs(controller);
+        const cardA = thumbA.closest(".song-card");
+        assert.ok(cardA instanceof HTMLElement);
+        cardA.dataset.songKey = "song:post-ad";
+        clickThumbnail(thumbA);
+        await setImmediate();
+        const player = players[0].player;
+        player.currentState = globalThis.window.YT.PlayerState.PLAYING;
+        players[0].emitStateChange(globalThis.window.YT.PlayerState.PLAYING);
+        player.currentTime = 25;
+        players[0].emitStateChange(globalThis.window.YT.PlayerState.ENDED);
+        const restorePoll = requireActiveTimeout(fakeTimeouts, 500);
+
+        controller.updateThumbnail(thumbB, { videoId: "new-video", startSeconds: 0, isVertical: false });
+
+        assert.equal(restorePoll.cleared, false);
+        assert.ok(thumbA.querySelector("iframe"));
+        assert.deepEqual(endedCalls, []);
+        player.currentState = globalThis.window.YT.PlayerState.PAUSED;
+        players[0].emitStateChange(globalThis.window.YT.PlayerState.PAUSED);
+        await setImmediate();
+        assert.equal(thumbA.querySelector("iframe"), null);
+        assert.equal(ui.playback.activeThumb, null);
+        assert.deepEqual(endedCalls, ["song:post-ad"]);
+        assert.equal(restorePoll.cleared, true);
+        assert.equal(player.stopCalls, 1);
+    } finally {
+        fakeTimeouts.cleanup();
+        cleanup();
+    }
+});
+
 test("youtube: post-playback ad end restores thumbnail after stale ended state", async () => {
     const cleanup = installFakeDom();
     const fakeTimeouts = installFakeTimeouts();

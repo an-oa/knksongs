@@ -1,4 +1,5 @@
 import type { AppUiElements } from "../../state.types";
+import { getStoredSettingText, setStoredSettingText } from "../../lib/storage/settings-storage.mjs";
 
 /**
  * 指定 ID の input 要素参照を返す。
@@ -95,7 +96,7 @@ export function applyDocumentTheme(isDarkMode: boolean): void {
  */
 export function applyThemeFromStorage({ ui }: { ui: { el: AppUiElements } }): void {
     const themeToggle = ui.el.themeToggle;
-    const savedTheme = localStorage.getItem("theme");
+    const savedTheme = getStoredSettingText("theme");
     const systemPrefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
     const isDarkMode = savedTheme ? savedTheme === "dark" : systemPrefersDark;
     applyDocumentTheme(isDarkMode);
@@ -112,6 +113,6 @@ export function setupTheme({ ui }: { ui: { el: AppUiElements } }): void {
     themeToggle.addEventListener("change", () => {
         const isDarkNow = themeToggle.checked;
         applyDocumentTheme(isDarkNow);
-        localStorage.setItem("theme", isDarkNow ? "dark" : "light");
+        setStoredSettingText("theme", isDarkNow ? "dark" : "light");
     });
 }

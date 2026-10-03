@@ -82,6 +82,36 @@ test("createDateFilterController: getDateSelectValue returns partial date values
     }
 });
 
+test("createDateFilterController: month change commits corrected day candidates before notification", () => {
+    const restoreDom = installFakeDom();
+    try {
+        const ui = createDateUiState();
+        const committedValues: string[] = [];
+        const controller = createDateFilterController({
+            ui,
+            onDateSelectionChange: () => committedValues.push(controller.getDateSelectValue("from"))
+        });
+        controller.applyDateInputRange([
+            makeRow({ dateKey: 20240210 }),
+            makeRow({ dateKey: 20240305 }),
+            makeRow({ dateKey: 20240320 })
+        ]);
+        controller.applyDateSelectValue("from", "2024-02-10");
+        ui.el.dateFromMonth.value = "03";
+
+        controller.commitDateInputChange(ui.el.dateFromMonth);
+
+        assert.deepEqual(committedValues, ["2024-03"]);
+        assert.equal(controller.getDateSelectValue("from"), "2024-03");
+        assert.deepEqual(getSelectValues(ui.el.dateFromDay), ["", "05", "20"]);
+        assert.deepEqual(getSelectValues(ui.el.dateToMonth), [""]);
+        controller.commitDateSelectionClear("from");
+        assert.deepEqual(committedValues, ["2024-03", ""]);
+    } finally {
+        restoreDom();
+    }
+});
+
 test("createDateFilterController: applyDateSelectValue restores partial date values", () => {
     const restoreDom = installFakeDom();
     try {

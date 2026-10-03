@@ -87,7 +87,7 @@ test("youtube playback state: ended playback clears the active session and bumps
     });
 });
 
-test("youtube playback state: restore and clear without a finite positive session id affect the current session", () => {
+test("youtube playback state: restore and cancel require the active positive session id", () => {
     const activeState: YoutubePlaybackState = {
         sessionSequence: 5,
         transitionGeneration: 9,
@@ -95,19 +95,17 @@ test("youtube playback state: restore and clear without a finite positive sessio
         phase: "playing"
     };
 
-    for (const type of ["RESTORE_PLAYBACK", "CLEAR_PLAYBACK"] as const) {
-        for (const sessionId of [undefined, 0, -1, Number.NaN, Number.POSITIVE_INFINITY]) {
-            const event = sessionId === undefined ? { type } : { type, sessionId };
-            const nextState = reduceYoutubePlaybackState(activeState, event);
-            assert.deepEqual(nextState, {
-                sessionSequence: 5,
-                transitionGeneration: type === "RESTORE_PLAYBACK" ? 10 : 9,
-                activeSessionId: 0,
-                phase: "idle"
-            });
+    for (const type of ["RESTORE_PLAYBACK", "CANCEL_PLAYBACK"] as const) {
+        for (const sessionId of [0, -1, Number.NaN, Number.POSITIVE_INFINITY, 4]) {
+            assert.equal(reduceYoutubePlaybackState(activeState, { type, sessionId }), activeState);
         }
-        assert.equal(reduceYoutubePlaybackState(activeState, { type, sessionId: 4 }), activeState);
+        assert.equal(reduceYoutubePlaybackState(activeState, { type, sessionId: 5 }).activeSessionId, 0);
     }
+    assert.deepEqual(reduceYoutubePlaybackState(activeState, { type: "STOP_PLAYBACK" }), {
+        ...activeState,
+        activeSessionId: 0,
+        phase: "idle"
+    });
 });
 
 test("youtube playback state: restoring the active session preserves generation only when requested", () => {

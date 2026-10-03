@@ -28,7 +28,6 @@ test("search actions: clear resets conditions before delegating active bookmark 
         resetDateSelects() {
             calls.dateReset += 1;
         },
-        resetDateSelectGroup() {},
         hasDateSelection() {
             return false;
         }
@@ -81,4 +80,41 @@ test("search actions: clear resets conditions before delegating active bookmark 
     assert.equal(calls.filterResetAtActiveBookmarkClear, 1);
     assert.equal(calls.directSearch, 0);
     assert.equal(calls.directSave, 0);
+});
+
+test("search actions: query and filters are both synchronized before a single search", () => {
+    const ui = { el: { searchBox: { value: "stale query" } } };
+    const search = { dataReady: true, userTouchedQuery: false, userTouchedFilters: false };
+    let filtersNeedReset = true;
+    let dateSelected = true;
+    const calls: string[] = [];
+    const controller = createSearchUiActions({
+        ui,
+        search,
+        searchFiltersController: {
+            syncFormatCheckboxesFromState: () => { calls.push("sync formats"); },
+            needsFilterReset: () => filtersNeedReset,
+            resetFiltersToDefault: ({ resetDateSelects }) => {
+                filtersNeedReset = false;
+                resetDateSelects();
+            }
+        },
+        dateFilterController: {
+            resetDateSelects: () => { dateSelected = false; },
+            hasDateSelection: () => dateSelected
+        },
+        searchCoordinator: {
+            cancelScheduledSearch: () => {},
+            scheduleSearch: (options) => {
+                assert.equal(ui.el.searchBox.value, "");
+                assert.equal(filtersNeedReset, false);
+                assert.equal(dateSelected, false);
+                assert.deepEqual(options, { immediate: true });
+                calls.push("search");
+            }
+        },
+        storageController: { saveSearchState: () => {}, clearActiveBookmark: () => {} }
+    });
+    controller.syncSearchUI();
+    assert.deepEqual(calls, ["sync formats", "search"]);
 });

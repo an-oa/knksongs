@@ -3,10 +3,7 @@ import { hasStreamRole } from "../lib/stream-role.mjs";
 import { tracePlayback } from "../lib/playback-debug.mjs";
 import { scheduleScrollElementIntoView } from "../lib/results-scroll.mjs";
 import { createBookmarkDragReorderController } from "../lib/render/drag-reorder.mjs";
-import type {
-    BookmarkSaveFailure,
-    BookmarkSaveResult
-} from "./bookmark-persistence.mjs";
+import type { StorageActionFailure, StorageActionResult } from "./storage.mjs";
 import { applyMasonryLayout } from "../lib/render/masonry-layout.mjs";
 import { createResultTailObserver } from "../lib/render/result-tail-observer.mjs";
 import { getBookmarkSongRef } from "../lib/song-identity.mjs";
@@ -77,10 +74,8 @@ type RenderCallbacks = {
     openBookmarkModal: (songKey: string) => void;
     setupScrollObserver: () => void;
     removeSongFromActiveBookmark: (songKey: string) => void;
-    saveBookmarks: (
-        bookmarks: AppDataState["bookmarks"]
-    ) => BookmarkSaveResult;
-    notifyBookmarkSaveError: (result: BookmarkSaveFailure) => void;
+    moveSongInActiveBookmark: (fromSongKey: string, toSongKey: string) => StorageActionResult<{ ok: true; changed: boolean }>;
+    notifyBookmarkSaveError: (result: StorageActionFailure) => void;
 };
 
 type RenderControllerInput = {
@@ -112,17 +107,15 @@ export function createRenderController({
     const openBookmarkModal = callbacks.openBookmarkModal;
     const setupScrollObserver = callbacks.setupScrollObserver;
     const removeSongFromActiveBookmark = callbacks.removeSongFromActiveBookmark;
-    const saveBookmarks = callbacks.saveBookmarks;
+    const moveSongInActiveBookmark = callbacks.moveSongInActiveBookmark;
     const notifyBookmarkSaveError = callbacks.notifyBookmarkSaveError;
     const displayBatchSize = Number.isFinite(resultDisplayBatchSize) && resultDisplayBatchSize > 0
         ? Math.max(1, Math.floor(resultDisplayBatchSize))
         : DEFAULT_RESULT_DISPLAY_BATCH_SIZE;
     const dragReorderController = createBookmarkDragReorderController({
         data,
-        getBookmarkSongRef: (row) => getBookmarkSongRef(row),
-        saveBookmarks,
-        onSaveFailure: notifyBookmarkSaveError,
-        updateDisplay: () => updateDisplay()
+        moveSongInActiveBookmark,
+        onSaveFailure: notifyBookmarkSaveError
     });
     const resultTailObservationController = createResultTailObserver({
         getSentinel: () => ui.el.resultTailSentinel,

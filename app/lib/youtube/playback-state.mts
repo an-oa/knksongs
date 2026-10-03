@@ -14,8 +14,9 @@ export type YoutubePlaybackState = {
 export type YoutubePlaybackStateEvent =
     | { type: "REQUEST_PLAYBACK" }
     | { type: "PLAYBACK_STARTED" | "PLAYBACK_ENDED"; sessionId: number }
-    | { type: "RESTORE_PLAYBACK"; sessionId?: number; preserveTransitionGeneration?: boolean }
-    | { type: "CLEAR_PLAYBACK"; sessionId?: number };
+    | { type: "RESTORE_PLAYBACK"; sessionId: number; preserveTransitionGeneration?: boolean }
+    | { type: "CANCEL_PLAYBACK"; sessionId: number }
+    | { type: "STOP_PLAYBACK" };
 
 /**
  * YouTube 埋め込み再生の状態機械が扱う初期 state を返す。
@@ -74,7 +75,7 @@ export function reduceYoutubePlaybackState(
             phase: YOUTUBE_PLAYBACK_PHASE_IDLE
         };
     case "RESTORE_PLAYBACK":
-        if (targetSessionId > 0 && !isYoutubePlaybackSessionActive(state, targetSessionId)) {
+        if (!isYoutubePlaybackSessionActive(state, targetSessionId)) {
             return state;
         }
         return {
@@ -85,10 +86,14 @@ export function reduceYoutubePlaybackState(
             activeSessionId: 0,
             phase: YOUTUBE_PLAYBACK_PHASE_IDLE
         };
-    case "CLEAR_PLAYBACK":
-        if (targetSessionId > 0 && !isYoutubePlaybackSessionActive(state, targetSessionId)) {
-            return state;
-        }
+    case "CANCEL_PLAYBACK":
+        if (!isYoutubePlaybackSessionActive(state, targetSessionId)) return state;
+        return {
+            ...state,
+            activeSessionId: 0,
+            phase: YOUTUBE_PLAYBACK_PHASE_IDLE
+        };
+    case "STOP_PLAYBACK":
         return {
             ...state,
             activeSessionId: 0,

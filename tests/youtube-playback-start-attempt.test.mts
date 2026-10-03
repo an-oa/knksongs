@@ -207,3 +207,49 @@ test("youtube playback start attempt: cancelForThumb resolves the thumb session 
         cleanup();
     }
 });
+
+test("youtube playback start attempt: invalid and unrelated thumb sessions keep the pending attempt and timeout", async () => {
+    const cleanup = installFakeDom();
+    const fakeTimeouts = installFakeTimeouts();
+    try {
+        const { manager, sharedPlayback, thumb } = createAttemptHarness();
+        const attemptPromise = manager.create(1, { thumbDiv: thumb });
+        const attempt = sharedPlayback.playbackStartAttempt;
+        const otherThumb = document.createElement("div");
+        for (const sessionValue of ["", "0", "-1", "NaN", "Infinity", "2"]) {
+            otherThumb.dataset.playbackSessionId = sessionValue;
+            assert.equal(manager.cancelForThumb(otherThumb), false);
+            assert.equal(sharedPlayback.playbackStartAttempt, attempt);
+            assert.equal(fakeTimeouts.timeoutCalls[0].cleared, false);
+        }
+        assert.equal(manager.cancelForThumb(null), false);
+        assert.equal(manager.settle(1, playbackStartResult(YOUTUBE_PLAYBACK_START_STATUS.STARTED)), true);
+        assert.deepEqual(await attemptPromise, playbackStartResult(YOUTUBE_PLAYBACK_START_STATUS.STARTED));
+    } finally {
+        fakeTimeouts.cleanup();
+        cleanup();
+    }
+});
+
+test("youtube playback start attempt: invalid and unrelated thumb sessions keep the unconfirmed record", async () => {
+    const cleanup = installFakeDom();
+    const fakeTimeouts = installFakeTimeouts();
+    try {
+        const { manager, sharedPlayback, thumb } = createAttemptHarness();
+        const attemptPromise = manager.create(1, { thumbDiv: thumb });
+        manager.armStartTimeout(1);
+        fakeTimeouts.timeoutCalls[1].cb();
+        assert.deepEqual(await attemptPromise, playbackStartResult(YOUTUBE_PLAYBACK_START_STATUS.UNCONFIRMED));
+        const otherThumb = document.createElement("div");
+        for (const sessionValue of ["", "0", "-1", "NaN", "Infinity", "2"]) {
+            otherThumb.dataset.playbackSessionId = sessionValue;
+            assert.equal(manager.cancelForThumb(otherThumb), false);
+            assert.equal(sharedPlayback.unconfirmedPlaybackStartSessionId, 1);
+        }
+        assert.equal(manager.cancelForThumb(thumb), true);
+        assert.equal(sharedPlayback.unconfirmedPlaybackStartSessionId, 0);
+    } finally {
+        fakeTimeouts.cleanup();
+        cleanup();
+    }
+});

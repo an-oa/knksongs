@@ -36,6 +36,93 @@ test("applyThemeFromStorage: main branch theme key restores dark mode state", ()
     }
 });
 
+test("settings: read and legacy removal failures use defaults and complete initialization", (t) => {
+    const restoreDom = installFakeDom();
+    const prevLocalStorage = globalThis.localStorage;
+    globalThis.localStorage = createFakeLocalStorage();
+    t.mock.method(console, "warn", () => {});
+    t.mock.method(globalThis.localStorage, "getItem", () => { throw new Error("read denied"); });
+    t.mock.method(globalThis.localStorage, "removeItem", () => { throw new Error("remove denied"); });
+    try {
+        const themeUi = { el: { themeToggle: document.createElement("input") } };
+        setupTheme({ ui: themeUi });
+        assert.equal(themeUi.el.themeToggle.checked, window.matchMedia("(prefers-color-scheme: dark)").matches);
+        const { ui, controller } = createPlaybackSettingsFixture({
+            ui: { showThumbnails: true, useYoutubeNoCookie: true, playArchiveToEnd: true }
+        });
+        controller.setupPlaybackSettings();
+        assert.equal(ui.playback.showThumbnails, false);
+        assert.equal(ui.el.thumbToggle.checked, false);
+        assert.equal(ui.playback.useYoutubeNoCookie, false);
+        assert.equal(ui.el.youtubeNoCookieToggle.checked, false);
+        assert.equal(ui.playback.playArchiveToEnd, false);
+        assert.equal(ui.el.playArchiveToEndToggle.checked, false);
+    } finally {
+        globalThis.localStorage = prevLocalStorage;
+        restoreDom();
+    }
+});
+
+test("settings: denied storage getter does not interrupt theme or playback setup", (t) => {
+    const restoreDom = installFakeDom();
+    const previousDescriptor = Object.getOwnPropertyDescriptor(globalThis, "localStorage");
+    t.mock.method(console, "warn", () => {});
+    Object.defineProperty(globalThis, "localStorage", {
+        configurable: true,
+        get() { throw new Error("storage access denied"); }
+    });
+    try {
+        const themeUi = { el: { themeToggle: document.createElement("input") } };
+        setupTheme({ ui: themeUi });
+        const { ui, controller } = createPlaybackSettingsFixture();
+        controller.setupPlaybackSettings();
+        ui.el.thumbToggle.checked = true;
+        invokeListener(ui.el.thumbToggle, "change", {});
+        assert.equal(ui.playback.showThumbnails, true);
+        assertPlaybackSettingsGroupVisible(ui);
+    } finally {
+        if (previousDescriptor) Object.defineProperty(globalThis, "localStorage", previousDescriptor);
+        else Reflect.deleteProperty(globalThis, "localStorage");
+        restoreDom();
+    }
+});
+
+test("settings: failed writes still apply theme, thumbnail rendering and playback effects", (t) => {
+    const restoreDom = installFakeDom();
+    const prevLocalStorage = globalThis.localStorage;
+    globalThis.localStorage = createFakeLocalStorage();
+    t.mock.method(console, "warn", () => {});
+    t.mock.method(globalThis.localStorage, "setItem", () => { throw new Error("quota exceeded"); });
+    try {
+        const themeUi = { el: { themeToggle: document.createElement("input") } };
+        setupTheme({ ui: themeUi });
+        themeUi.el.themeToggle.checked = true;
+        invokeListener(themeUi.el.themeToggle, "change", {});
+        assert.equal(document.documentElement.style.colorScheme, "dark");
+        const calls: string[] = [];
+        const { ui, controller } = createPlaybackSettingsFixture({
+            callbacks: {
+                updateDisplay: () => { calls.push("render"); },
+                setupScrollObserver: () => { calls.push("observe"); },
+                restoreActivePlayback: () => { calls.push("restore playback"); }
+            }
+        });
+        controller.setupPlaybackSettings();
+        ui.el.thumbToggle.checked = true;
+        invokeListener(ui.el.thumbToggle, "change", {});
+        assert.equal(ui.playback.showThumbnails, true);
+        assertPlaybackSettingsGroupVisible(ui);
+        ui.el.youtubeNoCookieToggle.checked = true;
+        invokeListener(ui.el.youtubeNoCookieToggle, "change", {});
+        assert.equal(ui.playback.useYoutubeNoCookie, true);
+        assert.equal(ui.el.youtubeNoCookieToggle.checked, true);
+        assert.deepEqual(calls, ["render", "observe", "restore playback"]);
+    } finally {
+        globalThis.localStorage = prevLocalStorage;
+        restoreDom();
+    }
+});
+
 test("setupPlaybackSettings: playback settings are reset to load defaults on boot", () => {
     const restoreDom = installFakeDom();
     const prevLocalStorage = globalThis.localStorage;
