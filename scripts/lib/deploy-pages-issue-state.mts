@@ -2,11 +2,17 @@ export const DEPLOYMENT_FAILURE_LABEL = "deploy-pages-failure";
 export const DEPLOYMENT_FAILURE_MARKER = "<!-- knksongs:deploy-pages-failure -->";
 export const DEPLOYMENT_FAILURE_TITLE = "[Workflow Failure] Deploy Pages";
 
-export type DeploymentJobResults = { resolve: string, build: string, freshness: string, deploy: string };
+export type DeploymentJobResults = {
+    resolve: string,
+    build: string,
+    freshness: string,
+    deploy: string,
+    verify: string
+};
 export type WorkflowRunOrder = { runNumber: string, runAttempt: string };
 
 const NOTIFY_JOB_NAME = "notify";
-const JOB_NAMES: Array<keyof DeploymentJobResults> = ["resolve", "build", "freshness", "deploy"];
+const JOB_NAMES = ["resolve", "build", "freshness", "deploy", "verify"] as const;
 const JOB_RESULTS = new Set(["success", "failure", "cancelled", "skipped"]);
 
 /**
@@ -25,7 +31,9 @@ export function classifyDeploymentState(results: DeploymentJobResults): "failure
     if (resultValues.some((result) => result === "failure" || result === "cancelled")) {
         return "failure";
     }
-    if (results.deploy === "success") return "recovery";
+    if (results.deploy === "success" && results.verify === "success") {
+        return "recovery";
+    }
     return "noop";
 }
 
@@ -82,5 +90,9 @@ export function hasReportedDeploymentState(jobs: unknown[]): boolean {
     const freshness = normalizeJobResult(conclusions.get("freshness"));
     const deploy = normalizeJobResult(conclusions.get("deploy"));
     if (resolve === null || build === null || freshness === null || deploy === null) return false;
-    return classifyDeploymentState({ resolve, build, freshness, deploy }) !== "noop";
+    // verifyのない旧runでは公開検証もdeploy内で完了していたため、API読込境界で補正する。
+    // 旧workflow runとの互換を打ち切る際は、欠落時もnullとして扱える。
+    const verify = conclusions.has("verify") ? normalizeJobResult(conclusions.get("verify")) : deploy;
+    if (verify === null) return false;
+    return classifyDeploymentState({ resolve, build, freshness, deploy, verify }) !== "noop";
 }

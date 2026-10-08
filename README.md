@@ -160,21 +160,28 @@ flowchart TD
   どちらのJSONも書き換えません。開始位置`0`と終了位置`null`は、
   動画全体を再生する正常値として扱います。ブラウザのCSVフォールバックも同じ変換・検証を使用します。
   行番号は検証中だけ曲候補と対にして保持し、曲データや`songs.json`へは出力しません。
-- `npm run validate:songs-json` は曲データの意味を再判定せず、2つの派生JSONの構文、
+- JSONの生成・読み込み・キャッシュ復元では、リンクがHTTPSのYouTube URLであること、
+  許可ホストと動画ID形式、URLと再生用動画IDの一致を検証します。
+- `npm run validate:songs-json` は2つの派生JSONの構文とYouTube URL、
   各曲の必須フィールド・型・未知フィールドと曲参照キーの一意性を含むスキーマ、
   `contentHash`と`generatedAt`同士、
   および曲配列から再計算したhashとの一致を検証します。
 - `.github/workflows/update-songs-json.yml` は GitHub Actions 上で `npm run build:songs-json` と
   `npm run validate:songs-json` を実行し、`data/songs.json` / `data/songs-meta.json` だけに
-  差分があることを確認します。差分があれば `APP_CLIENT_ID` repository variable と
+  差分があることを確認します。生成・検証は `contents: read` のjobで行い、差分があれば
+  2つのJSONだけをartifactとして新しいrunnerのcommit jobへ渡します。commit jobは生成時の
+  commitが現在の `main` と一致することを確認し、`APP_CLIENT_ID` repository variable と
   `APP_PRIVATE_KEY` repository secret から現在のリポジトリだけに有効な GitHub App token を作り、
   App の bot user としてコミットして `main` へ push します。この通常の push を起点に CI が動き、
   差分がない場合は token 発行、コミット、CI、deploy のいずれも行いません。
   App は対象リポジトリだけへインストールし、Repository permissions は
   Contents の Read and write だけを付与します。
+  commit jobではnpmやartifact内のコードを実行せず、JSONを固定の2パスへコピーします。
+  生成中に `main` が進んだ場合は古いデータのコミットをskipします。
+  すべてのworkflowで外部Actionは公式releaseのcommit SHAへ固定し、checkoutでGit認証情報を残しません。
 - `.github/workflows/ci.yml` は `main` への push / pull request / 手動実行で `npm run build` を実行後、曲JSON検証・型検査・emit検査・lint・単体テストの `:raw` コマンドを実行し、生成物を再利用します。`main` の CI が成功すると `.github/workflows/deploy-pages.yml` が検証済み commit を deploy します。
-- `.github/workflows/deploy-pages.yml` は workflow 全体を `queue: max` の concurrency で直列化し、成功した CI の対象を build 前、artifact 生成後、environment 待機後の deploy action 直前に `main` と照合します。待機前に古くなった run は deploy job ごと skip し、待機中に古くなった run は古い artifact を公開せず失敗として記録します。deploy 後は公開 `deployment.json` の SHA が対象 commit と一致するまで最長10分間確認し、最後に対象 commit が引き続き `main` であることを再確認してから workflow を成功扱いにします。
-- `Deploy Pages` のいずれかの job が失敗または cancel されると、`deploy-pages-failure` label と機械判定用markerを持つ公開 Issue を作成して repository owner へ assign します。同じ障害の未解決 Issue があれば新規作成せず、対象 commit、run URL、各 job の結果、検知時刻をコメントとして追記します。その後に Pages deploy が成功した場合だけ復旧コメントを付けて Issue を閉じ、古い対象の skip では閉じません。Issue 更新前に、failureまたはrecoveryの通知を完了した新しい workflow run の有無と現在の `main` SHA を再確認し、queued、notify未完了のcancelled、failure/recoveryを生じないskip構成の run だけでは古い通知を抑止しません。Issue API は一時失敗時を含めて最大3回試行し、復旧処理を完了できない場合は notify job を失敗させます。メールアドレス、secret、workflow log 本文は Issue に記録しません。
+- `.github/workflows/deploy-pages.yml` は workflow 全体を `queue: max` の concurrency で直列化し、成功した CI の対象を build 前、artifact 生成後、environment 待機後の deploy action 直前に `main` と照合します。待機前に古くなった run は deploy job ごと skip し、待機中に古くなった run は古い artifact を公開せず失敗として記録します。PagesとOIDCのwrite権限はdeploy jobだけに付与し、npm実行をbuild job、公開確認を `contents: read` のverify jobへ分離しています。verify jobは公開 `deployment.json` の SHA が対象 commit と一致するまで最長10分間確認し、最後に対象 commit が引き続き `main` であることを再確認してから workflow を成功扱いにします。
+- `Deploy Pages` のいずれかの job が失敗または cancel されると、`deploy-pages-failure` label と機械判定用markerを持つ公開 Issue を作成して repository owner へ assign します。同じ障害の未解決 Issue があれば新規作成せず、対象 commit、run URL、各 job の結果、検知時刻をコメントとして追記します。その後に Pages deployと公開確認が成功した場合だけ復旧コメントを付けて Issue を閉じ、古い対象の skip では閉じません。Issue 更新前に、failureまたはrecoveryの通知を完了した新しい workflow run の有無と現在の `main` SHA を再確認し、queued、notify未完了のcancelled、failure/recoveryを生じないskip構成の run だけでは古い通知を抑止しません。Issue API は一時失敗時を含めて最大3回試行し、復旧処理を完了できない場合は notify job を失敗させます。notify jobはNode標準APIだけを使うリポジトリの通知scriptを実行し、npm依存や生成artifactを読み込みません。メールアドレス、secret、workflow log 本文は Issue に記録しません。
 - `main` の SHA 照合と Pages deploy API の実行は原子的ではないため、両者の間に `main` が進んだ場合は古い artifact が一時的に公開される可能性があります。この場合も公開後の再照合で workflow を失敗させますが、公開自体を原子的に防ぐ保証はありません。
 - `npm run build` がJavaScriptの内容ハッシュ付きファイル名とCSSの `?v=<sha256>` を決定し、HTML・preload・importのURLを揃えます。Pages artifactはURLや生成JavaScriptを書き換えず、`browser`・静的asset・曲JSONだけを `_site` へコピーします。`_build/app` はNode tests・scripts用で配布しません。明示バージョンはビルド時の `DEPLOY_CACHE_BUSTER` または `npm run build -- --cache-buster <version>` で指定します（artifactコマンドの `--cache-buster` は廃止）。deploy SHAは `deployment.json` に記録するため、曲JSONやemit側コメントだけの変更でCSS/JavaScriptのURLは変わりません。
 - フロントエンドのみで動作します(静的ホスティング想定)。
@@ -182,6 +189,15 @@ flowchart TD
 - `app/**/*.mts` は source として扱い、Node scriptsは `npm run build:ts` で `_build/app/**/*.mjs` に生成された module を読みます。ブラウザ用には `npm run build` がこのemit結果をesbuildで `_build/browser` のES module bundleへまとめます。生成 `.mjs` は Git 管理対象外です。fresh checkout 後や `.mts` 変更後にブラウザで確認する場合は、`npm run build` を実行し `_build` を配信してください。`build:ts` 単体ではブラウザ用bundleを更新しません。`npm run check:ts-emit` は `_build/app` の生成 `.mjs` が存在し、`app` source tree に `.mjs` が残っていないことを確認します。`npm run build` は静的 asset と TypeScript 生成 module を `_build` へ作成し、`npm run build:pages-artifact` は `_build` を元に `_site` を作成します。`npm run test:unit` / `npm run build:songs-json` / `npm run validate:songs-json` は事前に `build:ts` を実行します。`npm run build:pages-artifact` は事前に `npm run build` を実行し、`npm run test:e2e` はそのPages artifactを検証します。
 - ブラウザ用bundleは小さい起動処理、UI、共有処理へ分割し、UIと共有処理の `modulepreload` をbuild時にHTMLへ生成します。HTML解析時に必要なファイルを並行取得できるため、module依存先を順に発見する通信待ちを減らします。esbuildは開発依存のみで、実行時の外部ライブラリは追加しません。
 - サムネイル表示/埋め込み再生まわりでは YouTube Iframe API を動的に利用します。
+- `index.html` のmeta CSPでscript・画像・iframe・通信の取得元を制限します。
+  初回描画前のテーマ初期化はインラインのままSHA-256で限定して許可し、変更時はCSPのhashも更新します。
+  `tests/content-security-policy.test.mts` がhashの一致を検証します。
+  YouTube APIのloaderとwidget用path、2種類のembed host、サムネイルhost、
+  Google SheetsとCSVのredirect先だけを外部取得元として許可しています。
+  GitHub Pagesの静的HTMLで設定できるmeta方式のため、report-onlyやframe-ancestorsは設定しません。
+- ブックマークのJSONインポートは1,000,000バイトまでとし、ファイル読み込み前とJSON解析前に上限を確認します。
+  正規化・曲参照移行後も同じ上限を確認します。エクスポートは通常整形したJSONとし、
+  整形によって上限を超える場合は空白と末尾改行を省き、取り込んだデータを再取り込みできるようにします。
 - 開発時の静的解析は TypeScript noEmit typecheck と ESLint を利用します。
 - 開発時テストは Node.js 標準の `node:test` を利用します。
 - Node単体テスト・E2Eと、それぞれの共通helperはすべて `.mts` で記述します。

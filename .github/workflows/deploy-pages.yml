@@ -26,9 +26,10 @@ jobs:
       is-current-main: ${{ steps.target.outputs.is-current-main }}
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           ref: main
+          persist-credentials: false
 
       - name: Resolve deployment target
         id: target
@@ -51,11 +52,12 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           ref: ${{ needs.resolve.outputs.deploy-sha }}
+          persist-credentials: false
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
           node-version: 24.16.0
           cache: npm
@@ -67,7 +69,7 @@ jobs:
           DEPLOY_SHA: ${{ needs.resolve.outputs.deploy-sha }}
         run: npm run build:pages-artifact
 
-      - uses: actions/upload-pages-artifact@v5
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
           path: _site
 
@@ -107,6 +109,8 @@ jobs:
       contents: read
       pages: write
       id-token: write
+    outputs:
+      page-url: ${{ steps.deployment.outputs.page_url }}
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
@@ -125,19 +129,28 @@ jobs:
 
       - name: Deploy to GitHub Pages
         id: deployment
-        uses: actions/deploy-pages@v5
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
 
-      - uses: actions/checkout@v6
+  verify:
+    name: verify
+    needs:
+      - resolve
+      - deploy
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           ref: ${{ needs.resolve.outputs.deploy-sha }}
+          persist-credentials: false
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
           node-version: 24.16.0
 
       - name: Verify deployed commit
         env:
-          PAGE_URL: ${{ steps.deployment.outputs.page_url }}
+          PAGE_URL: ${{ needs.deploy.outputs.page-url }}
           EXPECTED_SHA: ${{ needs.resolve.outputs.deploy-sha }}
         run: node scripts/verify-pages-deployment.mts
 
@@ -159,6 +172,7 @@ jobs:
       - build
       - freshness
       - deploy
+      - verify
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -168,9 +182,12 @@ jobs:
       issues: write
 
     steps:
-      - uses: actions/checkout@v6
+      # This trusted notification script uses only Node built-ins, without npm or build artifacts.
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
           node-version: 24.16.0
 
@@ -184,4 +201,5 @@ jobs:
           REPOSITORY_OWNER: ${{ github.repository_owner }}
           RESOLVE_RESULT: ${{ needs.resolve.result }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          VERIFY_RESULT: ${{ needs.verify.result }}
         run: node scripts/deploy-pages-issue-notification.mts

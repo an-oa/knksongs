@@ -56,6 +56,15 @@ test("songs data quality: rejects invalid YouTube hosts with the CSV row", () =>
     assert.match(issues.join("\n"), /CSV 2行目「Song」/);
 });
 
+test("songs data quality: requires HTTPS even on supported YouTube hosts", () => {
+    for (const protocol of ["http:", "ftp:"]) {
+        const issues = validateSongsDataQuality([
+            makeCandidate({ url: `${protocol}//www.youtube.com/watch?v=7fOw-4QeB7M&t=349s` }, 27)
+        ]);
+        assert.match(issues.join("\n"), /CSV 27行目「Song」: url protocol must be https:/);
+    }
+});
+
 test("songs data quality: uses transient source row numbers after excluded CSV rows", () => {
     const issues = validateSongsDataQuality([
         makeCandidate({ url: "https://example.com/watch?v=7fOw-4QeB7M&t=349s" }, 27)

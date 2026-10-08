@@ -87,6 +87,9 @@ export function readFileText(file: { text?: () => Promise<string> } | Blob): Pro
  * @returns {string}
  */
 export function getBookmarkImportErrorMessage(result: StorageActionFailure): string {
+    if (result.reason === "max_import_file_size") {
+        return `インポートできるファイルは最大${result.limit / 1_000_000} MBです。`;
+    }
     if (result.reason === "invalid_json") {
         return "JSONとして読み込めないファイルです。";
     }

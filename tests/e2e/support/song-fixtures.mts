@@ -8,7 +8,7 @@ export function createScrollableResultSongs(count: number): Song[] {
         const month = 2 + Math.floor(index / 28);
         const day = (index % 28) + 1;
         const date = `2024/${String(month).padStart(2, "0")}/${String(day).padStart(2, "0")}`;
-        const videoId = `scroll-video-${paddedIndex}`;
+        const videoId = `scroll${String(songNumber).padStart(5, "0")}`;
         const title = `Scroll Song ${paddedIndex}`;
         const artist = "Scroll Artist";
         return {

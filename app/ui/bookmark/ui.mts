@@ -7,6 +7,7 @@ import {
 } from "./import-export.mjs";
 import { createBookmarkNotificationController } from "./notifications.mjs";
 import { createSidebarSubpanelController } from "../sidebar/subpanel.mjs";
+import { MAX_BOOKMARK_IMPORT_BYTES } from "../../lib/storage/bookmark-transfer.mjs";
 import type { AppDataState, AppUiState } from "../../state.types";
 import type { StorageActionResult } from "../../controllers/storage.mjs";
 
@@ -299,6 +300,14 @@ export function createBookmarkUiController({ data, ui, callbacks }: BookmarkUiCo
 
         clearBookmarkPanelError();
         try {
+            if (file.size > MAX_BOOKMARK_IMPORT_BYTES) {
+                showBookmarkPanelError(getBookmarkImportErrorMessage({
+                    ok: false,
+                    reason: "max_import_file_size",
+                    limit: MAX_BOOKMARK_IMPORT_BYTES
+                }));
+                return;
+            }
             const text = await readFileText(file);
             const preview = onPreviewBookmarkImport(text);
             if (preview.ok === false) {

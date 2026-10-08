@@ -4,6 +4,15 @@ import {
     parseStoredBookmarksPayload
 } from "./bookmark-schema.mjs";
 
+/** ファイル読み込みと JSON 解析の前に適用する UTF-8 バイト数の上限。 */
+export const MAX_BOOKMARK_IMPORT_BYTES = 1_000_000;
+
+/** 巨大な文字列の複製を避けながら、インポート上限をUTF-8バイト数で確認する。 */
+function isWithinBookmarkImportSize(text: string): boolean {
+    return text.length <= MAX_BOOKMARK_IMPORT_BYTES &&
+        new TextEncoder().encode(text).byteLength <= MAX_BOOKMARK_IMPORT_BYTES;
+}
+
 type BookmarkImportEntry = {
     name: string;
     songs: string[];
@@ -29,6 +38,7 @@ type BookmarkImportLimitFailure =
 type BookmarkImportFailure =
     | BookmarkImportLimitFailure
     | { ok: false; reason: "invalid_text" | "invalid_json" | "invalid_bookmark_file" }
+    | { ok: false; reason: "max_import_file_size"; limit: number }
     | { ok: false; reason: "unsupported_version"; version: number };
 
 /** 検証済みブックマーク、または理由で判別できるインポート失敗。 */
@@ -99,6 +109,9 @@ export function parseBookmarkImportText(
     options: BookmarkImportOptions
 ): BookmarkImportResult {
     if (typeof text !== "string") return { ok: false, reason: "invalid_text" };
+    if (!isWithinBookmarkImportSize(text)) {
+        return { ok: false, reason: "max_import_file_size", limit: MAX_BOOKMARK_IMPORT_BYTES };
+    }
 
     let raw;
     try {
@@ -141,6 +154,10 @@ export function parseBookmarkImportText(
 
     const limitCheck = validateBookmarkImportLimits(bookmarks, options);
     if (limitCheck.ok === false) return limitCheck;
+    // 旧形式の正規化・曲参照移行で増えた分も確認し、取り込み直後の再入出力を可能にする。
+    if (!isWithinBookmarkImportSize(JSON.stringify({ version: options.storageVersion, bookmarks }))) {
+        return { ok: false, reason: "max_import_file_size", limit: MAX_BOOKMARK_IMPORT_BYTES };
+    }
 
     return {
         ok: true,
@@ -152,6 +169,7 @@ export function parseBookmarkImportText(
 
 /**
  * 現在のブックマークを JSON エクスポート用文字列へ変換する。
+ * 整形でインポート上限を超える場合は、再取り込みできるよう空白と末尾改行を省く。
  */
 export function exportBookmarksAsJsonText(
     bookmarks: unknown,
@@ -159,9 +177,10 @@ export function exportBookmarksAsJsonText(
 ): { ok: true; text: string; bookmarkCount: number; songCount: number } {
     const safeBookmarks = bookmarks && typeof bookmarks === "object" ? bookmarks : {};
     const payload = buildStoredBookmarksPayload(safeBookmarks, version);
+    const formattedText = `${JSON.stringify(payload, null, 2)}\n`;
     return {
         ok: true,
-        text: `${JSON.stringify(payload, null, 2)}\n`,
+        text: isWithinBookmarkImportSize(formattedText) ? formattedText : JSON.stringify(payload),
         bookmarkCount: Object.keys(payload.bookmarks).length,
         songCount: countBookmarkSongs(payload.bookmarks)
     };
