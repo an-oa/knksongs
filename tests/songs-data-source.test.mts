@@ -221,6 +221,36 @@ test("songs data source: structurally invalid network json is not cached and fal
     assert.equal(snapshot.songs[0].songKey, "archive-1::1");
 });
 
+test("songs data source: unsafe links in network and cached JSON fall back to validated CSV", async (t) => {
+    const payload: SongsJsonPayload = JSON.parse(createSongsJson("unsafe-archive::1", "sha256:unsafe"));
+    payload.songs[0].url = "javascript:alert(1)";
+    payload.songs[0].legacySongKey = "unsafe-archive::1::javascript:alert(1)";
+    const unsafeJson = JSON.stringify(payload);
+    const songsJsonCache = createFakeTextCacheStore(unsafeJson);
+    t.mock.method(console, "warn", () => {});
+    const fetchMock = mockFetch(t, async (url) => {
+        if (url === "data/songs-meta.json") return createResponse(createSongsMetaJson("sha256:unsafe"));
+        if (url === "data/songs.json") return createResponse(unsafeJson);
+        return createResponse(createValidCsv());
+    });
+    const snapshot = await createSongsDataSource({
+        publicSongsJsonUrl: "data/songs.json",
+        publicSongsMetaUrl: "data/songs-meta.json",
+        publicCsvUrl: "https://example.test/songs.csv",
+        songsJsonCache
+    }).loadInitialSnapshot();
+
+    assert.ok(snapshot);
+    assert.equal(snapshot.source, "network");
+    assert.equal(snapshot.songs[0].url, "https://www.youtube.com/watch?v=abc123def45&t=10s");
+    assert.equal(songsJsonCache.peek(), null);
+    assertFetchCalls(fetchMock, [
+        ["data/songs-meta.json", { cache: "no-cache" }],
+        ["data/songs.json", { cache: "no-cache" }],
+        ["https://example.test/songs.csv", { cache: "no-store" }]
+    ]);
+});
+
 test("songs data source: matching meta hash uses cached json without fetching the body", async (t) => {
     const cachedJson = createSongsJson("cached-archive::1", "sha256:cached");
     const songsJsonCache = createFakeTextCacheStore(cachedJson);

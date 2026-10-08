@@ -54,7 +54,8 @@ const BASE_CONTEXT = {
         resolve: "success",
         build: "success",
         freshness: "success",
-        deploy: "success"
+        deploy: "success",
+        verify: "success"
     }
 };
 
@@ -73,7 +74,8 @@ test("deploy issue state: classifies expected skips, failures, recovery, and can
                 resolve: "success",
                 build: "skipped",
                 freshness: "skipped",
-                deploy: "skipped"
+                deploy: "skipped",
+                verify: "skipped"
             },
             expected: "noop"
         },
@@ -83,7 +85,8 @@ test("deploy issue state: classifies expected skips, failures, recovery, and can
                 resolve: "failure",
                 build: "skipped",
                 freshness: "skipped",
-                deploy: "skipped"
+                deploy: "skipped",
+                verify: "skipped"
             },
             expected: "failure"
         },
@@ -93,7 +96,8 @@ test("deploy issue state: classifies expected skips, failures, recovery, and can
                 resolve: "success",
                 build: "failure",
                 freshness: "skipped",
-                deploy: "skipped"
+                deploy: "skipped",
+                verify: "skipped"
             },
             expected: "failure"
         },
@@ -103,7 +107,8 @@ test("deploy issue state: classifies expected skips, failures, recovery, and can
                 resolve: "success",
                 build: "success",
                 freshness: "failure",
-                deploy: "skipped"
+                deploy: "skipped",
+                verify: "skipped"
             },
             expected: "failure"
         },
@@ -113,7 +118,8 @@ test("deploy issue state: classifies expected skips, failures, recovery, and can
                 resolve: "success",
                 build: "success",
                 freshness: "success",
-                deploy: "failure"
+                deploy: "failure",
+                verify: "skipped"
             },
             expected: "failure"
         },
@@ -123,7 +129,8 @@ test("deploy issue state: classifies expected skips, failures, recovery, and can
                 resolve: "success",
                 build: "cancelled",
                 freshness: "skipped",
-                deploy: "skipped"
+                deploy: "skipped",
+                verify: "skipped"
             },
             expected: "failure"
         },
@@ -145,10 +152,45 @@ test("deploy issue state: rejects unknown job results", () => {
             resolve: "success",
             build: "timed_out",
             freshness: "skipped",
-            deploy: "skipped"
+            deploy: "skipped",
+            verify: "skipped"
         }),
         /Unknown build job result: timed_out/
     );
+    assert.throws(
+        () => classifyDeploymentState({ ...BASE_CONTEXT.results, verify: "timed_out" }),
+        /Unknown verify job result: timed_out/
+    );
+});
+
+test("deploy issue state: rejects missing or undefined verification results", () => {
+    const incompleteResults = {
+        resolve: "success",
+        build: "success",
+        freshness: "success",
+        deploy: "success"
+    };
+    assert.throws(
+        // @ts-expect-error 現行job結果ではverifyの欠落を型検査でも拒否する。
+        () => classifyDeploymentState(incompleteResults),
+        /Unknown verify job result: \(empty\)/
+    );
+    assert.throws(
+        // @ts-expect-error 現行job結果では明示的なundefinedも型検査で拒否する。
+        () => classifyDeploymentState({ ...BASE_CONTEXT.results, verify: undefined }),
+        /Unknown verify job result: \(empty\)/
+    );
+});
+
+test("deploy issue state: waits for public verification before reporting recovery", () => {
+    for (const [verify, expected] of [
+        ["success", "recovery"],
+        ["failure", "failure"],
+        ["cancelled", "failure"],
+        ["skipped", "noop"]
+    ]) {
+        assert.equal(classifyDeploymentState({ ...BASE_CONTEXT.results, verify }), expected);
+    }
 });
 
 test("deploy issue identity: uses a dedicated label and body marker instead of the title", () => {
@@ -188,7 +230,8 @@ test("deploy issue report: records the run marker, attempt, and all job results"
             ...BASE_CONTEXT,
             results: {
                 ...BASE_CONTEXT.results,
-                deploy: "failure"
+                deploy: "failure",
+                verify: "skipped"
             }
         },
         new Date("2026-08-28T01:02:03.456Z")
@@ -197,6 +240,7 @@ test("deploy issue report: records the run marker, attempt, and all job results"
     assert.match(report, /knksongs:deploy-pages-notification:failure:12345:1/);
     assert.match(report, /- Attempt: 1/);
     assert.match(report, /- Deploy: failure/);
+    assert.match(report, /- Verify: skipped/);
     assert.match(report, /- Detected at: 2026-08-28T01:02:03Z/);
 });
 
@@ -260,6 +304,50 @@ test("deploy issue ordering: only completed notification jobs carry deployment s
         { name: "deploy", conclusion: "success" },
         { name: "notify", conclusion: "success" }
     ]), true);
+});
+
+test("deploy issue ordering: reads separate verification and preserves historical deployment jobs", () => {
+    const successfulJobs = [
+        { name: "resolve", conclusion: "success" },
+        { name: "build", conclusion: "success" },
+        { name: "freshness", conclusion: "success" },
+        { name: "deploy", conclusion: "success" },
+        { name: "notify", conclusion: "success" }
+    ];
+    assert.equal(hasReportedDeploymentState(successfulJobs), true);
+    assert.equal(hasReportedDeploymentState([
+        ...successfulJobs,
+        { name: "verify", conclusion: "success" }
+    ]), true);
+    assert.equal(hasReportedDeploymentState([
+        ...successfulJobs,
+        { name: "verify", conclusion: "failure" }
+    ]), true);
+    assert.equal(hasReportedDeploymentState([
+        ...successfulJobs,
+        { name: "verify", conclusion: "skipped" }
+    ]), false);
+    assert.equal(hasReportedDeploymentState([
+        ...successfulJobs,
+        { name: "verify", conclusion: null }
+    ]), false);
+});
+
+test("deploy issue ordering: normalizes historical verification only at the API boundary", () => {
+    for (const [deploy, expected] of [
+        ["success", true],
+        ["failure", true],
+        ["cancelled", true],
+        ["skipped", false]
+    ] as const) {
+        assert.equal(hasReportedDeploymentState([
+            { name: "resolve", conclusion: "success" },
+            { name: "build", conclusion: "success" },
+            { name: "freshness", conclusion: "success" },
+            { name: "deploy", conclusion: deploy },
+            { name: "notify", conclusion: "success" }
+        ]), expected, deploy);
+    }
 });
 
 test("deploy issue API: retries temporary failures with exponential delays", async () => {

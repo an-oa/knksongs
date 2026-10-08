@@ -2,6 +2,8 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
+  <!-- テーマ初期化だけを SHA-256 で許可し、YouTube API の script は必要な path に限定する。 -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-efgRYLPUL+yZFXRA2ExM5UWk6WbhpEomVq4BjYTkVQE=' https://www.youtube.com/iframe_api https://www.youtube.com/s/player/; script-src-attr 'none'; style-src 'self'; img-src 'self' https://i.ytimg.com; connect-src 'self' https://docs.google.com https://*.googleusercontent.com; frame-src https://www.youtube.com/embed/ https://www.youtube-nocookie.com/embed/; object-src 'none'; base-uri 'none'; form-action 'none'">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>鐘輝かう 歌サーチ</title>
 

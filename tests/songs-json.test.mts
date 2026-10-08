@@ -39,6 +39,76 @@ test("songs json: accepts nullable date and end fields with empty orientation", 
     assert.deepEqual(parseSongsJsonPayload(JSON.stringify(payload)).songs, [song]);
 });
 
+test("songs json: accepts supported HTTPS YouTube URL forms", () => {
+    for (const url of [
+        "https://youtube.com/watch?v=abc123def45",
+        "https://www.youtube.com/watch?v=abc123def45&t=10s",
+        "https://m.youtube.com/watch?v=abc123def45&start=10",
+        "https://youtu.be/abc123def45?t=10s",
+        "https://www.youtube.com/shorts/abc123def45",
+        "https://www.youtube.com/live/abc123def45"
+    ]) {
+        const song = createSongFixture({ url, legacySongKey: `archive-1::1::${url}` });
+        const payload = buildSongsJsonPayload([song], "sha256:test", GENERATED_AT);
+        assert.deepEqual(parseSongsJsonPayload(JSON.stringify(payload)).songs, [song], url);
+    }
+});
+
+test("songs json: rejects unsafe protocols and unsupported YouTube hosts", () => {
+    const cases: [url: string, expected: RegExp][] = [
+        ["javascript:alert(1)", /url protocol must be https:/],
+        ["data:text/html,<script>alert(1)</script>", /url protocol must be https:/],
+        ["http://www.youtube.com/watch?v=abc123def45", /url protocol must be https:/],
+        ["ftp://www.youtube.com/watch?v=abc123def45", /url protocol must be https:/],
+        ["https://youtube.com.evil.example/watch?v=abc123def45", /url host must be a supported YouTube host/],
+        ["https://www.youtube.com@evil.example/watch?v=abc123def45", /url host must be a supported YouTube host/],
+        ["//www.youtube.com/watch?v=abc123def45", /url must be an absolute https: YouTube URL/]
+    ];
+    for (const [url, expected] of cases) {
+        const song = createSongFixture({ url, legacySongKey: `archive-1::1::${url}` });
+        const payload = {
+            schemaVersion: SONGS_JSON_SCHEMA_VERSION,
+            contentHash: "sha256:test",
+            generatedAt: GENERATED_AT,
+            songs: [song]
+        };
+        assert.throws(() => parseSongsJsonPayload(JSON.stringify(payload)), expected, url);
+        assert.throws(() => buildSongsJsonPayload([song], "sha256:test", GENERATED_AT), expected, url);
+    }
+});
+
+test("songs json: rejects invalid URL video IDs and negative start seconds", () => {
+    const cases: [url: string, expected: RegExp][] = [
+        ["https://www.youtube.com/watch?v=short", /extracted videoId must match/],
+        ["https://youtu.be/abc123def45/extra", /extracted videoId must match/],
+        ["https://www.youtube.com/watch?v=abc123def45&t=-1", /startSeconds must be a finite number/]
+    ];
+    for (const [url, expected] of cases) {
+        const song = createSongFixture({ url, legacySongKey: `archive-1::1::${url}` });
+        const payload = {
+            schemaVersion: SONGS_JSON_SCHEMA_VERSION,
+            contentHash: "sha256:test",
+            generatedAt: GENERATED_AT,
+            songs: [song]
+        };
+        assert.throws(() => parseSongsJsonPayload(JSON.stringify(payload)), expected, url);
+    }
+});
+
+test("songs json: rejects stored video IDs that disagree with the URL", () => {
+    const song = createSongFixture({ videoId: "xyz123def45", bookmarkSongKey: "xyz123def45::1" });
+    const payload = {
+        schemaVersion: SONGS_JSON_SCHEMA_VERSION,
+        contentHash: "sha256:test",
+        generatedAt: GENERATED_AT,
+        songs: [song]
+    };
+    assert.throws(
+        () => parseSongsJsonPayload(JSON.stringify(payload)),
+        /songs\[0\]\.videoId must equal the videoId extracted from url/
+    );
+});
+
 test("songs json: rejects songs missing any required field", () => {
     const validSong = createSongFixture();
     for (const fieldName of Object.keys(validSong)) {

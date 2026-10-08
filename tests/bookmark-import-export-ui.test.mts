@@ -15,6 +15,10 @@ test("bookmark import export ui: builds dated export filenames", () => {
 
 test("bookmark import export ui: maps import results to user-facing messages", () => {
     assert.equal(
+        getBookmarkImportErrorMessage({ ok: false, reason: "max_import_file_size", limit: 1_000_000 }),
+        "インポートできるファイルは最大1 MBです。"
+    );
+    assert.equal(
         getBookmarkImportErrorMessage({ ok: false, reason: "invalid_json" }),
         "JSONとして読み込めないファイルです。"
     );

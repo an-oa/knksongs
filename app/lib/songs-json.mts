@@ -1,4 +1,5 @@
 import { findFirstSongIdentityIssue, type SongIdentityIssue } from "./song-identity.mjs";
+import { validateYoutubeUrl } from "./youtube-url.mjs";
 
 export const SONGS_JSON_SCHEMA_VERSION = 3;
 
@@ -134,7 +135,7 @@ function describeSongFieldKind(fieldKind: SongFieldKind): string {
 
 /**
  * 曲要素について、Songの必須フィールドと値の型を検証する。
- * 空文字やURL形式などの意味的品質はマスターCSVの変換時に別途検証する。
+ * URLの意味的検証は構造確認後に行い、表示用の文字列の品質はCSV変換時に検証する。
  * @param song 検証する曲要素
  * @param index songs配列上の位置
  */
@@ -168,6 +169,18 @@ function assertSongStructure(song: unknown, index: number): asserts song is Song
     }
 }
 
+/** 曲リンクと再生用IDを、CSV生成時と同じYouTube URL条件で検証する。 */
+function assertSongYoutubeFields(song: Song, index: number): void {
+    const location = `songs json payload songs[${index}]`;
+    const result = validateYoutubeUrl(song.url);
+    if (result.issues.length > 0) {
+        throw new Error(`${location}: ${result.issues[0]}`);
+    }
+    if (song.videoId !== result.youtubeInfo.videoId) {
+        throw new Error(`${location}.videoId must equal the videoId extracted from url`);
+    }
+}
+
 /** 曲識別子の問題をJSON配列位置付きの診断へ変換する。 */
 function formatSongIdentityIssue(issue: SongIdentityIssue): string {
     const location = `songs json payload songs[${issue.index}]`;
@@ -182,7 +195,7 @@ function formatSongIdentityIssue(issue: SongIdentityIssue): string {
 }
 
 /**
- * songs値と各曲要素の構造を確認する。
+ * songs値と各曲要素の構造・識別子・YouTube URLを確認する。
  * @param songs 検証するsongs値
  * @returns 検証済み曲配列
  */
@@ -195,6 +208,7 @@ function parseSongsArray(songs: unknown): Song[] {
     if (identityIssue) {
         throw new Error(formatSongIdentityIssue(identityIssue));
     }
+    songs.forEach((song, index) => assertSongYoutubeFields(song, index));
     return songs;
 }
 

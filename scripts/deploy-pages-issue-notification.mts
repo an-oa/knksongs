@@ -130,6 +130,7 @@ export function buildFailureReport(
         `- Build: ${context.results.build}`,
         `- Freshness: ${context.results.freshness}`,
         `- Deploy: ${context.results.deploy}`,
+        `- Verify: ${context.results.verify}`,
         `- Detected at: ${formatTimestamp(detectedAt)}`,
         ""
     ].join("\n");
@@ -360,7 +361,8 @@ if (import.meta.url === entryPointUrl) {
                 resolve: requireEnvironmentVariable("RESOLVE_RESULT"),
                 build: requireEnvironmentVariable("BUILD_RESULT"),
                 freshness: requireEnvironmentVariable("FRESHNESS_RESULT"),
-                deploy: requireEnvironmentVariable("DEPLOY_RESULT")
+                deploy: requireEnvironmentVariable("DEPLOY_RESULT"),
+                verify: requireEnvironmentVariable("VERIFY_RESULT")
             }
         };
         const client = createGitHubIssueClient({

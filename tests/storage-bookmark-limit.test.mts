@@ -715,6 +715,36 @@ test("restorePersistedState: existing long bookmark names are preserved", () => 
     }
 });
 
+test("migrateLegacyBookmarkSongRefs: preserves __proto__ bookmark IDs during migration and saving", () => {
+    const restoreDom = installFakeDom();
+    const prevLocalStorage = globalThis.localStorage;
+    globalThis.localStorage = createFakeLocalStorage();
+    try {
+        const { controller, bookmarkPersistenceController, data } = setupStorageController({ bookmarks: {} });
+        data.allSongsRaw = [createSongFixture({ songKey: "arch1::1", bookmarkSongKey: "videoA::1" })];
+        globalThis.localStorage.setItem("bookmarksTest", `{
+            "version": 2,
+            "bookmarks": {
+                "__proto__": { "name": "Legacy ID", "songs": ["arch1::1"], "createdAt": 1 }
+            }
+        }`);
+
+        controller.restorePersistedState();
+        bookmarkPersistenceController.migrateLegacyBookmarkSongRefs();
+
+        assert.equal(Object.getPrototypeOf(data.bookmarks), Object.prototype);
+        assert.equal(Object.hasOwn(data.bookmarks, "__proto__"), true);
+        assert.deepEqual(data.bookmarks["__proto__"].songs, ["videoA::1"]);
+        const stored = JSON.parse(readStoredText(globalThis.localStorage, "bookmarksTest"));
+        assert.equal(stored.version, 3);
+        assert.equal(Object.hasOwn(stored.bookmarks, "__proto__"), true);
+        assert.deepEqual(stored.bookmarks, data.bookmarks);
+    } finally {
+        globalThis.localStorage = prevLocalStorage;
+        restoreDom();
+    }
+});
+
 test("migrateLegacyBookmarkSongRefs: rewrites old songKey refs to bookmarkSongKey and saves versioned payload", () => {
     const restoreDom = installFakeDom();
     const prevLocalStorage = globalThis.localStorage;

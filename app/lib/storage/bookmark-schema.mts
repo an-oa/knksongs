@@ -48,7 +48,7 @@ type BookmarkMigrationChange = {
  */
 export function sanitizeBookmarks(raw: unknown) {
     if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
-    const sanitized: Record<string, StoredBookmarkRecord> = {};
+    const entries: Array<[string, StoredBookmarkRecord]> = [];
     for (const [id, bookmark] of Object.entries(raw as Record<string, RawBookmarkRecord>)) {
         if (!bookmark || typeof bookmark !== "object" || Array.isArray(bookmark)) continue;
         const name = typeof bookmark.name === "string" ? bookmark.name.trim() : "";
@@ -64,9 +64,10 @@ export function sanitizeBookmarks(raw: unknown) {
             seen.add(normalized);
             songs.push(normalized);
         });
-        sanitized[id] = { name, createdAt, songs };
+        entries.push([id, { name, createdAt, songs }]);
     }
-    return sanitized;
+    // 外部由来の __proto__ も prototype を変更せず、通常の own property として保存する。
+    return Object.fromEntries(entries);
 }
 
 /**

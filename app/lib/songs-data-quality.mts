@@ -1,4 +1,4 @@
-import { extractYoutubeInfo } from "./youtube-url.mjs";
+import { extractYoutubeInfo, validateYoutubeUrl } from "./youtube-url.mjs";
 import {
     validateSongIdentities,
     type SongIdentityIssue
@@ -8,14 +8,6 @@ export type SongDataQualityCandidate = {
     song: unknown;
     csvRowNumber: number;
 };
-
-const ALLOWED_YOUTUBE_HOSTS = new Set([
-    "youtube.com",
-    "www.youtube.com",
-    "m.youtube.com",
-    "youtu.be"
-]);
-const YOUTUBE_VIDEO_ID_PATTERN = /^[A-Za-z0-9_-]{11}$/;
 
 /**
  * 値を曲データ検証用の表示文字列へ整形する。
@@ -44,19 +36,6 @@ function formatSongLocation(
     const title = typeof song.title === "string" ? song.title.trim() : "";
     const location = `CSV ${csvRowNumber}行目`;
     return title ? `${location}「${title}」` : location;
-}
-
-/**
- * URL文字列からhostを抽出する。
- * @param url 検証するURL
- * @returns URLとして解析できない場合は空文字
- */
-function parseUrlHost(url: unknown): string {
-    try {
-        return new URL(String(url)).hostname;
-    } catch {
-        return "";
-    }
 }
 
 /**
@@ -92,24 +71,11 @@ export function validateSongYoutubeFields(
     issues: string[]
 ): ReturnType<typeof extractYoutubeInfo> {
     const song = candidate.song as Record<string, unknown>;
-    const host = parseUrlHost(song.url);
-    if (!ALLOWED_YOUTUBE_HOSTS.has(host)) {
-        issues.push(`${formatSongLocation(candidate, index)}: url host must be a supported YouTube host`);
+    const result = validateYoutubeUrl(typeof song.url === "string" ? song.url : "");
+    for (const issue of result.issues) {
+        issues.push(`${formatSongLocation(candidate, index)}: ${issue}`);
     }
-
-    const youtubeInfo = extractYoutubeInfo(typeof song.url === "string" ? song.url : "");
-    if (!YOUTUBE_VIDEO_ID_PATTERN.test(youtubeInfo.videoId)) {
-        issues.push(
-            `${formatSongLocation(candidate, index)}: extracted videoId must match ${YOUTUBE_VIDEO_ID_PATTERN}`
-        );
-    }
-    if (!Number.isFinite(youtubeInfo.startSeconds) || youtubeInfo.startSeconds < 0) {
-        issues.push(
-            `${formatSongLocation(candidate, index)}: ` +
-            "startSeconds must be a finite number greater than or equal to 0"
-        );
-    }
-    return youtubeInfo;
+    return result.youtubeInfo;
 }
 
 /**

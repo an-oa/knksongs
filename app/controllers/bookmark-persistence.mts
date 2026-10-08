@@ -253,10 +253,12 @@ export function createBookmarkPersistenceController({
             return;
         }
         const requiresVersionUpgrade = loadedStorageVersion < storageVersion;
-        const nextBookmarks: Record<string, BookmarkRecord> = {};
-        Object.entries(data.bookmarks).forEach(([bookmarkId, bookmark]) => {
-            nextBookmarks[bookmarkId] = { ...bookmark, songs: bookmark.songs.slice() };
-        });
+        const nextBookmarks = Object.fromEntries(
+            Object.entries(data.bookmarks).map(([bookmarkId, bookmark]) => [
+                bookmarkId,
+                { ...bookmark, songs: bookmark.songs.slice() }
+            ] as const)
+        );
         const migration = migrateLegacyBookmarkSongRefsToCurrent({
             bookmarks: nextBookmarks,
             songRows: data.allSongsRaw

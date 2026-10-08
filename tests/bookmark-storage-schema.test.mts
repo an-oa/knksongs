@@ -204,3 +204,21 @@ test("bookmark storage schema: sanitizes invalid bookmark maps to an empty objec
     assert.deepEqual(sanitizeBookmarks(null), {});
     assert.deepEqual(sanitizeBookmarks([]), {});
 });
+
+test("bookmark storage schema: preserves arbitrary IDs as own properties without changing the prototype", () => {
+    const raw = JSON.parse(`{
+        "__proto__": { "name": " Prototype List ", "createdAt": 1, "songs": ["song-1"] },
+        "constructor": { "name": "Constructor List", "createdAt": 2, "songs": [] },
+        "prototype": { "name": "Other List", "createdAt": 3, "songs": [] },
+        "legacy id / 1": { "name": "Legacy ID", "createdAt": 4, "songs": [] }
+    }`);
+
+    const result = sanitizeBookmarks(raw);
+
+    assert.equal(Object.getPrototypeOf(result), Object.prototype);
+    assert.deepEqual(Object.keys(result), ["__proto__", "constructor", "prototype", "legacy id / 1"]);
+    assert.equal(Object.hasOwn(result, "__proto__"), true);
+    assert.deepEqual(result["__proto__"], { name: "Prototype List", createdAt: 1, songs: ["song-1"] });
+    assert.deepEqual(JSON.parse(JSON.stringify(result)), result);
+    assert.equal(Object.hasOwn(Object.prototype, "songs"), false);
+});
