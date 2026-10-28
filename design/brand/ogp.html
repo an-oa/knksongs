@@ -10,14 +10,14 @@
   * { box-sizing: border-box; }
   html, body { margin: 0; }
   /*
-   * 左はライトテーマのヘッダー（白地のホルスタイン柄）、右はダークテーマのヘッダー（赤いチェック柄）に揃え、
-   * 両テーマの折衷にする。上下の帯と仕切りはダークのヘッダー下の線と同じ鐘の金色にする。
+   * 左はライトテーマのヘッダー（白地のホルスタイン柄）、右はダークテーマのヘッダー（マフラーのチェック柄）に揃え、
+   * 両テーマの折衷にする。上下の帯と仕切りはダークのヘッダー下の線と同じゴーグルの山吹色にする。
    */
   body {
     width: 1200px;
     height: 630px;
     font-family: "Noto Sans CJK JP", "Noto Sans JP", sans-serif;
-    background: #ffc928;
+    background: #eca000;
     color: #ffffff;
     position: relative;
     overflow: hidden;
@@ -30,7 +30,7 @@
     width: 400px;
     background: #fff;
     overflow: hidden;
-    border-right: 6px solid #ffc928;
+    border-right: 6px solid #eca000;
   }
   .panel .spots { position: absolute; inset: 0; width: 100%; height: 100%; }
   /* ゴーグルは白い面の幅いっぱいに置き、バンドを面の左右の端まで届かせる。 */
@@ -42,7 +42,7 @@
     top: 50%;
     transform: translateY(-50%);
   }
-  /* styles.css のダークのヘッダーと同じチェック柄を、画像の大きさに合わせて約1.4倍にする。 */
+  /* styles.css の --tartan-weft と --tartan-warp（ダークのヘッダーのチェック柄）を、画像の大きさに合わせて1.4倍にする。 */
   .wrap {
     position: absolute;
     top: 14px;
@@ -52,14 +52,24 @@
     padding: 0 64px 0 72px;
     display: flex;
     flex-direction: column;
-    /* タイトルと検索窓は左の鐘と同じ高さを中心に置く。 */
+    /* タイトルと検索窓は左のゴーグルと同じ高さを中心に置く。 */
     justify-content: center;
     background:
-      repeating-linear-gradient(90deg, rgba(0,0,0,.28) 0 14px, transparent 14px 64px),
-      repeating-linear-gradient(0deg, rgba(0,0,0,.22) 0 11px, transparent 11px 45px),
-      repeating-linear-gradient(90deg, transparent 0 31px, rgba(255,255,255,.14) 31px 34px, transparent 34px 64px),
-      repeating-linear-gradient(0deg, transparent 0 25px, rgba(255,201,40,.22) 25px 28px, transparent 28px 45px),
-      #a61d1d;
+      repeating-linear-gradient(180deg,
+        rgba(236,160,0,.5) 0 11.2px, transparent 11.2px 74.2px,
+        rgba(255,255,255,.5) 74.2px 77px, transparent 77px 88.2px,
+        rgba(255,255,255,.5) 88.2px 91px, transparent 91px 102.2px,
+        rgba(255,255,255,.5) 102.2px 105px, transparent 105px 116.2px,
+        rgba(255,255,255,.5) 116.2px 119px, transparent 119px 182px),
+      repeating-linear-gradient(90deg,
+        #42404d 0 25.2px, #977026 25.2px 36.4px, #42404d 36.4px 61.6px,
+        transparent 61.6px 74.2px, #6f6163 74.2px 77px, transparent 77px 86.8px,
+        rgba(255,255,255,.5) 86.8px 89.6px, transparent 89.6px 102.2px,
+        rgba(255,255,255,.5) 102.2px 105px, transparent 105px 117.6px,
+        rgba(255,255,255,.5) 117.6px 120.4px, transparent 120.4px 133px,
+        rgba(255,255,255,.5) 133px 135.8px, transparent 135.8px 168px,
+        #6f6163 168px 170.8px, transparent 170.8px 183.4px),
+      #951513;
   }
   /*
    * ヘッダーの文字ロゴと同じく「鐘輝かう」を大きく金色に、「歌サーチ」を小さく添える。
@@ -71,11 +81,12 @@
     flex-direction: column;
     font-weight: 900;
   }
+  /* チェック柄の山吹色の線と見分けられるよう、ダークのヘッダーの文字ロゴと同じく明度を上げた山吹色にする。 */
   .title .main {
     font-size: 100px;
     line-height: 1.1;
     letter-spacing: 0.02em;
-    color: #ffc928;
+    color: #ffc752;
     text-shadow: 0 2px 4px rgba(0,0,0,.85), 0 0 12px rgba(0,0,0,.5);
   }
   .title .sub {
