@@ -1,10 +1,31 @@
 /*
- * 配色は鐘の金色とホルスタインの白黒を基調にし、赤はチェック柄の線と、
- * ブックマークからの削除や置換のように今ある内容を消す操作に限って使う。
- * ライトは白地のヘッダー、ダークは赤いチェック柄のヘッダーで、テーマごとに構成を変える。
+ * 配色は鐘輝かうの公式のメインカラーに合わせ、ゴーグルの山吹色とホルスタインの白黒を基調にする。
+ * 赤はマフラーのチェック柄と、ブックマークからの削除や置換のように今ある内容を消す操作に限って使う。
+ * ライトは白地のヘッダー、ダークはチェック柄のヘッダーで、テーマごとに構成を変える。
  */
 :root {
   color-scheme: light;
+  /*
+   * マフラーの公式のチェック柄。赤の地に、縦糸は紺の帯（中央に山吹色の線）・灰色の細線・白の4本線、
+   * 横糸は山吹色の線と白の4本線を重ねる。公式の図案と同じく、紺の帯は縦糸だけに入れる。
+   * 1回分の柄は横131px・縦130pxで、公式の図案の約半分の大きさ。テーマによらず同じ柄を使う。
+   * 縦糸の山吹色は紺の上に半透明の山吹色を重ねた色にし、横糸と交わる所は重なって明るくなる。
+   */
+  --tartan-red: #951513;
+  --tartan-warp: repeating-linear-gradient(90deg,
+      #42404d 0 18px, #977026 18px 26px, #42404d 26px 44px,
+      transparent 44px 53px, #6f6163 53px 55px, transparent 55px 62px,
+      rgba(255, 255, 255, 0.5) 62px 64px, transparent 64px 73px,
+      rgba(255, 255, 255, 0.5) 73px 75px, transparent 75px 84px,
+      rgba(255, 255, 255, 0.5) 84px 86px, transparent 86px 95px,
+      rgba(255, 255, 255, 0.5) 95px 97px, transparent 97px 120px,
+      #6f6163 120px 122px, transparent 122px 131px);
+  --tartan-weft: repeating-linear-gradient(180deg,
+      rgba(236, 160, 0, 0.5) 0 8px, transparent 8px 53px,
+      rgba(255, 255, 255, 0.5) 53px 55px, transparent 55px 63px,
+      rgba(255, 255, 255, 0.5) 63px 65px, transparent 65px 73px,
+      rgba(255, 255, 255, 0.5) 73px 75px, transparent 75px 83px,
+      rgba(255, 255, 255, 0.5) 83px 85px, transparent 85px 130px);
   --bg-color: #f6f3eb;
   --card-bg: #ffffff;
   --text-color: #1b1b1b;
@@ -12,45 +33,48 @@
   --header-bg: #ffffff;
   --footer-bg: #ffffff;
   --sidebar-bg: #ffffff;
-  /* 文字やチェック状態に使う強調色。白地の上で 4.5:1 以上を保つため、ライトは濃い黄土色にする。 */
+  /* 文字やチェック状態に使う強調色。白地の上で 4.5:1 以上を保つため、ライトは山吹色を暗くした黄土色にする。 */
   --primary-color: #8a5a00;
-  /* 塗りつぶしのボタンやチップに使う鐘の金色と、その上の文字色・境界線。 */
-  --accent-fill: #ffc928;
-  --accent-fill-hover: #ffd451;
+  /* 塗りつぶしのボタンやチップに使うゴーグルの山吹色と、その上の文字色・境界線。 */
+  --accent-fill: #eca000;
+  --accent-fill-hover: #f5b733;
   --on-accent-fill: #1b1b1b;
   --accent-fill-border: #1b1b1b;
   --ink-color: #1b1b1b;
-  /* 曲名リンクは一般的なリンク色の青にし、押せることを色で伝える。白地の上で 4.5:1 以上。 */
-  --title-link-color: #1a73e8;
+  /*
+   * 曲名リンクは公式の瞳の紺（#170769）を、色相と彩度はそのままに明度を 22% から 30% へ上げた色にする。
+   * 本文の黒より明るく青みが見え、押せることを色で伝える。白地の上で 4.5:1 以上。
+   */
+  --title-link-color: #1f0a8f;
   /* 指したカードの影。枠は曲名と同じ色にし、影はその色を半透明にしてずらす。 */
-  --card-hover-shadow: rgba(26, 115, 232, 0.55);
+  --card-hover-shadow: rgba(31, 10, 143, 0.55);
   --border-color: #e2ddd0;
   --overlay-color: rgba(0, 0, 0, 0.4);
   --transition-speed: 0.3s;
   --focus-ring-color: #1b1b1b;
-  --focus-ring-shadow: rgba(255, 201, 40, 0.6);
+  --focus-ring-shadow: rgba(236, 160, 0, 0.55);
   --validation-error-color: #b3261e;
-  /* ヘッダー下とフッター上に引く線。ライトはマフラーの赤いチェック柄。 */
+  /* ヘッダー下とフッター上に引く線。ライトはマフラーのチェック柄を細く切り出した縦糸の柄。 */
   --edge-line-height: 5px;
-  --edge-line: repeating-linear-gradient(90deg, rgba(0, 0, 0, 0.5) 0 4px, transparent 4px 18px),
-    repeating-linear-gradient(90deg, transparent 0 9px, rgba(255, 255, 255, 0.35) 9px 10px, transparent 10px 18px),
-    #c62828;
+  --edge-line: var(--tartan-warp), var(--tartan-red);
   /* 小さい文字のタグは背景に対して 4.5:1 以上を保つ。 */
   --tag-bg: #1b1b1b;
   --tag-text: #ffffff;
-  --tag-collab-bg: #e0f2f1;
-  --tag-collab-text: #00695c;
+  /* 種類ごとのタグも公式の色から取る。コラボはブーツの紺、リレーはチェック柄の橙、ハモリは瞳の紫。 */
+  --tag-collab-bg: #e9e8ef;
+  --tag-collab-text: #4e4a60;
   --tag-relay-bg: #fff3e0;
   --tag-relay-text: #b23c00;
-  --tag-harmony-bg: #f3e5f5;
-  --tag-harmony-text: #7b1fa2;
-  /* OFF のトラックは周囲と白いつまみの両方に対して 3:1 以上を保つ。 */
-  --switch-off-bg: #7c838e;
-  --danger-color: #c62828;
+  --tag-harmony-bg: #f7e8f4;
+  --tag-harmony-text: #8e3a86;
+  /* OFF のトラックはブーツの紺を明るくした色。周囲と白いつまみの両方に対して 3:1 以上を保つ。 */
+  --switch-off-bg: #77738a;
+  /* 消す操作の赤は、公式のインナーの赤に合わせる。 */
+  --danger-color: #c23833;
   --danger-hover-bg: #ffebee;
   /* ブックマーク全体の置換のように、今ある内容を消すボタンの塗りと文字色。 */
-  --danger-fill: #c62828;
-  --danger-fill-hover: #b71c1c;
+  --danger-fill: #c23833;
+  --danger-fill-hover: #a82e2a;
   --on-danger-fill: #ffffff;
 }
 
