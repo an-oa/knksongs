@@ -5,6 +5,27 @@
  */
 :root {
   color-scheme: light;
+  /*
+   * マフラーの公式のチェック柄。赤の地に、縦糸は紺の帯（中央に山吹色の線）・灰色の細線・白の4本線、
+   * 横糸は山吹色の線と白の4本線を重ねる。公式の図案と同じく、紺の帯は縦糸だけに入れる。
+   * 1回分の柄は横131px・縦130pxで、公式の図案の約半分の大きさ。テーマによらず同じ柄を使う。
+   * 縦糸の山吹色は紺の上に半透明の山吹色を重ねた色にし、横糸と交わる所は重なって明るくなる。
+   */
+  --tartan-red: #951513;
+  --tartan-warp: repeating-linear-gradient(90deg,
+      #42404d 0 18px, #977026 18px 26px, #42404d 26px 44px,
+      transparent 44px 53px, #6f6163 53px 55px, transparent 55px 62px,
+      rgba(255, 255, 255, 0.5) 62px 64px, transparent 64px 73px,
+      rgba(255, 255, 255, 0.5) 73px 75px, transparent 75px 84px,
+      rgba(255, 255, 255, 0.5) 84px 86px, transparent 86px 95px,
+      rgba(255, 255, 255, 0.5) 95px 97px, transparent 97px 120px,
+      #6f6163 120px 122px, transparent 122px 131px);
+  --tartan-weft: repeating-linear-gradient(180deg,
+      rgba(236, 160, 0, 0.5) 0 8px, transparent 8px 53px,
+      rgba(255, 255, 255, 0.5) 53px 55px, transparent 55px 63px,
+      rgba(255, 255, 255, 0.5) 63px 65px, transparent 65px 73px,
+      rgba(255, 255, 255, 0.5) 73px 75px, transparent 75px 83px,
+      rgba(255, 255, 255, 0.5) 83px 85px, transparent 85px 130px);
   --bg-color: #f6f3eb;
   --card-bg: #ffffff;
   --text-color: #1b1b1b;
@@ -60,30 +81,30 @@
   --card-bg: #1c1c1c;
   --text-color: #f2efe8;
   --text-mute: #b3ad9f;
-  --header-bg: #a61d1d;
+  --header-bg: var(--tartan-red);
   --footer-bg: #0b0b0b;
   --sidebar-bg: #1c1c1c;
-  --primary-color: #ffc928;
+  --primary-color: #eca000;
   --accent-fill-border: transparent;
   --ink-color: #f2efe8;
-  /* ダークは青が赤と金色の配色から浮くため、押せる要素と同じ金色にする。 */
-  --title-link-color: #ffc928;
-  --card-hover-shadow: rgba(255, 201, 40, 0.55);
+  /* ダークは青が赤と山吹色の配色から浮くため、押せる要素と同じ山吹色にする。 */
+  --title-link-color: #eca000;
+  --card-hover-shadow: rgba(236, 160, 0, 0.55);
   --border-color: #2f2d29;
-  --focus-ring-color: #ffc928;
-  --focus-ring-shadow: rgba(255, 201, 40, 0.35);
+  --focus-ring-color: #eca000;
+  --focus-ring-shadow: rgba(236, 160, 0, 0.4);
   --validation-error-color: #ffb4ab;
-  /* ダークはヘッダー全体がチェック柄なので、上下の線は鐘の金色にする。 */
+  /* ダークはヘッダー全体がチェック柄なので、上下の線はゴーグルの山吹色にする。 */
   --edge-line-height: 4px;
-  --edge-line: #ffc928;
+  --edge-line: #eca000;
   --tag-bg: #f2efe8;
   --tag-text: #1b1b1b;
-  --tag-collab-bg: #1f3533;
-  --tag-collab-text: #80cbc4;
+  --tag-collab-bg: #2c2a36;
+  --tag-collab-text: #b8b3cc;
   --tag-relay-bg: #3a2a17;
   --tag-relay-text: #ffb74d;
-  --tag-harmony-bg: #33213a;
-  --tag-harmony-text: #ce93d8;
+  --tag-harmony-bg: #36223a;
+  --tag-harmony-text: #dc9fd3;
   --danger-color: #ef9a9a;
   --danger-hover-bg: #3e2723;
   --danger-fill: #ef9a9a;
@@ -201,14 +222,16 @@ body.hide-thumbs .thumb {
   .header { transition: none; }
 }
 
-/* ダークはマフラーの赤いチェック柄。文字を置く面なので柄の濃淡は控えめにする。 */
+/*
+ * ダークはマフラーの公式のチェック柄。横糸を縦糸の上に重ね、交わる所の色を混ぜる。
+ * 柄の山吹色の線と見分けられるよう、ヘッダーの中の山吹色（文字ロゴと押せる要素）だけ、
+ * 同じ色相のまま明度を上げる（#eca000 の HSL 明度 46% を 66% に）。柄の外は #eca000 のまま。
+ */
 :root.dark-theme .header {
-  background:
-    repeating-linear-gradient(90deg, rgba(0, 0, 0, 0.28) 0 10px, transparent 10px 46px),
-    repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.22) 0 8px, transparent 8px 32px),
-    repeating-linear-gradient(90deg, transparent 0 22px, rgba(255, 255, 255, 0.14) 22px 24px, transparent 24px 46px),
-    repeating-linear-gradient(0deg, transparent 0 18px, rgba(255, 201, 40, 0.22) 18px 20px, transparent 20px 32px),
-    var(--header-bg);
+  --primary-color: #ffc752;
+  --accent-fill: #ffc752;
+  --accent-fill-hover: #ffd47a;
+  background: var(--tartan-weft), var(--tartan-warp), var(--header-bg);
 }
 
 /* ライトのホルスタイン柄。文字と検索窓には掛けない。ボタンは塗りつぶしてあるので、ボタンの下には潜ってよい。 */
