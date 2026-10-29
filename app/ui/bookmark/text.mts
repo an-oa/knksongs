@@ -207,8 +207,8 @@ function countNoun(count: number, singular: string, plural: string): string {
 
 const ENGLISH_BOOKMARK_TEXT: BookmarkText = {
     empty: "No bookmarks yet.",
-    rename: "Rename",
-    renameLabel: "Rename bookmark",
+    rename: "Edit",
+    renameLabel: "Edit bookmark name",
     deleteLabel: "Delete bookmark",
     renamePrompt: "Enter a new bookmark name:",
     deleteConfirm: (name) => `Delete the bookmark “${name}”?`,

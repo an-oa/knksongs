@@ -235,6 +235,53 @@ test("bookmark deletion toast shows the deleted bookmark name", async ({ page })
     await expect(bookmarkItem).toHaveCount(0);
 });
 
+test("the edit button fits beside the song count in Japanese and English", async ({ page }) => {
+    const labels = [
+        { language: "ja", text: "変更", name: "ブックマーク名を変更" },
+        { language: "en", text: "Edit", name: "Edit bookmark name" }
+    ];
+    for (const label of labels) {
+        await page.evaluate((language) => localStorage.setItem("siteLanguage", language), label.language);
+        await seedBookmarks(page, {
+            p_1: {
+                name: "とても長いブックマークの名前がここに入ります",
+                songs: Array.from({ length: 128 }, (_, index) => `song-${index}`),
+                createdAt: 1
+            }
+        });
+        await openBookmarkPanel(page);
+
+        const bookmarkItem = page.locator(".bookmark-item");
+        await bookmarkItem.hover();
+        const editButton = bookmarkItem.locator(".bookmark-rename-btn");
+        await expect(editButton).toHaveCSS("pointer-events", "auto");
+        await expect(editButton).toHaveText(label.text);
+        await expect(editButton).toHaveAccessibleName(label.name);
+
+        const layout = await bookmarkItem.evaluate((item) => {
+            /** 一覧項目内の要素の左右の端を返す。 */
+            const readEdges = (selector: string) => {
+                const rect = item.querySelector(selector)?.getBoundingClientRect();
+                return { left: rect?.left ?? Number.NaN, right: rect?.right ?? Number.NaN };
+            };
+            const range = document.createRange();
+            range.selectNodeContents(item.querySelector(".bookmark-rename-btn") ?? item);
+            const text = range.getBoundingClientRect();
+            return {
+                count: readEdges(".bookmark-item-count"),
+                button: readEdges(".bookmark-rename-btn"),
+                text: { left: text.left, right: text.right },
+                deleteButton: readEdges(".bookmark-delete-btn")
+            };
+        });
+        const message = `${label.language}: ${JSON.stringify(layout)}`;
+        expect(layout.text.left, message).toBeGreaterThanOrEqual(layout.button.left);
+        expect(layout.text.right, message).toBeLessThanOrEqual(layout.button.right);
+        expect(layout.button.left, message).toBeGreaterThanOrEqual(layout.count.right);
+        expect(layout.button.right, message).toBeLessThanOrEqual(layout.deleteButton.left);
+    }
+});
+
 test("oversized bookmark imports are rejected before reading and preserve existing bookmarks", async ({ page }) => {
     const bookmarkName = "Keep Favorites";
     await createBookmarkFromSong(page, { bookmarkName, songTitle: "Manual Song" });
