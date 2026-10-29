@@ -1,3 +1,14 @@
+/**
+ * 検索を担う controller。
+ *
+ * 検索 UI から条件を集めて検索語を解析し (../lib/search-query)、入力の誤りを表示する。
+ * 条件に応じて、通常の検索・選択中のブックマーク内の検索・条件なしのおすすめ表示の
+ * いずれかで結果を決め (../lib/search-filters, ../lib/search-recommendation)、
+ * data.currentResults と表示件数を更新する。おすすめは表示領域の大きさに合わせて増減する。
+ *
+ * 描画・件数表示・スクロールは callbacks 経由で行う。
+ * 実行タイミングは ./search-coordinator.mts、検索条件の保存は ./storage.mts が担当する。
+ */
 import { filterSongsByCriteria } from "../lib/search-filters.mjs";
 import { isValidEmptySearchQuery, parseSearchQuery } from "../lib/search-query.mjs";
 import type { ParsedSearchQuery } from "../lib/search-query.mjs";

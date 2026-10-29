@@ -1,3 +1,10 @@
+/**
+ * 検索の実行タイミングを管理する controller。
+ *
+ * 即時実行と debounce 付き実行を切り替え、予約済み検索の取り消しを受け持つ。
+ * 検索の予約中は、おすすめ表示の増減を止めて確定済みの結果を保つ。
+ * 検索そのものは渡された searchController に任せる。
+ */
 type SearchCoordinatorInput = {
     debounceMs: number;
     searchController: {

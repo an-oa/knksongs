@@ -1,3 +1,15 @@
+/**
+ * 検索結果カードの描画を担う controller。
+ *
+ * data.currentResults を、カード要素を再利用しながら一覧へ差分反映する。
+ * 再生中のカードは位置を保ち、表示から外れたら再生を止める。
+ * masonry レイアウト (../lib/render)、末尾到達での追加表示、ブックマーク内のドラッグ並べ替え、
+ * 空結果の表示、言語切り替え時の文言の書き直しもここで行う。
+ *
+ * 表示する結果の決定は ./search.mts が行い、ここは受け取って描くだけにする。
+ * 再生は ./youtube.mts、並べ替えの保存は ./storage.mts、ブックマークへの追加と削除は
+ * サイドバーとブックマーク UI へ、callbacks 経由で委ねる。
+ */
 import { getHeaderHeight } from "../lib/dom-utils.mjs";
 import { hasStreamRole } from "../lib/stream-role.mjs";
 import { tracePlayback } from "../lib/playback-debug.mjs";

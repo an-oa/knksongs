@@ -1,3 +1,15 @@
+/**
+ * 再生設定の controller。
+ *
+ * サムネイル表示・youtube-nocookie の利用・アーカイブ全体を再生の 3 つは、
+ * localStorage に保存する (../lib/storage/settings-storage)。
+ * 「終了後、次の曲を再生」と「リピート再生」は実験的な設定で、ページ内だけで保持する。
+ * 設定パネルへの表示は、console API (window.knkPlaybackSettings) で切り替える。
+ * 設定定義と値の計算は ../lib/playback-settings/* に任せ、ここではトグルの配線、
+ * ui.playback への反映、設定グループの表示切り替えを行う。
+ *
+ * 設定変更に伴う再生と描画の更新は、callbacks 経由で youtube / render controller へ委ねる。
+ */
 import {
     createPlaybackSettingDefinitions,
     LEGACY_PLAYBACK_SETTINGS_STORAGE_KEYS,

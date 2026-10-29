@@ -1,3 +1,14 @@
+/**
+ * ブックマーク本体の localStorage 読み書きを担う controller。
+ *
+ * 保存形式の解析・組み立てと旧参照の変換は ../lib/storage/bookmark-schema に任せ、
+ * ここでは読込結果と保存の成否 (BookmarkLoadResult / BookmarkSaveResult) を返す。
+ * 保存の直前に現在の保存データを再検査し、別タブが書いた新しい形式や変更を上書きしない。
+ * 起動時に読めなかった破損データの置換と、確認済みインポートによる全体置換も受け持つ。
+ *
+ * 件数などの上限の検証と、通常の保存タイミングは ./storage.mts が決める。
+ * 曲データ読込後の旧参照移行は bootstrap.mts が呼び、移行結果はここで保存する。
+ */
 import {
     buildStoredBookmarksPayload,
     migrateLegacyBookmarkSongRefsToCurrent,
