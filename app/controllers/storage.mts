@@ -1,3 +1,15 @@
+/**
+ * ブックマーク操作と検索条件の保存・復元を担う controller。
+ *
+ * ブックマークの作成・改名・削除、曲の追加・削除・並べ替え、検索対象としての選択、
+ * エクスポート・インポートを受け持ち、件数・曲数・名前の長さの上限もここで検証する。
+ * 検索条件は localStorage へ保存・復元する (../lib/storage/search-state-schema)。
+ * ブックマーク本体の読み書きは ./bookmark-persistence.mts、
+ * ファイルの解析と統合は ../lib/storage/bookmark-transfer に任せる。
+ *
+ * 操作の結果は StorageActionResult で返す。一覧の再描画・結果の更新・検索の予約は
+ * callbacks 経由で行い、失敗の表示は呼び出し元の UI が行う。
+ */
 import {
     buildBookmarkImportPreviewEntries,
     exportBookmarksAsJsonText as buildBookmarkExportJsonText,

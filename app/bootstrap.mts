@@ -1,3 +1,14 @@
+/**
+ * アプリの composition root。
+ *
+ * 各 controller と UI の factory を生成して相互に配線し、起動時の初期化
+ * (DOM 参照の収集・UI セットアップ・保存状態の復元・曲データ読み込み・初回検索)を行う。
+ * 依存先は、状態と定数の ./state.mjs、検索・描画・再生・保存の ./controllers/*、
+ * 画面部品 (サイドバー・ブックマークなど) と曲データ読込の ./ui/*。
+ *
+ * 検索・描画・再生の実処理は各 controller 側にあり、ここでは持たない。
+ * controller 同士の循環参照は、getXxxController のような遅延 getter や null 初期化の let 変数で解く。
+ */
 import {
     RANDOM_DISPLAY_COUNT,
     MIN_PERFORMANCE_FOR_RANDOM,

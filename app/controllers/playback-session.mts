@@ -1,3 +1,13 @@
+/**
+ * 「終了後、次の曲を再生」と「リピート再生」の設定に従って、次の曲へ進める controller。
+ *
+ * 再生が終わったときや再生開始に失敗したときに、bootstrap.mts が配線した hook から呼ばれる。
+ * 現在の検索結果と設定から次の候補を並べ (../lib/playback-sequence)、開始できなかった候補は飛ばす。
+ * 開始が未確定のときや、別の再生に切り替わったときは進めずに止まる。
+ * 再生と追従スクロールの実処理は callbacks 経由で render controller に任せる。
+ *
+ * 設定の値の管理は ./playback-settings.mts、プレーヤーの制御は ./youtube.mts が担当する。
+ */
 import { getPlaybackContinuationCandidates } from "../lib/playback-sequence.mjs";
 import { debugPlayback } from "../lib/playback-debug.mjs";
 import {

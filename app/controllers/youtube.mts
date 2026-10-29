@@ -1,3 +1,15 @@
+/**
+ * YouTube 再生を担う controller。
+ *
+ * IFrame API を読み込み、結果カードのサムネイルの位置へ埋め込みプレーヤーを差し込んで再生する。
+ * プレーヤーは同時に 1 つだけで、別のカードで再生するときは作り直す。
+ * 再生セッション ID で古いイベントを除外し、開始の成否と未確定の判定、再生後の広告の監視、
+ * 閉じるボタン、サムネイル画像の表示も受け持つ。
+ * 個別の処理は ../lib/youtube/* に分け、ここで ui.playback と youtube 状態につなぐ。
+ *
+ * 次の曲の選択は ./playback-session.mts、カードの配置は ./render.mts が担当し、
+ * 再生終了・開始失敗・レイアウト更新の hook を bootstrap.mts が配線する。
+ */
 import { createLayoutRefreshScheduler } from "../lib/layout-anchor.mjs";
 import { getUiText } from "../lib/ui-text.mjs";
 import { canUseDom, isHtmlElement } from "../lib/dom-utils.mjs";

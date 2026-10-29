@@ -41,6 +41,22 @@ feat: move settings into dedicated sidebar panel
   ブックマークの下に表示される順序へ調整した。
 ```
 
+## Module Header Comments
+
+- 人が最初にファイルを開いたとき、役割と範囲がすぐ分かるよう、入口になる module の先頭
+  (import より前)に `/** ... */` で概要コメントを置く。
+- 対象は composition root (`app/bootstrap.mts`)、状態を所有する module (`app/state.mts`)、
+  各 `controllers/*.mts` など、複数の module を束ねる、または他から読まれる起点になる module。
+  小さな helper や単機能の `lib/*.mts` には、関数 JSDoc で足りる場合は付けない。
+- 書く内容は次の 3 点に絞り、本文を 3〜8 行程度に収める。
+  `/**` `*/` の行と、段落を区切る空行は行数に数えない。
+  - この module が担う役割
+  - 依存する主な module のグループ (個々の import を 1 つずつ説明しない)
+  - この module が担わないこと、または処理の置き場所
+- import 先の関数名や引数など、コードを読めば分かる情報は書かない。
+  コードと食い違って古くなりやすいため、グループ単位の説明にとどめる。
+- 役割や依存の構成を変えたときは、概要コメントも同じ変更内で更新する。
+
 ## JavaScript / TypeScript Function Docs
 
 - 実装側の `app/**/*.mts` では、関数の直前に `/** ... */` の JSDoc を置いて機能を説明する書き方が広く使われている。
