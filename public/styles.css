@@ -20,10 +20,13 @@
   --on-accent-fill: #1b1b1b;
   --accent-fill-border: #1b1b1b;
   --ink-color: #1b1b1b;
-  /* 曲名リンクは一般的なリンク色の青にし、押せることを色で伝える。白地の上で 4.5:1 以上。 */
-  --title-link-color: #1a73e8;
+  /*
+   * 曲名リンクは公式の瞳の紺（#170769）を、色相と彩度はそのままに明度を 22% から 30% へ上げた色にする。
+   * 本文の黒より明るく青みが見え、押せることを色で伝える。白地の上で 4.5:1 以上。
+   */
+  --title-link-color: #1f0a8f;
   /* 指したカードの影。枠は曲名と同じ色にし、影はその色を半透明にしてずらす。 */
-  --card-hover-shadow: rgba(26, 115, 232, 0.55);
+  --card-hover-shadow: rgba(31, 10, 143, 0.55);
   --border-color: #e2ddd0;
   --overlay-color: rgba(0, 0, 0, 0.4);
   --transition-speed: 0.3s;
