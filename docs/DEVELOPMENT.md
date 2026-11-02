@@ -174,11 +174,10 @@ npm run render:brand-assets
 | Workflow | 役割 |
 | --- | --- |
 | `update-songs-json.yml` | 1日2回 CSV から曲JSONを生成・検証し、差分があれば `main` へコミット |
-| `ci.yml` | `main` への push / PR で build・検証・型検査・lint・単体テスト |
-| `e2e.yml` | `main` への push / PR で Chromium と WebKit の E2E。deploy の条件には含めず、`main` へのマージの条件にする |
-| `deploy-pages.yml` | `main` の CI 成功後に GitHub Pages へ deploy し、公開を確認。失敗時は Issue で通知 |
+| `ci.yml` | `main` への push / PR で、`test` job の build・検証・型検査・lint・単体テストと、`e2e` job の Chromium・WebKit の E2E |
+| `deploy-pages.yml` | `main` の CI（`test` と `e2e`）成功後に GitHub Pages へ deploy し、公開を確認。失敗時は Issue で通知 |
 
-`main` へのマージには、CI の `test` と E2E の `e2e` の成功を必須にしています（`.github/rulesets/main.json`）。
+`main` へのマージには、CI の `test` と `e2e` の成功を必須にしています（`.github/rulesets/main.json`）。
 ruleset はリポジトリの設定なので、ファイルを変えても自動では反映されません。次の手順で取り込みます。
 
 1. Settings → Rules → Rulesets → New ruleset → Import a ruleset で、`.github/rulesets/main.json` を選ぶ

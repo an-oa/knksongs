@@ -17,7 +17,7 @@
 - データ取得：事前生成JSON（`data/songs.json` / `data/songs-meta.json`）を優先し、唯一のマスターである公開スプレッドシートのCSVを生成元とフォールバックに使う
 - データ生成/公開：GitHub Actions でCSVから派生JSONを生成・検証し、差分を `main` へコミットして CI を起動する。CI 成功後、検証済み commit を deploy 前後に現在の `main` と照合し、公開された `deployment.json` の commit SHA を確認する
 - CI：GitHub Actions で TypeScript emit、曲データ検証、typecheck、lint、unit test、静的 site build を実行する。
-  E2E は別の workflow で Chromium と WebKit を使って実行する
+  同じ workflow の別の job で、Chromium と WebKit の E2E を並行して実行する
 - 実行時の同梱外部ライブラリ依存：なし
 - 埋め込み再生まわりでは YouTube Iframe API を動的に利用し、標準では `youtube.com`、プライバシー強化設定ON時は `youtube-nocookie.com` の埋め込みURLを使う
 - 開発時確認：TypeScript emit 同期、曲データJSON検証、TypeScript noEmit typecheck、ESLint、Node.js 標準 `node:test`、Playwright（Chromium・WebKit）の smoke を利用
@@ -527,14 +527,13 @@ IndexedDB保存：
 - GitHub Pagesの静的HTMLで設定できるmeta方式のため、report-onlyやframe-ancestorsは設定しない
 
 ## CI・デプロイ
-4つのworkflowで、曲データ更新・検証・公開を分担する。
+3つのworkflowで、曲データ更新・検証・公開を分担する。
 
 | Workflow | 起動条件 | 役割 |
 | --- | --- | --- |
 | `update-songs-json.yml` | 1日2回の定期実行 / 手動実行 | CSVから曲JSONを生成・検証し、差分があれば `main` へコミットする |
-| `ci.yml` | `main` へのpush / PR / 手動実行 | build後に曲JSON検証・型検査・emit検査・lint・単体テストを実行する |
-| `e2e.yml` | `main` へのpush / PR / 手動実行 | Chromium と WebKit で E2E を実行する。deploy の条件には含めず、PR のマージの条件にする |
-| `deploy-pages.yml` | `main` のCI成功 | 検証済みcommitをGitHub Pagesへdeployし、公開を確認する |
+| `ci.yml` | `main` へのpush / PR / 手動実行 | build後の曲JSON検証・型検査・emit検査・lint・単体テストと、Chromium・WebKit の E2E を別の job で実行する |
+| `deploy-pages.yml` | `main` のCI成功 | 単体テストと E2E を通った commit を GitHub Pages へdeployし、公開を確認する |
 
 ### 曲データ更新（update-songs-json.yml）
 - `npm run build:songs-json` と `npm run validate:songs-json` を実行し、`data/songs.json` / `data/songs-meta.json` だけに差分があることを確認する
@@ -547,16 +546,18 @@ IndexedDB保存：
 - 差分がない場合は token 発行、コミット、CI、deploy のいずれも行わない。生成中に `main` が進んだ場合は古いデータのコミットをskipする
 
 ### CI（ci.yml）
-- `npm run build` を実行後、曲JSON検証・型検査・emit検査・lint・単体テストの `:raw` コマンドを実行し、生成物を再利用する
-
-### E2E（e2e.yml）
-- `npx playwright install --with-deps chromium webkit` でブラウザとOSの依存パッケージを入れ、`npm run test:e2e` を実行する
-- `deploy-pages.yml` は `CI` の完了だけを待つので、E2E の失敗は deploy と曲データの自動更新を止めない。
-  アプリの変更は PR を通るので、E2E の成功は `main` の ruleset で PR のマージの条件にする
-- 失敗時は `test-results/` を artifact として7日間残す
+- `test` job と `e2e` job を並行して実行し、両方が成功したときだけ workflow が成功する。
+  `deploy-pages.yml` はこの workflow の成功を待つので、E2E が失敗した commit は公開しない
+- PR はテストした時点の `main` との組み合わせで検証するので、複数の PR を続けてマージした後の状態は、
+  `main` への push で動く CI が初めて検証する。この結果を deploy の条件にして、組み合わせで壊れた状態を公開しない
+- 曲データの自動更新も E2E の成功を待って公開する。E2E は曲データを fixture に置き換えるので、
+  曲データの変更そのものは E2E では検証せず、E2E が失敗すると曲データの公開も止まる
+- `test` job は `npm run build` を実行後、曲JSON検証・型検査・emit検査・lint・単体テストの `:raw` コマンドを実行し、生成物を再利用する
+- `e2e` job は `npx playwright install --with-deps chromium webkit` でブラウザとOSの依存パッケージを入れ、`npm run test:e2e` を実行する。
+  失敗時は `test-results/` を artifact として7日間残す
 
 ### main の ruleset（.github/rulesets/main.json）
-- `main` へは、`ci.yml` の `test` job と `e2e.yml` の `e2e` job が成功した commit だけを入れる。
+- `main` へは、`ci.yml` の `test` job と `e2e` job が成功した commit だけを入れる。
   GitHub Actions（integration_id 15368）が報告した check に限り、同じ名前の別の status では満たさない
 - ruleset はリポジトリの設定なので、JSON を変えても自動では反映されない。GitHub の画面で取り込み、
   画面で変えたときは export した JSON でファイルを置き換える
