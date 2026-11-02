@@ -1,6 +1,7 @@
 name: Deploy Pages
 
 on:
+  # CI は test と e2e の job を持ち、両方が成功したときだけ success で完了する。
   workflow_run:
     workflows:
       - CI
