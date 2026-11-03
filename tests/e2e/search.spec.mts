@@ -253,3 +253,30 @@ test("long search queries keep the condition chip within a narrow page", async (
     const chipBox = await chip.boundingBox();
     expect(chipBox && chipBox.x + chipBox.width).toBeLessThanOrEqual(393);
 });
+
+test("an artist name can be selected and a click on the blank area clears the selection", async ({ page }) => {
+    await routeSongsJsonFixture(page, createScrollableResultSongs(6));
+    await page.reload();
+    await waitForInitialLoad(page);
+    await page.locator("#searchBox").fill("Scroll Artist");
+    const artist = page.locator("#resultList > .song-card .artist").first();
+    await expect(artist).toHaveText("Scroll Artist");
+
+    await artist.click({ clickCount: 3 });
+    await expect.poll(() => page.evaluate(() => window.getSelection()?.toString().trim() ?? "")).toBe("Scroll Artist");
+
+    // カードのない一覧の余白を探す。ページ全体を選択しない指定にすると、ここをクリックしても選択が残る。
+    const blankPoint = await page.locator("#resultList").evaluate((list) => {
+        const rect = list.getBoundingClientRect();
+        for (let y = rect.top + 2; y < Math.min(rect.bottom, window.innerHeight); y += 4) {
+            for (let x = rect.left + 2; x < rect.right; x += 4) {
+                if (document.elementFromPoint(x, y) === list) return { x, y };
+            }
+        }
+        return null;
+    });
+    if (!blankPoint) throw new Error("The result list has no blank area on screen");
+    await page.mouse.click(blankPoint.x, blankPoint.y);
+
+    await expect.poll(() => page.evaluate(() => window.getSelection()?.toString() ?? "")).toBe("");
+});
