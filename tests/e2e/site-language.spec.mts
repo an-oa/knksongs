@@ -3,7 +3,7 @@ import { normalizeForSearch } from "../../app/lib/search-normalization.mts";
 import { installNetworkMocks } from "./support/network-mocks.mts";
 import { routeSongsJsonFixture } from "./support/songs-network.mts";
 import { createScrollableResultSongs } from "./support/song-fixtures.mts";
-import { openSidebar, waitForInitialLoad } from "./support/ui-helpers.mts";
+import { openBookmarkPanel, openSidebar, waitForInitialLoad } from "./support/ui-helpers.mts";
 
 /**
  * 曲名・アーティスト名を差し替え、検索に使う正規化済みの値も同じ名前から作り直す。
@@ -259,5 +259,110 @@ test.describe("English browsers", () => {
         expect(Math.abs((buttonBox.y + buttonBox.height / 2) - (searchBox.y + searchBox.height / 2))).toBeLessThan(2);
         expect(buttonBox.x).toBeGreaterThanOrEqual(searchBox.x + searchBox.width);
         expect(buttonBox.x + buttonBox.width).toBeLessThanOrEqual(360);
+    });
+});
+
+/** インポートのダイアログに並べる、新しいブックマーク 2 件のファイル。 */
+const TWO_NEW_BOOKMARKS_FILE = {
+    name: "bookmarks.json",
+    mimeType: "application/json",
+    buffer: Buffer.from(JSON.stringify({
+        version: 3,
+        bookmarks: {
+            first: { name: "First Import", songs: ["song-a"], createdAt: 1 },
+            second: { name: "Second Import", songs: ["song-b"], createdAt: 2 }
+        }
+    }))
+};
+
+/**
+ * 別のタブでサイトを英語に切り替え、元のタブへ戻る。
+ * 元のタブは、戻ったときの focus で保存された言語に合わせ直す。
+ */
+async function switchToEnglishInAnotherTab(page: Page) {
+    const otherTab = await page.context().newPage();
+    await installNetworkMocks(otherTab);
+    await otherTab.goto("/");
+    await waitForInitialLoad(otherTab);
+    await otherTab.locator("#site-language-btn").click();
+    await expect.poll(() => otherTab.evaluate(() => localStorage.getItem("siteLanguage"))).toBe("en");
+    await otherTab.close();
+    await page.bringToFront();
+    await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+    await expect(page.locator("html")).toHaveAttribute("lang", "en");
+}
+
+test.describe("language changed in another tab", () => {
+    test.use({ locale: "ja-JP" });
+
+    test("an open import dialog is rewritten in English and keeps the selection and focus", async ({ page }) => {
+        await openWithEnglishNamedSongs(page, "");
+        const alerts: string[] = [];
+        page.on("dialog", async (nativeDialog) => {
+            alerts.push(nativeDialog.message());
+            await nativeDialog.accept();
+        });
+        await openBookmarkPanel(page);
+        await page.locator("#bookmark-panel-import-input").setInputFiles(TWO_NEW_BOOKMARKS_FILE);
+        const dialog = page.locator("#bookmark-transfer-dialog");
+        const firstOption = dialog.getByRole("checkbox", { name: /First Import/ });
+        await expect(dialog.locator("#bookmark-transfer-title")).toHaveText("ブックマークのインポート");
+        await firstOption.uncheck();
+        await expect(dialog.locator("#bookmark-transfer-status")).toHaveText("1件を追加");
+
+        await switchToEnglishInAnotherTab(page);
+
+        await expect(dialog.locator("#bookmark-transfer-title")).toHaveText("Import bookmarks");
+        await expect(dialog.locator(".bookmark-transfer-option-badge")).toHaveText(["New", "New"]);
+        await expect(dialog.locator(".bookmark-transfer-option-detail")).toHaveText(["1 song", "1 song"]);
+        await expect(dialog.locator("#bookmark-transfer-status")).toHaveText("Add 1");
+        await expect(firstOption).not.toBeChecked();
+        await expect(dialog.getByRole("checkbox", { name: /Second Import/ })).toBeChecked();
+        await expect(firstOption).toBeFocused();
+
+        await dialog.getByRole("button", { name: "Import", exact: true }).click();
+        await expect(dialog).toBeHidden();
+        await expect.poll(() => alerts).toEqual(["Added 1 bookmark."]);
+    });
+
+    test("a failure shown in the dialog and the panel error are rewritten in English", async ({ page }) => {
+        await openWithEnglishNamedSongs(page, "");
+        await openBookmarkPanel(page);
+        await page.locator("#bookmark-panel-import-input").setInputFiles(TWO_NEW_BOOKMARKS_FILE);
+        const dialog = page.locator("#bookmark-transfer-dialog");
+        const status = dialog.locator("#bookmark-transfer-status");
+        // ブックマークの保存を失敗させ、ダイアログに失敗の理由を出す。
+        await page.evaluate(() => {
+            const originalSetItem = Storage.prototype.setItem;
+            Storage.prototype.setItem = function (key: string, value: string) {
+                if (key === "bookmarksV1") throw new DOMException("The quota has been exceeded.", "QuotaExceededError");
+                return originalSetItem.call(this, key, value);
+            };
+        });
+        await dialog.getByRole("button", { name: "インポート", exact: true }).click();
+        await expect(status).toHaveText("インポートしたブックマークを保存できませんでした。");
+
+        await switchToEnglishInAnotherTab(page);
+
+        await expect(status).toHaveText("Couldn't save the imported bookmarks.");
+        await expect(status).toHaveClass(/bookmark-transfer-status-error/);
+        await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+        await expect(dialog).toBeHidden();
+
+        // パネル上部のエラー欄も、出したままなら新しい言語で書き直す。
+        await page.evaluate(() => localStorage.setItem("siteLanguage", "ja"));
+        await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+        await expect(page.locator("html")).toHaveAttribute("lang", "ja");
+        await page.locator("#bookmark-panel-import-input").setInputFiles({
+            name: "large.json",
+            mimeType: "application/json",
+            buffer: Buffer.alloc(1024 * 1024 + 1, " ")
+        });
+        const panelError = page.locator("#bookmark-panel-error");
+        await expect(panelError).toHaveText("インポートできるファイルは最大1 MBです。");
+
+        await switchToEnglishInAnotherTab(page);
+
+        await expect(panelError).toHaveText("Import files can be up to 1 MB.");
     });
 });

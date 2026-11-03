@@ -1,3 +1,6 @@
+import type { SiteLanguage } from "../../lib/site-language.mjs";
+import type { LocalizedText } from "./text.mjs";
+
 /** 選択ダイアログに並べるブックマーク 1 件。 */
 export type BookmarkTransferDialogOption = {
     id: string;
@@ -21,10 +24,13 @@ export type BookmarkTransferSelectionState = {
     canSubmit: boolean;
 };
 
-/** 決定操作の結果。失敗時はダイアログを開いたまま message を出し、空文字なら何も出さない。 */
+/**
+ * 決定操作の結果。失敗時はダイアログを開いたまま message の文言を出し、空文字なら何も出さない。
+ * 開いている間に言語が変わると理由も書き直すので、文言の作り方で渡す。
+ */
 export type BookmarkTransferDialogActionResult<T> =
     | { ok: true; value: T }
-    | { ok: false; message: string };
+    | { ok: false; message: LocalizedText };
 
 /** 決定ボタンの ▼ のメニューに並べる操作の名前と説明。 */
 export type BookmarkTransferMenuItem = {
@@ -73,8 +79,14 @@ export type BookmarkTransferDialogRequest<T> = {
     returnFocusEl?: HTMLElement | null;
 };
 
-/** ダイアログを開き、決定時の値、または取り消し時の null を返す関数。 */
-export type OpenBookmarkTransferDialog = <T>(request: BookmarkTransferDialogRequest<T>) => Promise<T | null>;
+/**
+ * ダイアログを開き、決定時の値、または取り消し時の null を返す関数。
+ * 表示内容は言語を受け取って作る関数で渡し、開いている間に言語が変わったら作り直す。
+ */
+export type OpenBookmarkTransferDialog = <T>(
+    buildRequest: (language: SiteLanguage) => BookmarkTransferDialogRequest<T>,
+    language: SiteLanguage
+) => Promise<T | null>;
 
 /** ▼ のメニュー項目 1 件分の要素。 */
 type MenuItemParts = {
@@ -108,6 +120,8 @@ type DialogRow = {
     option: BookmarkTransferDialogOption;
     item: HTMLElement;
     input: HTMLInputElement;
+    /** 名前・区分・補足を並べる部分。言語が変わったら作り直し、チェックボックスはそのまま残す。 */
+    text: HTMLElement;
 };
 
 /**
@@ -116,6 +130,12 @@ type DialogRow = {
  */
 type DialogSession = {
     request: BookmarkTransferDialogRequest<unknown>;
+    /** 表示内容を作る関数。言語が変わったら作り直して request を置き換える。 */
+    buildRequest: (language: SiteLanguage) => BookmarkTransferDialogRequest<unknown>;
+    /** 今表示している言語。 */
+    language: SiteLanguage;
+    /** 決定操作が失敗した理由。次に選択や操作を変えるまで、決定ボタンの上に出したままにする。 */
+    failureMessage: LocalizedText | null;
     resolve: (value: unknown) => void;
     rows: DialogRow[];
     /** 選択を使う操作で選んでいる、選べる項目の ID。 */
@@ -378,6 +398,7 @@ export function createBookmarkTransferDialogController() {
     function chooseAllItemsAction(chosen: boolean): void {
         if (!session || session.allItemsActionChosen === chosen) return;
         session.allItemsActionChosen = chosen;
+        session.failureMessage = null;
         renderState();
     }
 
@@ -385,12 +406,25 @@ export function createBookmarkTransferDialogController() {
      * ブックマーク 1 件分の選択肢を作る。
      * @param option 表示する選択肢
      */
-    function createOptionElement(option: BookmarkTransferDialogOption): { item: HTMLElement; input: HTMLInputElement } {
+    function createOptionElement(option: BookmarkTransferDialogOption): Omit<DialogRow, "option"> {
         const input = document.createElement("input");
         input.type = "checkbox";
         input.checked = option.checked;
         input.disabled = option.disabled;
 
+        const text = createOptionText(option);
+        const label = createPart("label", "", "bookmark-transfer-option-label checkbox-item");
+        label.append(input, text);
+        const item = createPart("li", "", "bookmark-transfer-option");
+        item.append(label);
+        return { item, input, text };
+    }
+
+    /**
+     * 選択肢の名前・区分・補足を並べる部分を作る。
+     * @param option 表示する選択肢
+     */
+    function createOptionText(option: BookmarkTransferDialogOption): HTMLElement {
         const name = createPart("span", "", "bookmark-transfer-option-name");
         name.textContent = option.name;
         const heading = createPart("span", "", "bookmark-transfer-option-heading");
@@ -408,12 +442,7 @@ export function createBookmarkTransferDialogController() {
             detailEl.textContent = detail;
             text.append(detailEl);
         });
-
-        const label = createPart("label", "", "bookmark-transfer-option-label checkbox-item");
-        label.append(input, text);
-        const item = createPart("li", "", "bookmark-transfer-option");
-        item.append(label);
-        return { item, input };
+        return text;
     }
 
     /**
@@ -469,11 +498,13 @@ export function createBookmarkTransferDialogController() {
         if (allItemsAction) {
             setStatus(allItemsAction.message, "caution");
             parts.submitBtn.disabled = false;
-            return;
+        } else {
+            const state = request.describeSelection(getSelectedIds());
+            setStatus(state.message, state.isError ? "error" : "normal");
+            parts.submitBtn.disabled = !state.canSubmit;
         }
-        const state = request.describeSelection(getSelectedIds());
-        setStatus(state.message, state.isError ? "error" : "normal");
-        parts.submitBtn.disabled = !state.canSubmit;
+        const failureText = session.failureMessage?.(session.language) ?? "";
+        if (failureText) setStatus(failureText, "error");
     }
 
     /**
@@ -485,6 +516,7 @@ export function createBookmarkTransferDialogController() {
             .filter(({ option }) => !option.disabled)
             .map(({ option }) => option.id);
         session.selectedIds = new Set(parts.selectAll.checked ? selectableIds : []);
+        session.failureMessage = null;
         renderState();
     }
 
@@ -498,6 +530,7 @@ export function createBookmarkTransferDialogController() {
         if (!row || row.option.disabled) return;
         if (row.input.checked) session.selectedIds.add(row.option.id);
         else session.selectedIds.delete(row.option.id);
+        session.failureMessage = null;
         renderState();
     }
 
@@ -506,12 +539,13 @@ export function createBookmarkTransferDialogController() {
      * @param result 決定操作の結果
      */
     function applyActionResult(result: BookmarkTransferDialogActionResult<unknown>): void {
+        if (!session) return;
         if (result.ok) {
             finish(result.value);
             return;
         }
+        session.failureMessage = result.message;
         renderState();
-        if (result.message) setStatus(result.message, "error");
     }
 
     /**
@@ -519,6 +553,7 @@ export function createBookmarkTransferDialogController() {
      */
     function handleSubmit(): void {
         if (!session) return;
+        session.failureMessage = null;
         const allItemsAction = session.allItemsActionChosen ? session.request.allItemsAction : undefined;
         if (allItemsAction) {
             applyActionResult(allItemsAction.run());
@@ -549,15 +584,12 @@ export function createBookmarkTransferDialogController() {
     }
 
     /**
-     * 要求の内容でダイアログを開き、決定時の値、または取り消し時の null を返す。
-     * すでに開いている場合は、開き直さずに null を返す。
-     * @param request 表示内容と決定時の処理
+     * 見出し・「すべて選択」・取り消しボタン・注意・▼ のメニューの文言を、要求の内容で書く。
+     * 説明文・決定ボタン・決定ボタンの上の文言は、選んでいる操作で変わるので renderState で書く。
+     * @param current ダイアログの要素
+     * @param request 表示内容
      */
-    function open<T>(request: BookmarkTransferDialogRequest<T>): Promise<T | null> {
-        if (session) return Promise.resolve(null);
-        parts ??= createParts();
-        const current = parts;
-
+    function applyRequestText(current: DialogParts, request: BookmarkTransferDialogRequest<unknown>): void {
         current.title.textContent = request.title;
         current.selectAllText.textContent = request.selectAllLabel;
         current.cancelBtn.textContent = request.cancelLabel;
@@ -572,11 +604,28 @@ export function createBookmarkTransferDialogController() {
         current.selectionItem.description.textContent = allItemsAction?.selectionItem.description ?? "";
         current.allItemsItem.label.textContent = allItemsAction?.allItemsItem.label ?? "";
         current.allItemsItem.description.textContent = allItemsAction?.allItemsItem.description ?? "";
+    }
+
+    /**
+     * 言語ごとの表示内容を作る関数でダイアログを開き、決定時の値、または取り消し時の null を返す。
+     * すでに開いている場合は、開き直さずに null を返す。
+     * @param buildRequest 言語を受け取り、表示内容と決定時の処理を返す関数
+     * @param language 開くときのサイトの言語
+     */
+    function open<T>(
+        buildRequest: (language: SiteLanguage) => BookmarkTransferDialogRequest<T>,
+        language: SiteLanguage
+    ): Promise<T | null> {
+        if (session) return Promise.resolve(null);
+        parts ??= createParts();
+        const current = parts;
+        const request = buildRequest(language);
+        applyRequestText(current, request);
 
         const rows = request.options.map((option) => {
-            const { item, input } = createOptionElement(option);
-            current.list.append(item);
-            return { option, item, input };
+            const row = { option, ...createOptionElement(option) };
+            current.list.append(row.item);
+            return row;
         });
         const selectedIds = new Set(request.options
             .filter((option) => option.checked && !option.disabled)
@@ -585,6 +634,9 @@ export function createBookmarkTransferDialogController() {
         return new Promise<T | null>((resolve) => {
             session = {
                 request,
+                buildRequest,
+                language,
+                failureMessage: null,
                 resolve: (value) => resolve(value as T | null),
                 rows,
                 selectedIds,
@@ -597,5 +649,29 @@ export function createBookmarkTransferDialogController() {
         });
     }
 
-    return { open };
+    /**
+     * 開いているダイアログの文言を、指定した言語で作り直す。開いていなければ何もしない。
+     * 選択・選んでいる操作・▼ のメニューの開閉・フォーカス・失敗の理由はそのまま残す。
+     * 一覧の項目は開いた時点のものを使い、各行の名前・区分・補足だけを書き直す。
+     * @param language 新しいサイトの言語
+     */
+    function refreshText(language: SiteLanguage): void {
+        if (!session || !parts) return;
+        const request = session.buildRequest(language);
+        session.request = request;
+        session.language = language;
+        applyRequestText(parts, request);
+        const optionsById = new Map(request.options.map((option) => [option.id, option]));
+        session.rows.forEach((row) => {
+            const option = optionsById.get(row.option.id);
+            if (!option) return;
+            const text = createOptionText(option);
+            row.text.replaceWith(text);
+            row.option = option;
+            row.text = text;
+        });
+        renderState();
+    }
+
+    return { open, refreshText };
 }
