@@ -173,7 +173,7 @@ npm run render:brand-assets
 
 | Workflow | 役割 |
 | --- | --- |
-| `update-songs-json.yml` | 1日2回 CSV から曲JSONを生成・検証し、差分があれば `main` へコミット |
+| `update-songs-json.yml` | 1日2回 CSV から曲JSONを生成・検証し、差分があれば `main` へコミット。ブックマークのキーが別の歌唱を指すようになったら Issue で通知 |
 | `ci.yml` | `main` への push / PR で、`test` job の build・検証・型検査・lint・単体テストと、`e2e` job の Chromium・WebKit の E2E |
 | `deploy-pages.yml` | `main` の CI（`test` と `e2e`）成功後に GitHub Pages へ deploy し、公開を確認。失敗時は Issue で通知 |
 
