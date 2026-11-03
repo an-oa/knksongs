@@ -7,6 +7,7 @@
  * 画面部品 (サイドバー・ブックマークなど) と曲データ読込の ./ui/*。
  *
  * 検索・描画・再生の実処理は各 controller 側にあり、ここでは持たない。
+ * 曲データの取得もここでは始めず、./startup-data.mjs が先に始めた取得の結果を受け取る。
  * controller 同士の循環参照は、getXxxController のような遅延 getter や null 初期化の let 変数で解く。
  */
 import {
