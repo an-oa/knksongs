@@ -219,6 +219,8 @@ flowchart TD
 - キー生成、旧参照の正規化、参照インデックス構築、一意性検証は`song-identity`へ集約する。
 - ブックマーク検索では `bookmarkSongKey` を優先して曲行へ解決し、旧ブックマークの `songKey` / `legacySongKey` は現行キーへ移行する。
 - 旧数値参照はCSV行位置の変化で別の曲を指し得るため解決せず、実行時モデルへ持ち込まず読み込み時に除外する。
+- `bookmarkSongKey` も歌唱順を含むので、シートで歌唱順を入れ替えたり途中に曲を足したりすると、後ろの番号のキーが別の歌唱を指す。
+  保存済みのブックマークは訪問者の端末にあって直せないので、曲データの更新で見つけて Issue で知らせる（[曲データ更新](#曲データ更新update-songs-jsonyml)）。
 
 ## 検索・絞り込みロジック
 - 検索語：NFKC・読み・大小文字・連続空白を正規化したAND検索。曲データ側にも同じ空白正規化を適用する。
@@ -531,7 +533,7 @@ IndexedDB保存：
 
 | Workflow | 起動条件 | 役割 |
 | --- | --- | --- |
-| `update-songs-json.yml` | 1日2回の定期実行 / 手動実行 | CSVから曲JSONを生成・検証し、差分があれば `main` へコミットする |
+| `update-songs-json.yml` | 1日2回の定期実行 / 手動実行 | CSVから曲JSONを生成・検証し、差分があれば `main` へコミットする。ブックマークのキーが別の歌唱を指すようになったら Issue で知らせる |
 | `ci.yml` | `main` へのpush / PR / 手動実行 | build後の曲JSON検証・型検査・emit検査・lint・単体テストと、Chromium・WebKit の E2E を別の job で実行する |
 | `deploy-pages.yml` | `main` のCI成功 | 単体テストと E2E を通った commit を GitHub Pages へdeployし、公開を確認する |
 
@@ -544,6 +546,13 @@ IndexedDB保存：
 - App は対象リポジトリだけへインストールし、Repository permissions は Contents の Read and write だけを付与する
 - commit jobではnpmやartifact内のコードを実行せず、JSONを固定の2パスへコピーする
 - 差分がない場合は token 発行、コミット、CI、deploy のいずれも行わない。生成中に `main` が進んだ場合は古いデータのコミットをskipする
+- commit jobがpushした後、`report-key-remaps` jobがそのcommitと親の `data/songs.json` を比べる。
+  同じ `bookmarkSongKey` で開始時刻と曲名の両方が変わったキーを、別の歌唱を指すようになったものとして数える。
+  曲名の表記の修正や開始時刻の修正だけでは数えない（2026-11-02 時点で、過去71回の更新に当てはまるものはなかった）
+- 見つかった場合は `bookmark-key-remap` label の Issue を作り、repository owner へ assign する。公開は止めない。
+  シートの歌唱順の変更が意図したものかを確かめるための通知で、Issue は更新のたびに新しく作る
+- `report-key-remaps` jobは `contents: read` と `issues: write` だけを持ち、npmやartifactを使わず、Node標準APIだけのscriptで本文を作る。
+  曲名などのシート由来の文字列はコードブロックの中にだけ書き、mention やリンクとして解釈させない
 
 ### CI（ci.yml）
 - `test` job と `e2e` job を並行して実行し、両方が成功したときだけ workflow が成功する。

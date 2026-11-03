@@ -87,6 +87,8 @@ jobs:
     needs: generate
     if: needs.generate.outputs.changed == 'true'
     runs-on: ubuntu-latest
+    outputs:
+      commit-sha: ${{ steps.push.outputs.commit-sha }}
 
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
@@ -142,6 +144,7 @@ jobs:
           permission-contents: write
 
       - name: Commit and push generated songs json
+        id: push
         if: steps.target.outputs.should-commit == 'true'
         env:
           APP_SLUG: ${{ steps.app-token.outputs.app-slug }}
@@ -156,3 +159,53 @@ jobs:
           git commit -m "chore: update generated songs json" -m "- 公開CSVから songs.json と songs-meta.json を再生成した。"
           gh auth setup-git
           git push origin HEAD:main
+          echo "commit-sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+  # 同じブックマークのキーが別の歌唱を指すようになった更新を、Issue で知らせる。公開は止めない。
+  report-key-remaps:
+    needs: commit
+    if: needs.commit.outputs.commit-sha != ''
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+
+    steps:
+      # This trusted notification script uses only Node built-ins, without npm or build artifacts.
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          ref: ${{ needs.commit.outputs.commit-sha }}
+          fetch-depth: 2
+          persist-credentials: false
+
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: 24.22.1
+
+      - name: Report bookmark keys that now point to other songs
+        env:
+          COMMIT_URL: ${{ github.server_url }}/${{ github.repository }}/commit/${{ needs.commit.outputs.commit-sha }}
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY_OWNER: ${{ github.repository_owner }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          previous_songs_json="$RUNNER_TEMP/previous-songs.json"
+          issue_body="$RUNNER_TEMP/bookmark-key-remap-issue.md"
+          git show HEAD~1:data/songs.json > "$previous_songs_json"
+          PREVIOUS_SONGS_JSON="$previous_songs_json" \
+            CURRENT_SONGS_JSON=data/songs.json \
+            ISSUE_BODY_PATH="$issue_body" \
+            node scripts/song-key-remap-issue.mts
+
+          if [[ -f "$issue_body" ]]; then
+            gh label create bookmark-key-remap --repo "$GITHUB_REPOSITORY" --force \
+              --color FBCA04 --description "A song data update made bookmarks point to different songs"
+            gh issue create --repo "$GITHUB_REPOSITORY" \
+              --title "[Song Data] Bookmarks now point to different songs" \
+              --body-file "$issue_body" \
+              --label bookmark-key-remap \
+              --assignee "$REPOSITORY_OWNER"
+          fi

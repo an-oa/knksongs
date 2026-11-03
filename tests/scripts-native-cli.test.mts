@@ -7,7 +7,8 @@ import { join } from "node:path";
 
 for (const { file, message } of [
     { file: "verify-pages-deployment.mts", message: "PAGE_URL is required" },
-    { file: "deploy-pages-issue-notification.mts", message: "DEPLOY_SHA is required" }
+    { file: "deploy-pages-issue-notification.mts", message: "DEPLOY_SHA is required" },
+    { file: "song-key-remap-issue.mts", message: "PREVIOUS_SONGS_JSON is required" }
 ]) {
     test(`scripts native CLI: ${file} starts without installed packages`, async (t) => {
         const directory = await mkdtemp(join(tmpdir(), "knksongs-native-cli-"));
@@ -19,7 +20,7 @@ for (const { file, message } of [
         // CIと同じNode直接実行で、通信を始める前の入力検証まで到達する。
         const result = spawnSync(process.execPath, [entryPoint], {
             cwd: directory,
-            env: { ...process.env, NODE_OPTIONS: "", PAGE_URL: "", DEPLOY_SHA: "" },
+            env: { ...process.env, NODE_OPTIONS: "", PAGE_URL: "", DEPLOY_SHA: "", PREVIOUS_SONGS_JSON: "" },
             encoding: "utf8",
             timeout: 10_000
         });
