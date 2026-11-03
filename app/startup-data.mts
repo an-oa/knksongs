@@ -1,3 +1,14 @@
+/**
+ * 曲データの初回取得を、UI のコードより先に始めるための module (ブラウザ専用)。
+ *
+ * startup.mts が最初に読み、import した時点で取得が始まる。startup.mts はその完了を待たずに
+ * bootstrap.mts を読み込むので、曲データと UI のコードの取得が並行して進む。
+ * bootstrap.mts は、ここで始めた取得の結果を Promise として受け取る。
+ * 取得の実処理は ./lib/browser-songs-data-source.mts、URL とキャッシュ key は ./config.mts にある。
+ *
+ * bootstrap.mts へ統合しない。統合すると、bootstrap のファイルを取得して評価し終えるまで曲データの取得が始まらない。
+ * HTML の modulepreload は bootstrap のコードを先に取得するが実行はしないため、取得を始めるのはこの module の役目になる。
+ */
 import {
     PUBLIC_SONGS_JSON_URL,
     PUBLIC_SONGS_META_URL,
