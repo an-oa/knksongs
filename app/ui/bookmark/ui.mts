@@ -1,8 +1,9 @@
 import { createBookmarkNotificationController } from "./notifications.mjs";
-import { getBookmarkIdsInListOrder, setBookmarkPanelError } from "./panel.mjs";
+import { getBookmarkIdsInListOrder, refreshBookmarkPanelError, setBookmarkPanelError } from "./panel.mjs";
 import { createSidebarSubpanelController } from "../sidebar/subpanel.mjs";
 import { isHtmlElement } from "../../lib/dom-utils.mjs";
 import { getBookmarkText } from "./text.mjs";
+import type { LocalizedText } from "./text.mjs";
 import type { AppDataState, AppUiState } from "../../state.types";
 import type { StorageActionResult } from "../../controllers/storage.mjs";
 
@@ -232,18 +233,18 @@ export function createBookmarkUiController({ data, ui, callbacks }: BookmarkUiCo
     }
 
     /**
-     * 作成欄のインラインエラーを表示する。
-     * @param message 表示する文言
+     * 作成欄のインラインエラーを表示する。言語が変わったら、同じ内容を新しい言語で書き直す。
+     * @param message 表示する文言の作り方
      */
-    function showBookmarkPanelError(message: string) {
-        setBookmarkPanelError(ui.el.bookmarkPanelError, message);
+    function showBookmarkPanelError(message: LocalizedText) {
+        setBookmarkPanelError(ui.el.bookmarkPanelError, message, ui.language.current);
     }
 
     /**
      * 作成欄のインラインエラーをクリアする。
      */
     function clearBookmarkPanelError() {
-        showBookmarkPanelError("");
+        setBookmarkPanelError(ui.el.bookmarkPanelError, null, ui.language.current);
     }
 
     /**
@@ -424,7 +425,7 @@ export function createBookmarkUiController({ data, ui, callbacks }: BookmarkUiCo
 
         const newName = nameInput.value.trim();
         if (!newName) {
-            showBookmarkPanelError(getText().nameRequired);
+            showBookmarkPanelError((language) => getBookmarkText(language).nameRequired);
             nameInput.focus();
             return;
         }
@@ -450,13 +451,16 @@ export function createBookmarkUiController({ data, ui, callbacks }: BookmarkUiCo
             return;
         }
         if (result.reason === "empty_name") {
-            showBookmarkPanelError(getText().nameRequired);
+            showBookmarkPanelError((language) => getBookmarkText(language).nameRequired);
             nameInput.focus();
             return;
         }
         if (result.reason === "max_bookmark_name_length") {
             const limit = Number.isFinite(result.limit) ? result.limit : null;
-            showBookmarkPanelError(limit === null ? getText().nameTooLong : getText().maxNameLength(limit));
+            showBookmarkPanelError((language) => {
+                const text = getBookmarkText(language);
+                return limit === null ? text.nameTooLong : text.maxNameLength(limit);
+            });
             nameInput.focus();
             return;
         }
@@ -578,9 +582,19 @@ export function createBookmarkUiController({ data, ui, callbacks }: BookmarkUiCo
         notifyIfBookmarkSaveError(result);
     }
 
+    /**
+     * 一覧と、パネル上部のエラー欄・表示中の通知の文言を、今の言語で書き直す。言語の切り替えで使う。
+     */
+    function refreshText(): void {
+        renderBookmarks();
+        refreshBookmarkPanelError(ui.el.bookmarkPanelError, ui.language.current);
+        bookmarkNotifications.refreshText();
+    }
+
     return {
         setupBookmarkHandlers,
         renderBookmarks,
+        refreshText,
         openBookmarkBrowser,
         openBookmarkModal,
         closeBookmarkModal,

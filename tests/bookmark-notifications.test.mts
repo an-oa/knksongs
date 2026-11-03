@@ -131,3 +131,40 @@ test("bookmark notifications: close button removes toast and clears timer", () =
         restoreDom();
     }
 });
+
+test("bookmark notifications: the shown toast is rewritten in the new language, including the song title", () => {
+    const restoreDom = installFakeDom();
+    const fakeTimeouts = installFakeTimeouts();
+
+    try {
+        const ui = createNotificationUiState();
+        const controller = createBookmarkNotificationController({
+            data: createNotificationDataState(),
+            ui
+        });
+
+        controller.notifySongSavedToBookmark("Morning", "bookmark-song-z");
+        const toast = ui.el.bookmarkNotificationRegion.querySelector(".bookmark-toast");
+        ui.language.current = "en";
+        controller.refreshText();
+
+        // 同じ toast のまま、文言と閉じるボタンの読み上げ名だけを書き直す。
+        assert.equal(ui.el.bookmarkNotificationRegion.querySelector(".bookmark-toast"), toast);
+        assert.equal(
+            ui.el.bookmarkNotificationRegion.querySelector(".bookmark-toast-message")?.textContent,
+            "Saved “Clear Morning” to the bookmark “Morning”."
+        );
+        assert.equal(
+            ui.el.bookmarkNotificationRegion.querySelector(".bookmark-toast-close")?.getAttribute("aria-label"),
+            "Close notification"
+        );
+
+        controller.dismissBookmarkNotification();
+        ui.language.current = "ja";
+        controller.refreshText();
+        assert.equal(ui.el.bookmarkNotificationRegion.childElementCount, 0);
+    } finally {
+        fakeTimeouts.cleanup();
+        restoreDom();
+    }
+});

@@ -1,6 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createBookmarkTransferController } from "../app/ui/bookmark/transfer.mts";
+import { getBookmarkImportErrorMessage } from "../app/ui/bookmark/import-export.mts";
+import { refreshBookmarkPanelError } from "../app/ui/bookmark/panel.mts";
 import type { BookmarkTransferCallbacks } from "../app/ui/bookmark/transfer.mts";
 import type { BookmarkTransferDialogRequest } from "../app/ui/bookmark/transfer-dialog.mts";
 import type { AppDataState } from "../app/state.types";
@@ -69,6 +71,9 @@ function createTransferHarness(options: {
         importSelectedArgs: [string, string[]][];
         savedFiles: { text: string; fileName: string; mimeType: string }[];
         transferDialogRequests: BookmarkTransferDialogRequest<unknown>[];
+        /** 偽のダイアログが受け取った、言語ごとの表示内容を作る関数。 */
+        transferDialogBuilders: ((language: SiteLanguage) => BookmarkTransferDialogRequest<unknown>)[];
+        transferDialogRefreshLanguages: SiteLanguage[];
         transferDialogErrors: string[];
     } = {
         exportBookmarkArgs: [],
@@ -77,6 +82,8 @@ function createTransferHarness(options: {
         importSelectedArgs: [],
         savedFiles: [],
         transferDialogRequests: [],
+        transferDialogBuilders: [],
+        transferDialogRefreshLanguages: [],
         transferDialogErrors: []
     };
     const callbacks: BookmarkTransferCallbacks = {
@@ -106,27 +113,38 @@ function createTransferHarness(options: {
         async saveTextFile(text, fileName, mimeType) {
             calls.savedFiles.push({ text, fileName, mimeType });
         },
-        async openTransferDialog<T>(request: BookmarkTransferDialogRequest<T>): Promise<T | null> {
-            calls.transferDialogRequests.push(request);
-            const choice = options.transferDialogChoice ?? { action: "submit" };
-            if (choice.action === "cancel") return null;
-            const result = choice.action === "allItems"
-                ? request.allItemsAction?.run()
-                : request.onSubmit(choice.selectedIds ?? request.options
-                    .filter((option) => option.checked && !option.disabled)
-                    .map((option) => option.id));
-            if (!result) return null;
-            if (!result.ok) {
-                // 本物のダイアログは開いたまま理由を出す。ここでは理由を記録し、利用者が閉じたものとして扱う。
-                if (result.message) calls.transferDialogErrors.push(result.message);
-                return null;
+        transferDialog: {
+            async open<T>(
+                buildRequest: (language: SiteLanguage) => BookmarkTransferDialogRequest<T>,
+                language: SiteLanguage
+            ): Promise<T | null> {
+                const request = buildRequest(language);
+                calls.transferDialogBuilders.push(buildRequest);
+                calls.transferDialogRequests.push(request);
+                const choice = options.transferDialogChoice ?? { action: "submit" };
+                if (choice.action === "cancel") return null;
+                const result = choice.action === "allItems"
+                    ? request.allItemsAction?.run()
+                    : request.onSubmit(choice.selectedIds ?? request.options
+                        .filter((option) => option.checked && !option.disabled)
+                        .map((option) => option.id));
+                if (!result) return null;
+                if (!result.ok) {
+                    // 本物のダイアログは開いたまま理由を出す。ここでは理由を記録し、利用者が閉じたものとして扱う。
+                    const message = result.message(language);
+                    if (message) calls.transferDialogErrors.push(message);
+                    return null;
+                }
+                return result.value;
+            },
+            refreshText(language) {
+                calls.transferDialogRefreshLanguages.push(language);
             }
-            return result.value;
         }
     };
 
     const controller = createBookmarkTransferController({ data, ui, callbacks });
-    return { ui, calls, controller };
+    return { ui, data, calls, controller };
 }
 
 /**
@@ -519,3 +537,75 @@ for (const { result, importMessage } of [
         });
     }
 }
+
+test("bookmark transfer ui: the open dialog is rebuilt in the new language with the bookmarks it opened with", async () => {
+    const restoreDom = installFakeDom();
+    try {
+        const { ui, data, calls, controller } = createTransferHarness({ transferDialogChoice: { action: "cancel" } });
+        controller.setupTransferHandlers();
+
+        await invokeListener(ui.el.bookmarkPanelExportBtn, "click", {});
+        // 開いた後にブックマークが変わっても、書き直すのは開いた時点の一覧。
+        delete data.bookmarks["bookmark-2"];
+        const [buildRequest] = calls.transferDialogBuilders;
+        const english = buildRequest("en");
+
+        assert.equal(english.title, "Export bookmarks");
+        assert.deepEqual(english.options.map((option) => [option.id, option.details]), [
+            ["bookmark-1", ["1 song"]],
+            ["bookmark-2", ["2 songs"]]
+        ]);
+        assert.equal(english.describeSelection(["bookmark-1"]).message, "1 selected");
+
+        ui.language.current = "en";
+        controller.refreshText();
+        assert.deepEqual(calls.transferDialogRefreshLanguages, ["en"]);
+    } finally {
+        restoreDom();
+    }
+});
+
+test("bookmark transfer ui: import failures and panel errors can be rewritten in the new language", async () => {
+    const restoreDom = installFakeDom();
+    const nativeDialogs = captureNativeDialogs();
+    try {
+        const failure = { ok: false, reason: "storage_write_failed" } as const;
+        const { ui, calls, controller } = createTransferHarness({ onImportSelectedBookmarksResult: failure });
+        controller.setupTransferHandlers();
+
+        selectImportFile(ui.el.bookmarkPanelImportInput, "{}");
+        await invokeListener(ui.el.bookmarkPanelImportInput, "change", {});
+        assert.deepEqual(calls.transferDialogErrors, [getBookmarkImportErrorMessage(failure, "ja")]);
+
+        // ダイアログは、失敗の理由を言語が変わったときに書き直せる形で受け取る。
+        const result = calls.transferDialogBuilders[0]("ja").onSubmit(["imported-1"]);
+        assert.equal(result.ok, false);
+        if (result.ok) return;
+        assert.equal(result.message("en"), getBookmarkImportErrorMessage(failure, "en"));
+        assert.notEqual(result.message("en"), result.message("ja"));
+    } finally {
+        nativeDialogs.restore();
+        restoreDom();
+    }
+
+    const restoreDomForPanel = installFakeDom();
+    try {
+        const { ui, controller } = createTransferHarness({
+            onPreviewBookmarkImportResult: { ok: false, reason: "invalid_json" }
+        });
+        controller.setupTransferHandlers();
+
+        selectImportFile(ui.el.bookmarkPanelImportInput, "{");
+        await invokeListener(ui.el.bookmarkPanelImportInput, "change", {});
+        assert.equal(ui.el.bookmarkPanelError.textContent, "JSONとして読み込めないファイルです。");
+
+        refreshBookmarkPanelError(ui.el.bookmarkPanelError, "en");
+        assert.equal(
+            ui.el.bookmarkPanelError.textContent,
+            getBookmarkImportErrorMessage({ ok: false, reason: "invalid_json" }, "en")
+        );
+        assert.equal(ui.el.bookmarkPanelError.hidden, false);
+    } finally {
+        restoreDomForPanel();
+    }
+});
