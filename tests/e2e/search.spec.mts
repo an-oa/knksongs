@@ -380,6 +380,45 @@ test("keyboard focus in a card scrolls the names that do not fit until focus lea
     ]);
 });
 
+test.describe("on a touch screen", () => {
+    test.use({ hasTouch: true, isMobile: true, viewport: { width: 412, height: 915 } });
+    const stopped = [{ overflows: true, ...NAME_NOT_SCROLLING }, { overflows: true, ...NAME_NOT_SCROLLING }];
+
+    test("tapping a card scrolls the names until another card is tapped", async ({ page }) => {
+        const longCard = await showLongNameSongCard(page);
+        const shortCard = getSongCard(page, "Scroll Song 02");
+
+        // タップすると、カードの影と同じく、指を離した後も流し続ける。
+        await longCard.locator(".artist").tap();
+        await expect.poll(() => readNameScroll(longCard)).toEqual([
+            { overflows: true, ...NAME_SCROLLING },
+            { overflows: true, ...NAME_SCROLLING }
+        ]);
+
+        // 別のカードをタップすると止める。
+        await shortCard.locator(".artist").tap();
+        await expect.poll(() => readNameScroll(longCard)).toEqual(stopped);
+    });
+
+    test("swiping over a card does not scroll the names", async ({ page, browserName }) => {
+        test.skip(browserName !== "chromium", "指でなぞる操作は Chromium の DevTools Protocol でだけ送れる");
+        const longCard = await showLongNameSongCard(page);
+        const box = await longCard.boundingBox();
+        if (!box) throw new Error("The card has no bounding box");
+
+        // 一覧が短くスクロールしないときも、なぞっただけではタップにならない。
+        const client = await page.context().newCDPSession(page);
+        await client.send("Input.synthesizeScrollGesture", {
+            x: Math.round(box.x + box.width / 2),
+            y: Math.round(box.y + box.height / 2),
+            yDistance: -100,
+            gestureSourceType: "touch"
+        });
+        await client.detach();
+        expect(await readNameScroll(longCard)).toEqual(stopped);
+    });
+});
+
 test("an artist name can be selected and a click on the blank area clears the selection", async ({ page }) => {
     await routeSongsJsonFixture(page, createScrollableResultSongs(6));
     await page.reload();

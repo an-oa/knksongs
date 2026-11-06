@@ -104,17 +104,64 @@ test("card text marquee: scrolls only the names that do not fit while a mouse po
     }
 });
 
-test("card text marquee: does not scroll for a touch or when reduced motion is preferred", () => {
+test("card text marquee: does not scroll when reduced motion is preferred", () => {
     const cleanup = installFakeDom();
     try {
         const { card, title } = createCard(280, 200);
-        void invokeListener(card, "pointerenter", { pointerType: "touch" });
-        assert.deepEqual(title.calls, []);
-
         window.matchMedia = (query) => ({ matches: query === "(prefers-reduced-motion: reduce)" }) as unknown as MediaQueryList;
         void invokeListener(card, "pointerenter", { pointerType: "mouse" });
         assert.deepEqual(title.calls, []);
         assert.equal(title.target.box.classList.contains(MARQUEE_CLASS), false);
+    } finally {
+        cleanup();
+    }
+});
+
+test("card text marquee: a tap keeps the names scrolling until another place is tapped", () => {
+    const cleanup = installFakeDom();
+    try {
+        const { card, title } = createCard(280, 200);
+        const inside = document.createElement("span");
+        card.appendChild(inside);
+        const outside = document.createElement("div");
+
+        // タッチの出入りと、マウスのクリック、キーボードで開いたときの click では流さない。
+        void invokeListener(card, "pointerenter", { pointerType: "touch" });
+        void invokeListener(card, "pointerdown", { pointerType: "mouse", target: inside });
+        void invokeListener(card, "click", { target: inside });
+        void invokeListener(card, "click", { target: inside });
+        assert.deepEqual(title.calls, []);
+
+        // 指でなぞっただけでは click が届かず、流さない。
+        void invokeListener(card, "pointerdown", { pointerType: "touch", target: inside });
+        assert.deepEqual(title.calls, []);
+
+        // タップの click で流し始め、指を離した直後に届くタッチの pointerleave では止めない。
+        void invokeListener(card, "click", { target: inside });
+        const marquee = title.running[0];
+        void invokeListener(card, "pointerleave", { pointerType: "touch" });
+        assert.equal(marquee?.cancelled, false);
+
+        // カードの中をタップしても止めず、外をタップすると止める。
+        void invokeListener(cleanup.document, "pointerup", { pointerType: "touch", target: inside });
+        assert.equal(marquee.cancelled, false);
+        void invokeListener(cleanup.document, "pointerup", { pointerType: "touch", target: outside });
+        assert.equal(marquee.cancelled, true);
+        assert.equal(cleanup.document._events.has("pointerup"), false, "the outside tap listener is removed");
+    } finally {
+        cleanup();
+    }
+});
+
+test("card text marquee: a tap outside also stops a scroll started by a mouse enter on a touch screen", () => {
+    const cleanup = installFakeDom();
+    try {
+        // タッチの端末では、画面が変わったときにブラウザがマウスの出入りを送り、離れたことが届かないことがある。
+        const { card, title } = createCard(280, 200);
+        void invokeListener(card, "pointerenter", { pointerType: "mouse" });
+        const marquee = title.running[0];
+        void invokeListener(cleanup.document, "pointerup", { pointerType: "touch", target: document.createElement("div") });
+        assert.equal(marquee?.cancelled, true);
     } finally {
         cleanup();
     }
