@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect, type Locator, type Page } from "@playwright/test";
 import { installNetworkMocks } from "./support/network-mocks.mts";
 import { routeSongsJsonFixture } from "./support/songs-network.mts";
 import { clickControlLabel, closeSidebar, getSongCard, openSidebar, waitForInitialLoad } from "./support/ui-helpers.mts";
@@ -252,6 +252,132 @@ test("long search queries keep the condition chip within a narrow page", async (
     await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(393);
     const chipBox = await chip.boundingBox();
     expect(chipBox && chipBox.x + chipBox.width).toBeLessThanOrEqual(393);
+});
+
+const LONG_SONG_TITLE = "Aitsu Koso ga Tennis no Oujisama ~Seigaku and Yamabuki Medley~ Scroll Song 01";
+const LONG_SONG_ARTIST = "Seigaku Members, Yamabuki Members, Hajime Mizuki, and Wakashi Hiyoshi";
+const NAME_NOT_SCROLLING = { scrolling: false, animations: [] };
+const NAME_SCROLLING = { scrolling: true, animations: ["card-text-marquee"] };
+
+/**
+ * 曲名とアーティスト名がカードに収まらない曲を 1 件含む結果を表示する。
+ * @param page 検証するページ
+ * @returns 名前が収まらない曲のカード
+ */
+async function showLongNameSongCard(page: Page) {
+    const songs = createScrollableResultSongs(6);
+    const titleNorm = LONG_SONG_TITLE.toLowerCase();
+    const artistNorm = LONG_SONG_ARTIST.toLowerCase();
+    songs[0] = {
+        ...songs[0],
+        title: LONG_SONG_TITLE,
+        titleYomi: LONG_SONG_TITLE,
+        titleEn: LONG_SONG_TITLE,
+        titleNorm,
+        titleYomiNorm: titleNorm,
+        titleEnNorm: titleNorm,
+        artist: LONG_SONG_ARTIST,
+        artistYomi: LONG_SONG_ARTIST,
+        artistEn: LONG_SONG_ARTIST,
+        artistNorm,
+        artistYomiNorm: artistNorm,
+        artistEnNorm: artistNorm,
+        artistSortNorm: artistNorm
+    };
+    await routeSongsJsonFixture(page, songs);
+    await page.reload();
+    await waitForInitialLoad(page);
+    await page.locator("#searchBox").fill("Scroll Song");
+    const card = getSongCard(page, LONG_SONG_TITLE);
+    await expect(card).toHaveCount(1);
+    return card;
+}
+
+/**
+ * カードの曲名とアーティスト名を、文字を流しているかと合わせて読む。
+ * 外側の要素が 1 行の幅で切り、内側の文字の要素を動かす。
+ * @param card 結果カード
+ * @returns 曲名、アーティスト名の順に、収まらないか・流しているか・動いているアニメーション
+ */
+function readNameScroll(card: Locator) {
+    return card.locator(".title, .artist").evaluateAll((elements) => elements.map((el) => ({
+        overflows: el.scrollWidth > el.clientWidth,
+        scrolling: el.classList.contains("is-marquee-scrolling"),
+        animations: (el.querySelector(".card-name-text")?.getAnimations() ?? []).map((animation) => animation.id)
+    })));
+}
+
+/**
+ * 名前の文字の要素を横へずらしている量を読む。
+ * @param card 結果カード
+ * @param selector 曲名なら ".title"、アーティスト名なら ".artist"
+ * @returns 横へずらしている量。左へずらしているときは負
+ */
+function readNameShift(card: Locator, selector: ".title" | ".artist") {
+    return card.locator(`${selector} > .card-name-text`)
+        .evaluate((el) => new DOMMatrixReadOnly(getComputedStyle(el).transform).m41);
+}
+
+test("pointing at a card scrolls the names that do not fit and leaving it brings back the ellipsis", async ({ page }) => {
+    const longCard = await showLongNameSongCard(page);
+    const shortCard = getSongCard(page, "Scroll Song 02");
+    const stopped = [{ overflows: true, ...NAME_NOT_SCROLLING }, { overflows: true, ...NAME_NOT_SCROLLING }];
+
+    // 曲名もカードの幅で切り、カードの外へはみ出さない。
+    expect(await readNameScroll(longCard)).toEqual(stopped);
+    const titleRight = await longCard.locator(".title").evaluate((el) => el.getBoundingClientRect().right);
+    const contentRight = await longCard.locator(".content").evaluate((el) => el.getBoundingClientRect().right);
+    expect(titleRight).toBeLessThanOrEqual(contentRight);
+    // 切った名前はスクロールできず、スクリプトでも横にずれない。ずれると流す位置が狂う。
+    expect(await longCard.locator(".artist").evaluate((el) => {
+        el.scrollLeft = 10;
+        return el.scrollLeft;
+    })).toBe(0);
+
+    await longCard.locator(".title").hover();
+    await expect.poll(() => readNameScroll(longCard)).toEqual([{ overflows: true, ...NAME_SCROLLING }, { overflows: true, ...NAME_SCROLLING }]);
+    // 流している間も、指した曲名のリンクに下線を引く。
+    await expect(longCard.locator(".title > .card-name-text")).toHaveCSS("text-decoration-line", "underline");
+    // 先頭で止めた後に、左へ流れる。
+    await expect.poll(() => readNameShift(longCard, ".artist")).toBeLessThan(0);
+
+    // 収まる名前のカードへ移ると、前のカードは止まり、収まる名前は流さない。
+    await shortCard.hover();
+    await expect.poll(() => readNameScroll(longCard)).toEqual(stopped);
+    expect(await readNameShift(longCard, ".artist")).toBe(0);
+    await expect(longCard.locator(".artist")).toHaveCSS("text-overflow", "ellipsis");
+    expect(await readNameScroll(shortCard)).toEqual([{ overflows: false, ...NAME_NOT_SCROLLING }, { overflows: false, ...NAME_NOT_SCROLLING }]);
+
+    // 動きを減らす設定では流さない。
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await longCard.hover();
+    expect(await readNameScroll(longCard)).toEqual(stopped);
+});
+
+test("keyboard focus in a card scrolls the names that do not fit until focus leaves the card", async ({ page }) => {
+    const longCard = await showLongNameSongCard(page);
+    const scrolling = [{ overflows: true, ...NAME_SCROLLING }, { overflows: true, ...NAME_SCROLLING }];
+    const title = longCard.locator(".title");
+    const addButton = longCard.locator(".add-to-bookmark-btn");
+
+    // 検索欄から Tab で曲名のリンクまで進む。
+    await page.locator("#searchBox").focus();
+    for (let i = 0; i < 20 && !(await title.evaluate((el) => el === document.activeElement)); i++) {
+        await page.keyboard.press("Tab");
+    }
+    await expect(title).toBeFocused();
+    await expect.poll(() => readNameScroll(longCard)).toEqual(scrolling);
+
+    // カード内のボタンへ移っても流し続け、カードの外へ移ると止める。
+    await page.keyboard.press("Tab");
+    await expect(addButton).toBeFocused();
+    expect(await readNameScroll(longCard)).toEqual(scrolling);
+    await page.keyboard.press("Tab");
+    await expect(addButton).not.toBeFocused();
+    await expect.poll(() => readNameScroll(longCard)).toEqual([
+        { overflows: true, ...NAME_NOT_SCROLLING },
+        { overflows: true, ...NAME_NOT_SCROLLING }
+    ]);
 });
 
 test("an artist name can be selected and a click on the blank area clears the selection", async ({ page }) => {

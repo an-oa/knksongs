@@ -1,4 +1,4 @@
-import { isHtmlElement } from "../dom-utils.mjs";
+import { isHtmlElement, prefersReducedMotion } from "../dom-utils.mjs";
 import { getSongCards } from "./masonry-layout.mjs";
 
 /** 並べ替えのスライドに付ける id。続けて並べ替えたとき、前のスライドを止めるために使う。 */
@@ -7,16 +7,6 @@ const CARD_REORDER_DURATION_MS = 250;
 const CARD_REORDER_EASING = "cubic-bezier(0.2, 0, 0, 1)";
 /** 移動元のカードを、スライドの間だけ前面に出すための z-index。 */
 const MOVED_CARD_Z_INDEX = 3;
-
-/**
- * 動きを減らす設定になっているかを返す。
- * @returns 動きを減らす設定なら true
- */
-function prefersReducedMotion(): boolean {
-    return typeof window !== "undefined"
-        && typeof window.matchMedia === "function"
-        && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-}
 
 /**
  * カードで動いている並べ替えのスライドを止める。

@@ -11,6 +11,7 @@ type FakeEvent = {
     clientX?: number;
     clientY?: number;
     pointerId?: number;
+    pointerType?: string;
     isPrimary?: boolean;
     button?: number;
     preventDefault?: () => void;

@@ -1539,19 +1539,31 @@ body.hide-thumbs .song-card { border-radius: 12px; }
   margin: 0;
   font: inherit;
 }
+/*
+ * 曲名のリンクは block にし、カードの幅を超える分を省略記号で切る。inline では overflow が効かず、文字の途中で切れる。
+ * 幅は文字に合わせ、短い曲名の右の余白を押してもリンクを開かないようにする。
+ */
 .title {
+  display: block;
+  width: fit-content;
+  max-width: 100%;
   font-size: 15px;
   font-weight: 800;
   color: var(--title-link-color);
-  margin-bottom: 2px;
   line-height: 1.25;
   min-height: calc(15px * 1.25);
   white-space: nowrap;
+  /*
+   * スクロールできない clip で切る。hidden はスクリプトやページ内検索で中身が横にずれ、
+   * 指したときに流す文字の位置がそのずれの分だけ狂う。clip を使えないブラウザは hidden で切る。
+   */
   overflow: hidden;
+  overflow: clip;
   text-overflow: ellipsis;
 }
 .title-link { text-decoration: none; }
-.title-link:hover {
+/* 下線は文字の要素に引く。流している間の文字の要素は inline-block になり、リンクに引いた下線が届かない。 */
+.title-link:hover > .card-name-text {
   text-decoration: underline;
   text-decoration-thickness: 2px;
   text-underline-offset: 3px;
@@ -1563,9 +1575,18 @@ body.hide-thumbs .song-card { border-radius: 12px; }
   line-height: 1.25;
   min-height: calc(12.5px * 1.25);
   white-space: nowrap;
+  /* 曲名と同じく、横にずれない clip で切る。 */
   overflow: hidden;
+  overflow: clip;
   text-overflow: ellipsis;
 }
+/*
+ * 指したカードで収まらない文字を流している間は、省略記号を消し、文字の要素を inline-block にして transform で動かす。
+ * 省略記号を残すと、流れてきた末尾の文字に重なる。inline のままでは transform が効かない。
+ */
+.title.is-marquee-scrolling,
+.artist.is-marquee-scrolling { text-overflow: clip; }
+.is-marquee-scrolling > .card-name-text { display: inline-block; }
 
 .card-footer {
   display: grid;

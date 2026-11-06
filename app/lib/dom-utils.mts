@@ -30,6 +30,16 @@ export function getViewportHeight(): number {
 }
 
 /**
+ * 動きを減らす設定 (prefers-reduced-motion: reduce) になっているかを返す。
+ * @returns 動きを減らす設定なら true。matchMedia を使えない環境では false
+ */
+export function prefersReducedMotion(): boolean {
+    return typeof window !== "undefined"
+        && typeof window.matchMedia === "function"
+        && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
+
+/**
  * 実行環境が iOS 系の WebKit かどうかを判定する。
  * タッチ操作に対応し、WebKit 独自の CSS プロパティを使える環境を iOS 系とみなす。
  * @returns iOS 系の WebKit なら true

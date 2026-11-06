@@ -170,6 +170,8 @@ export type LookupUiRuntimeState = {
 /**
  * 検索結果カード 1 件を構成する DOM 要素一式。
  * 個別プロパティはカード内の DOM 要素の役割名なので、型全体の説明に集約する。
+ * titleTextEl と artistTextEl は、曲名とアーティスト名の文字を入れる内側の要素。
+ * 外側の titleEl と artistEl が 1 行の幅で切り、収まらない文字は内側を動かして流す。
  */
 export type RenderCardEntry = {
   card: HTMLLIElement;
@@ -177,7 +179,9 @@ export type RenderCardEntry = {
   content: HTMLElement;
   titleHeading: HTMLHeadingElement;
   titleEl: HTMLAnchorElement;
+  titleTextEl: HTMLSpanElement;
   artistEl: HTMLDivElement;
+  artistTextEl: HTMLSpanElement;
   dateEl: HTMLSpanElement;
   tagsEl: HTMLDivElement;
   actionBtn: HTMLButtonElement;
