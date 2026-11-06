@@ -1,7 +1,7 @@
 {
   "schemaVersion": 5,
-  "contentHash": "sha256:b4c714d5d9a90c49b2a99eacb420cf266998216bf0007633c604a9104273311a",
-  "generatedAt": "2026-11-05T14:41:03.554Z",
+  "contentHash": "sha256:f9890e84a9128e5f9478bdbbf514527c8aa83abebfefd987ea96ceb96055df75",
+  "generatedAt": "2026-11-06T14:18:04.972Z",
   "songs": [
     {
       "date": "2026/11/05",
@@ -15253,7 +15253,7 @@
       "bookmarkSongKey": "S74Uf5EI8u4::1",
       "legacySongKey": "191::1::https://www.youtube.com/shorts/S74Uf5EI8u4",
       "format": "切り抜き",
-      "streamRole": "",
+      "streamRole": "ホスト",
       "videoOrientation": "vertical",
       "isRelay": false,
       "isHarmony": false,
@@ -15283,7 +15283,7 @@
       "bookmarkSongKey": "WC655es5Gr0::1",
       "legacySongKey": "190::1::https://www.youtube.com/watch?v=WC655es5Gr0",
       "format": "オリ曲",
-      "streamRole": "",
+      "streamRole": "ホスト",
       "videoOrientation": "landscape",
       "isRelay": false,
       "isHarmony": false,
