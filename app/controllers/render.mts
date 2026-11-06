@@ -4,7 +4,7 @@
  * data.currentResults を、カード要素を再利用しながら一覧へ差分反映する。
  * 再生中のカードは位置を保ち、表示から外れたら再生を止める。
  * masonry レイアウト (../lib/render)、末尾到達での追加表示、ブックマーク内のドラッグ並べ替え、
- * 空結果の表示、言語切り替え時の文言の書き直しもここで行う。
+ * 指したカードで収まらない曲名を流す動き、空結果の表示、言語切り替え時の文言の書き直しもここで行う。
  *
  * 表示する結果の決定は ./search.mts が行い、ここは受け取って描くだけにする。
  * 再生は ./youtube.mts、並べ替えの保存は ./storage.mts、ブックマークへの追加と削除は
@@ -15,6 +15,7 @@ import { hasStreamRole } from "../lib/stream-role.mjs";
 import { tracePlayback } from "../lib/playback-debug.mjs";
 import { scheduleScrollElementIntoView } from "../lib/results-scroll.mjs";
 import { createBookmarkDragReorderController } from "../lib/render/drag-reorder.mjs";
+import { bindCardTextMarquee, stopCardTextMarquee, type CardTextMarqueeTarget } from "../lib/render/card-text-marquee.mjs";
 import type { StorageActionFailure, StorageActionResult } from "./storage.mjs";
 import { applyMasonryLayout } from "../lib/render/masonry-layout.mjs";
 import { createResultTailObserver } from "../lib/render/result-tail-observer.mjs";
@@ -154,9 +155,15 @@ export function createRenderController({
 
         const title = document.createElement("a");
         title.className = "title";
+        const titleText = document.createElement("span");
+        titleText.className = "card-name-text";
+        title.append(titleText);
 
         const artist = document.createElement("div");
         artist.className = "artist";
+        const artistText = document.createElement("span");
+        artistText.className = "card-name-text";
+        artist.append(artistText);
 
         const footer = document.createElement("div");
         footer.className = "card-footer";
@@ -181,6 +188,7 @@ export function createRenderController({
         dragHandle.hidden = true;
 
         dragHandle.addEventListener("pointerdown", dragReorderController.onHandlePointerDown);
+        bindCardTextMarquee(card, [{ box: title, text: titleText }, { box: artist, text: artistText }]);
 
         rightGroup.append(tags, actionBtn);
         footer.append(leftGroup, rightGroup);
@@ -188,7 +196,20 @@ export function createRenderController({
         content.append(dragHandle, titleHeading, artist, footer);
         card.append(thumbDiv, content);
 
-        return { card, thumbDiv, content, titleHeading, titleEl: title, artistEl: artist, dateEl: date, tagsEl: tags, actionBtn, dragHandle };
+        return {
+            card,
+            thumbDiv,
+            content,
+            titleHeading,
+            titleEl: title,
+            titleTextEl: titleText,
+            artistEl: artist,
+            artistTextEl: artistText,
+            dateEl: date,
+            tagsEl: tags,
+            actionBtn,
+            dragHandle
+        };
     }
 
     /**
@@ -233,8 +254,18 @@ export function createRenderController({
     function updateCardText(entry: RenderCardEntry, row: Song) {
         const language = ui.language.current;
         const text = getUiText(language);
-        applyDisplayName(entry.titleEl, getSongDisplayTitle(row, language), text.card.untitled, language);
-        applyDisplayName(entry.artistEl, getSongDisplayArtist(row, language), text.card.unknownArtist, language);
+        applyDisplayName(
+            { box: entry.titleEl, text: entry.titleTextEl },
+            getSongDisplayTitle(row, language),
+            text.card.untitled,
+            language
+        );
+        applyDisplayName(
+            { box: entry.artistEl, text: entry.artistTextEl },
+            getSongDisplayArtist(row, language),
+            text.card.unknownArtist,
+            language
+        );
         entry.dateEl.textContent = text.card.date(row);
         updateFooterTags(entry.tagsEl, row, text);
         const actionLabel = data.activeBookmark ? text.card.removeFromBookmark : text.card.addToBookmark;
@@ -261,17 +292,22 @@ export function createRenderController({
     /**
      * 名前を要素へ表示し、名前の言語がページの言語と違うときだけ言語タグを付ける。
      * 英語のページで英名のない曲は日本語名を出すので、その名前に lang="ja" を付ける。
-     * @param el 表示先の要素
+     * 名前が変わるときは、前の名前の幅で流している動きを止める。
+     * @param target 表示先の、1 行の幅で切る外側の要素と、文字を入れる内側の要素
      * @param name 表示する名前とその言語
      * @param fallback 名前が空のときの表示。ページの言語で書く
      * @param pageLanguage ページの言語
      */
-    function applyDisplayName(el: HTMLElement, name: SongDisplayName, fallback: string, pageLanguage: SiteLanguage) {
-        el.textContent = name.text || fallback;
+    function applyDisplayName(target: CardTextMarqueeTarget, name: SongDisplayName, fallback: string, pageLanguage: SiteLanguage) {
+        const text = name.text || fallback;
+        if (target.text.textContent !== text) {
+            stopCardTextMarquee(target);
+            target.text.textContent = text;
+        }
         if (name.text && name.lang !== pageLanguage) {
-            el.setAttribute("lang", name.lang);
+            target.box.setAttribute("lang", name.lang);
         } else {
-            el.removeAttribute("lang");
+            target.box.removeAttribute("lang");
         }
     }
 

@@ -18,6 +18,17 @@ import {
     getFakeElement
 } from "./test-helpers.mts";
 
+/**
+ * カードの曲名またはアーティスト名の文字を返す。
+ * 文字は内側の要素に入り、DOM モックの textContent は子の文字を含まないので、内側の要素から読む。
+ * @param parent 曲名またはアーティスト名を含む要素
+ * @param selector 曲名なら ".title"、アーティスト名なら ".artist"
+ * @returns 表示している名前。要素がなければ undefined
+ */
+function readCardName(parent: Element | null | undefined, selector: ".title" | ".artist") {
+    return parent?.querySelector(selector)?.querySelector(".card-name-text")?.textContent;
+}
+
 /** 描画と検索の共有データに、省略した初期値を補う。 */
 function createRenderDataState(input: Partial<import("../app/state.types").AppDataState>): import("../app/state.types").AppDataState {
     return { allSongsRaw: [], currentResults: [], displayLimit: 48, activeBookmark: null, bookmarks: {}, ...input };
@@ -300,7 +311,7 @@ test("render: result cards and empty state use list semantics", () => {
         assert.equal(card.tagName, "LI");
         assert.equal(article.getAttribute("aria-labelledby"), "result-title-1");
         assert.equal(heading.getAttribute("id"), "result-title-1");
-        assert.equal(heading.querySelector(".title")?.textContent, "Semantic Song");
+        assert.equal(readCardName(heading, ".title"), "Semantic Song");
 
         data.currentResults = [];
         controller.updateDisplay();
@@ -348,11 +359,11 @@ test("render: English cards show English names, tags, dates, and labels, and tag
         const [englishCard, japaneseOnlyCard] = Array.from(ui.el.resultList.children);
         const englishTitle = englishCard.querySelector(".title");
         const englishArtist = englishCard.querySelector(".artist");
-        assert.equal(englishTitle?.textContent, "Eine Kleine");
+        assert.equal(readCardName(englishCard, ".title"), "Eine Kleine");
         assert.equal(englishTitle?.hasAttribute("lang"), false, "English names match the English page");
-        assert.equal(englishArtist?.textContent, "Kenshi Yonezu");
+        assert.equal(readCardName(englishCard, ".artist"), "Kenshi Yonezu");
         assert.equal(englishArtist?.hasAttribute("lang"), false);
-        assert.equal(japaneseOnlyCard.querySelector(".title")?.textContent, "日本語だけの曲");
+        assert.equal(readCardName(japaneseOnlyCard, ".title"), "日本語だけの曲");
         assert.equal(japaneseOnlyCard.querySelector(".title")?.getAttribute("lang"), "ja", "Japanese fallbacks are tagged on the English page");
         assert.equal(englishCard.querySelector(".tag")?.textContent, "Stream");
         assert.equal(englishCard.querySelector(".footer-left")?.children[0]?.textContent, "Mar 11, 2026", "the date comes from dateKey");
@@ -361,9 +372,9 @@ test("render: English cards show English names, tags, dates, and labels, and tag
         ui.language.current = "ja";
         controller.refreshText();
 
-        assert.equal(englishTitle?.textContent, "アイネクライネ", "the reused card switches back to Japanese");
+        assert.equal(readCardName(englishCard, ".title"), "アイネクライネ", "the reused card switches back to Japanese");
         assert.equal(englishTitle?.hasAttribute("lang"), false);
-        assert.equal(englishArtist?.textContent, "米津玄師");
+        assert.equal(readCardName(englishCard, ".artist"), "米津玄師");
         assert.equal(englishArtist?.hasAttribute("lang"), false);
         assert.equal(englishCard.querySelector(".tag")?.textContent, "配信");
         assert.equal(englishCard.querySelector(".add-to-bookmark-btn")?.getAttribute("aria-label"), "ブックマークに追加");
@@ -406,12 +417,56 @@ test("render: refreshText rewrites only the text of the shown cards", () => {
         controller.refreshText();
 
         assert.equal(ui.el.resultList.children[0], card, "the card element is kept");
-        assert.equal(card.querySelector(".title")?.textContent, "Eine Kleine");
-        assert.equal(card.querySelector(".artist")?.textContent, "Kenshi Yonezu");
+        assert.equal(readCardName(card, ".title"), "Eine Kleine");
+        assert.equal(readCardName(card, ".artist"), "Kenshi Yonezu");
         assert.equal(card.querySelector(".tag")?.textContent, "Stream");
         assert.equal(actionButton?.getAttribute("aria-label"), "Add to bookmark");
         assert.equal(thumbnailUpdateCount, thumbnailUpdatesBeforeSwitch, "the thumbnail is not updated again");
         assert.equal(actionButton?.onclick, actionHandler, "the button handler is not set up again");
+    } finally {
+        cleanup();
+    }
+});
+
+test("render: refreshText stops scrolling a name only when the name changes", () => {
+    const cleanup = installFakeDom();
+    try {
+        // 英語の曲名がない曲は、英語のページでも日本語の曲名のままになる。
+        const data = createRenderDataState({
+            currentResults: [makeRenderRow({ songKey: "song:en", title: "アイネクライネ", artist: "米津玄師", artistEn: "Kenshi Yonezu" })],
+            displayLimit: 48,
+            activeBookmark: null
+        });
+        const ui = createRenderUiState({
+            el: {
+                resultList: document.createElement("ol"),
+                resultTailSentinel: document.createElement("div")
+            }
+        });
+        const controller = createRenderController({
+            data,
+            ui,
+            isAllFormatsSelected: () => true,
+            callbacks: createRenderCallbacks()
+        });
+        controller.updateDisplay();
+        const card = ui.el.resultList.children[0];
+        const cancelled: string[] = [];
+        for (const selector of [".title", ".artist"]) {
+            const box = card.querySelector<HTMLElement>(selector);
+            const text = box?.querySelector<HTMLElement>(".card-name-text");
+            assert.ok(box && text);
+            box.classList.add("is-marquee-scrolling");
+            const marquee = { id: "card-text-marquee", cancel() { cancelled.push(selector); } };
+            text.getAnimations = () => [marquee as unknown as Animation];
+        }
+
+        ui.language.current = "en";
+        controller.refreshText();
+
+        assert.deepEqual(cancelled, [".artist"]);
+        assert.equal(card.querySelector(".title")?.classList.contains("is-marquee-scrolling"), true);
+        assert.equal(card.querySelector(".artist")?.classList.contains("is-marquee-scrolling"), false);
     } finally {
         cleanup();
     }
