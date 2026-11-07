@@ -92,18 +92,24 @@ export function stopCardTextMarquee(target: CardTextMarqueeTarget): void {
 }
 
 /**
- * カードをマウスやペンで指している間と、キーボードでカード内のリンクやボタンにフォーカスしている間、
- * カード内の 1 行に収まらない文字を流す。どちらも外れたら止める。
+ * カードを指している間と、キーボードでカード内のリンクやボタンにフォーカスしている間、
+ * カード内の 1 行に収まらない文字を流す。どれも外れたら止める。
+ * 指している間は、マウスやペンではカードに乗せている間、タッチではカードをタップしてから、
+ * 別の場所をタップするまでの間とする。カードの影 (:hover) が付いている間と同じになる。指でスクロールしただけでは流さない。
  * キーボードのフォーカスは :focus-visible で見分け、マウスのクリックやタッチで付いたフォーカスでは流さない。
- * タッチは指を離すとすぐ指していない状態に戻り、流しても読めないので流さない。動きを減らす設定のときも流さない。
+ * 動きを減らす設定のときは流さない。
  * @param card 結果カード
  * @param targets 流す対象の、曲名とアーティスト名
  */
 export function bindCardTextMarquee(card: HTMLElement, targets: readonly CardTextMarqueeTarget[]): void {
     /** マウスやペンでカードを指しているか。 */
     let isPointerInside = false;
+    /** タッチでカードをタップしてから、別の場所をタップするまでの間か。 */
+    let isTapped = false;
     /** キーボードでカード内にフォーカスしているか。 */
     let hasKeyboardFocus = false;
+    /** カードの中で最後に押したポインタの種類。click に種類が付かないブラウザがあるため、押したときに覚える。 */
+    let lastPressPointerType = "";
 
     /** まだ流していない名前を流し始める。指したままフォーカスしたときなどに、流している途中の名前を先頭へ戻さない。 */
     const start = () => {
@@ -112,20 +118,64 @@ export function bindCardTextMarquee(card: HTMLElement, targets: readonly CardTex
             if (!isCardTextMarqueeRunning(target)) startCardTextMarquee(target);
         }
     };
-    /** 指してもフォーカスもしていなければ止める。 */
+    /** 指してもタップしてもフォーカスもしていなければ止める。 */
     const stopIfInactive = () => {
-        if (isPointerInside || hasKeyboardFocus) return;
+        if (isPointerInside || isTapped || hasKeyboardFocus) return;
+        document.removeEventListener("pointerup", onPointerUpOutside, true);
         targets.forEach(stopCardTextMarquee);
     };
+    /**
+     * カードの外でポインタを離したことを受け、タップした状態と、指している状態を解く。
+     * タッチの端末では、画面が変わったときにブラウザがマウスの出入りを送ることがあり、離れたことは届かないことがある。
+     * 一覧から外れたカード (ブックマークから削除した曲など) には、pointerleave も focusout も届かないので、
+     * ここで全部の状態を解き、この listener も外す。
+     * @param event 離したときのポインタのイベント
+     */
+    function onPointerUpOutside(event: PointerEvent) {
+        if (!card.isConnected) {
+            isPointerInside = false;
+            isTapped = false;
+            hasKeyboardFocus = false;
+            stopIfInactive();
+            return;
+        }
+        if (event.target instanceof Element && card.contains(event.target)) return;
+        isPointerInside = false;
+        isTapped = false;
+        stopIfInactive();
+    }
 
     card.addEventListener("pointerenter", (event) => {
         if (event.pointerType === "touch") return;
         isPointerInside = true;
+        document.addEventListener("pointerup", onPointerUpOutside, true);
         start();
     });
-    card.addEventListener("pointerleave", () => {
+    card.addEventListener("pointerleave", (event) => {
+        if (event.pointerType === "touch") return;
         isPointerInside = false;
         stopIfInactive();
+    });
+    // タッチの出入り (pointerenter / pointerleave) は、指を離すとすぐ「離れた」になるので見ない。
+    // 実機の Android の Chrome では、タップの後に mouseenter も届かなかったため、タップは click で見分ける。
+    // click はタップでだけ届き、指でなぞったときや長押しでは届かない。離したこと (pointerup) は、なぞっても届く。
+    card.addEventListener("pointerdown", (event) => {
+        lastPressPointerType = event.pointerType;
+    });
+    card.addEventListener("pointercancel", () => {
+        // 指でスクロールしたなど、押した操作が取り消されたときは click が届かないので、記録を捨てる。
+        lastPressPointerType = "";
+    });
+    card.addEventListener("click", (event) => {
+        // キーボードでリンクやボタンを押したときと、スクリプトからの click は detail が 0 になる。
+        // スクロールしない一覧を指でなぞった後のように、click の届かなかったタッチの記録が残っていても、
+        // キーボードでの click をタップと取り違えない。
+        const isTap = event.detail > 0 && lastPressPointerType === "touch";
+        lastPressPointerType = "";
+        if (!isTap) return;
+        isTapped = true;
+        document.addEventListener("pointerup", onPointerUpOutside, true);
+        start();
     });
     card.addEventListener("focusin", (event) => {
         hasKeyboardFocus = isHtmlElement(event.target) && event.target.matches(":focus-visible");

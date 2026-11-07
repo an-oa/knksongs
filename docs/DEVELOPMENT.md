@@ -44,6 +44,28 @@ python3 -m http.server 8000 --directory _build
 fresh checkout 後や `.mts` を変更した後は、毎回 `npm run build` を実行してください。
 `npm run build:ts` 単体ではブラウザ用 bundle を更新しません。
 
+### スマホで確認する
+
+同じネットワークのスマホから開くときは、PC のネットワーク上のアドレス（例: `192.168.1.10`）で待ち受けます。
+`python3 -m http.server` はブラウザにファイルを保存してよい期間を伝えないため、build し直しても、
+スマホのブラウザが前のページを使い続けることがあります。
+確認するときは、保存させない指定（`Cache-Control: no-store`）を付けて配信してください。
+
+```sh
+npm run build
+python3 -c 'import functools, http.server
+class NoStoreHandler(http.server.SimpleHTTPRequestHandler):
+    def end_headers(self):
+        self.send_header("Cache-Control", "no-store")
+        super().end_headers()
+http.server.ThreadingHTTPServer(("192.168.1.10", 8000), functools.partial(NoStoreHandler, directory="_build")).serve_forever()'
+```
+
+- `192.168.1.10` は PC のアドレスに置き換えてください。Linux では `hostname -I` で確かめられます。
+- 起動しても何も表示されませんが、Ctrl+C で止めるまで配信を続けます。
+- 切り替える前にスマホのブラウザが保存したページは、残っていることがあります。
+  最初の 1 回だけ、再読み込みするかプライベートタブで開いてください。
+
 ## よく使うコマンド
 
 通常は「コマンド」列を使います。「事前build」はコマンド内で自動実行される処理です。
