@@ -125,15 +125,23 @@ export function bindCardTextMarquee(card: HTMLElement, targets: readonly CardTex
         targets.forEach(stopCardTextMarquee);
     };
     /**
-     * カードの外でのタップを受け、タップした状態を解く。
+     * カードの外でポインタを離したことを受け、タップした状態と、指している状態を解く。
      * タッチの端末では、画面が変わったときにブラウザがマウスの出入りを送ることがあり、離れたことは届かないことがある。
-     * そのため、外をタップしたら、マウスで指している状態も解く。
+     * 一覧から外れたカード (ブックマークから削除した曲など) には、pointerleave も focusout も届かないので、
+     * ここで全部の状態を解き、この listener も外す。
      * @param event 離したときのポインタのイベント
      */
     function onPointerUpOutside(event: PointerEvent) {
+        if (!card.isConnected) {
+            isPointerInside = false;
+            isTapped = false;
+            hasKeyboardFocus = false;
+            stopIfInactive();
+            return;
+        }
         if (event.target instanceof Element && card.contains(event.target)) return;
+        isPointerInside = false;
         isTapped = false;
-        if (event.pointerType === "touch") isPointerInside = false;
         stopIfInactive();
     }
 
@@ -154,9 +162,15 @@ export function bindCardTextMarquee(card: HTMLElement, targets: readonly CardTex
     card.addEventListener("pointerdown", (event) => {
         lastPressPointerType = event.pointerType;
     });
-    card.addEventListener("click", () => {
-        const isTap = lastPressPointerType === "touch";
-        // キーボードでリンクを開いたときの click を、前のタップと取り違えない。
+    card.addEventListener("pointercancel", () => {
+        // 指でスクロールしたなど、押した操作が取り消されたときは click が届かないので、記録を捨てる。
+        lastPressPointerType = "";
+    });
+    card.addEventListener("click", (event) => {
+        // キーボードでリンクやボタンを押したときと、スクリプトからの click は detail が 0 になる。
+        // スクロールしない一覧を指でなぞった後のように、click の届かなかったタッチの記録が残っていても、
+        // キーボードでの click をタップと取り違えない。
+        const isTap = event.detail > 0 && lastPressPointerType === "touch";
         lastPressPointerType = "";
         if (!isTap) return;
         isTapped = true;

@@ -62,12 +62,13 @@ function createTextTarget(scrollWidth: number, clientWidth = 200) {
 }
 
 /**
- * 曲名とアーティスト名を持つカードに、文字を流す処理を付ける。
+ * 曲名とアーティスト名を持つカードを一覧に置き、文字を流す処理を付ける。
  * @param titleWidth 曲名全体の幅
  * @param artistWidth アーティスト名全体の幅
  */
 function createCard(titleWidth: number, artistWidth: number) {
     const card = document.createElement("li");
+    document.body.appendChild(card);
     const title = createTextTarget(titleWidth);
     const artist = createTextTarget(artistWidth);
     bindCardTextMarquee(card, [title.target, artist.target]);
@@ -128,8 +129,8 @@ test("card text marquee: a tap keeps the names scrolling until another place is 
         // タッチの出入りと、マウスのクリック、キーボードで開いたときの click では流さない。
         void invokeListener(card, "pointerenter", { pointerType: "touch" });
         void invokeListener(card, "pointerdown", { pointerType: "mouse", target: inside });
-        void invokeListener(card, "click", { target: inside });
-        void invokeListener(card, "click", { target: inside });
+        void invokeListener(card, "click", { target: inside, detail: 1 });
+        void invokeListener(card, "click", { target: inside, detail: 0 });
         assert.deepEqual(title.calls, []);
 
         // 指でなぞっただけでは click が届かず、流さない。
@@ -137,7 +138,7 @@ test("card text marquee: a tap keeps the names scrolling until another place is 
         assert.deepEqual(title.calls, []);
 
         // タップの click で流し始め、指を離した直後に届くタッチの pointerleave では止めない。
-        void invokeListener(card, "click", { target: inside });
+        void invokeListener(card, "click", { target: inside, detail: 1 });
         const marquee = title.running[0];
         void invokeListener(card, "pointerleave", { pointerType: "touch" });
         assert.equal(marquee?.cancelled, false);
@@ -161,6 +162,80 @@ test("card text marquee: a tap outside also stops a scroll started by a mouse en
         void invokeListener(card, "pointerenter", { pointerType: "mouse" });
         const marquee = title.running[0];
         void invokeListener(cleanup.document, "pointerup", { pointerType: "touch", target: document.createElement("div") });
+        assert.equal(marquee?.cancelled, true);
+    } finally {
+        cleanup();
+    }
+});
+
+test("card text marquee: a swipe followed by a keyboard click is not taken for a tap", () => {
+    const cleanup = installFakeDom();
+    try {
+        const { card, title } = createCard(280, 200);
+        const link = appendFocusable(card, true);
+        const outside = document.createElement("a");
+
+        // スクロールしない一覧を指でなぞると、押した記録だけが残り、click は届かない。
+        void invokeListener(card, "pointerdown", { pointerType: "touch", target: link });
+        // その後、キーボードでリンクへ移って Enter を押し、カードの外へ移る。
+        void invokeListener(card, "focusin", { target: link });
+        const marquee = title.running[0];
+        void invokeListener(card, "click", { target: link, detail: 0 });
+        void invokeListener(card, "focusout", { target: link, relatedTarget: outside });
+
+        assert.equal(marquee?.cancelled, true);
+        assert.equal(cleanup.document._events.has("pointerup"), false);
+    } finally {
+        cleanup();
+    }
+});
+
+test("card text marquee: a press canceled by scrolling is not paired with a later click", () => {
+    const cleanup = installFakeDom();
+    try {
+        const { card, title } = createCard(280, 200);
+        void invokeListener(card, "pointerdown", { pointerType: "touch", target: card });
+        void invokeListener(card, "pointercancel", { pointerType: "touch", target: card });
+        void invokeListener(card, "click", { target: card, detail: 1 });
+        assert.deepEqual(title.calls, []);
+    } finally {
+        cleanup();
+    }
+});
+
+test("card text marquee: cards removed from the list stop and drop the outside listener on the next release", () => {
+    const cleanup = installFakeDom();
+    try {
+        const searchBox = document.createElement("input");
+        document.body.appendChild(searchBox);
+        // ブックマークから曲を削除すると、指していたカードは pointerleave を受けないまま一覧から外れる。
+        for (let i = 0; i < 3; i++) {
+            const { card, title } = createCard(280, 200);
+            const button = appendFocusable(card, false);
+            void invokeListener(card, "pointerenter", { pointerType: "mouse" });
+            void invokeListener(card, "focusin", { target: button });
+            const marquee = title.running[0];
+            document.body.removeChild(card);
+
+            void invokeListener(cleanup.document, "pointerup", { pointerType: "mouse", target: searchBox });
+
+            assert.equal(marquee?.cancelled, true);
+            assert.equal(cleanup.document._events.has("pointerup"), false, `no listener is left after removal ${i + 1}`);
+        }
+    } finally {
+        cleanup();
+    }
+});
+
+test("card text marquee: releasing a mouse button outside the card stops the scroll", () => {
+    const cleanup = installFakeDom();
+    try {
+        const { card, title } = createCard(280, 200);
+        const outside = document.createElement("div");
+        document.body.appendChild(outside);
+        void invokeListener(card, "pointerenter", { pointerType: "mouse" });
+        const marquee = title.running[0];
+        void invokeListener(cleanup.document, "pointerup", { pointerType: "mouse", target: outside });
         assert.equal(marquee?.cancelled, true);
     } finally {
         cleanup();

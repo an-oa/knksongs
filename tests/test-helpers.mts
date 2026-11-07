@@ -12,6 +12,8 @@ type FakeEvent = {
     clientY?: number;
     pointerId?: number;
     pointerType?: string;
+    /** click の回数。キーボードやスクリプトからの click では 0。 */
+    detail?: number;
     isPrimary?: boolean;
     button?: number;
     preventDefault?: () => void;
