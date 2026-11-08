@@ -5,6 +5,7 @@ import { createScrollableResultSongs } from "./support/song-fixtures.mts";
 import {
     closeSidebar,
     openSidebar,
+    typeSearchQueryKeepingFocus,
     waitForInitialLoad
 } from "./support/ui-helpers.mts";
 
@@ -36,19 +37,15 @@ async function loadScrollableResults(page: Page) {
 /**
  * 利用者と同じく検索窓を押して検索語を入力し、フォーカスを残したまま、スクロールできる検索結果を表示する。
  * @param page 検証するページ
- * @param pressSearchBox 検索窓を押す操作。タッチ画面ではタップにする
+ * @param pressSearchBox 検索窓を押す操作。省略するとクリックする。タッチ画面ではタップを渡す
  */
-async function typeSearchForScrollableResults(page: Page, pressSearchBox: (searchBox: Locator) => Promise<void>) {
+async function typeSearchForScrollableResults(page: Page, pressSearchBox?: (searchBox: Locator) => Promise<void>) {
     await routeSongsJsonFixture(page, createScrollableResultSongs(60));
     await page.reload();
     await waitForInitialLoad(page);
-    const searchBox = page.locator("#searchBox");
-    await pressSearchBox(searchBox);
-    await page.keyboard.type("Scroll Artist");
-    await expect(page.locator(".song-card")).not.toHaveCount(0);
+    await typeSearchQueryKeepingFocus(page, "Scroll Artist", pressSearchBox);
     await expect.poll(() => page.evaluate(() => document.documentElement.scrollHeight - window.innerHeight))
         .toBeGreaterThan(600);
-    await expect(searchBox).toBeFocused();
     await expect(page.locator(".header")).not.toHaveClass(/is-auto-hidden/);
 }
 
@@ -63,7 +60,7 @@ async function waitForAnimationFrames(page: Page) {
 }
 
 test("after typing in the search box, scrolling down with the wheel hides the header", async ({ page }) => {
-    await typeSearchForScrollableResults(page, (searchBox) => searchBox.click());
+    await typeSearchForScrollableResults(page);
     const header = page.locator(".header");
     const searchBox = page.locator("#searchBox");
 
@@ -86,7 +83,7 @@ test("after typing in the search box, scrolling down with the wheel hides the he
 });
 
 test("while typing in the search box, the page moving by itself keeps the header visible", async ({ page }) => {
-    await typeSearchForScrollableResults(page, (searchBox) => searchBox.click());
+    await typeSearchForScrollableResults(page);
     const header = page.locator(".header");
 
     // 結果の描き直しやソフトウェアキーボードの表示では、利用者がスクロールしなくてもページが動く。

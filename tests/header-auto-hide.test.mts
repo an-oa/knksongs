@@ -209,6 +209,35 @@ for (const gesture of ["wheel", "touchmove"]) {
     });
 }
 
+test("auto-hide header: pressing outside the header, such as on the scrollbar, lets it hide while the search box keeps focus", () => {
+    const { restoreDom, header, searchBox } = setupFocusedSearchBox();
+    try {
+        scrollPageTo(restoreDom.window, 100);
+        assert.equal(header.classList.contains("is-auto-hidden"), false);
+
+        // スクロールバーを押すと、ページの html 要素への pointerdown として届く。
+        invokeListener(restoreDom.window, "pointerdown", { target: document.documentElement });
+        scrollPageTo(restoreDom.window, 116);
+        assert.equal(header.classList.contains("is-auto-hidden"), true);
+        assert.equal(document.activeElement, searchBox);
+    } finally {
+        restoreDom();
+    }
+});
+
+test("auto-hide header: pressing the search box keeps the header shown while the page moves by itself", () => {
+    const { restoreDom, header, searchBox } = setupFocusedSearchBox();
+    try {
+        // 検索窓を押した直後は、キーボードが開くときの自動スクロールなどでページが動いても隠さない。
+        invokeListener(restoreDom.window, "pointerdown", { target: searchBox });
+        scrollPageTo(restoreDom.window, 100);
+        scrollPageTo(restoreDom.window, 200);
+        assert.equal(header.classList.contains("is-auto-hidden"), false);
+    } finally {
+        restoreDom();
+    }
+});
+
 for (const inputEvent of ["keydown", "input"]) {
     test(`auto-hide header: ${inputEvent} in the header after a scroll gesture shows and protects it again`, () => {
         const { restoreDom, header, searchBox } = setupFocusedSearchBox();

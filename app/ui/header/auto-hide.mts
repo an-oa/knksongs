@@ -25,7 +25,7 @@ export function createAutoHideHeaderController(input: AutoHideHeaderControllerIn
     let isScrollUpdateScheduled = false;
     let isSetup = false;
     // ヘッダー内のキーボードフォーカスを理由に、表示を保つか。
-    // ホイールや指でスクロールすると外し、ヘッダー内へのフォーカスや入力で戻す。
+    // ホイールや指でスクロールするか、スクロールバーなどヘッダーの外を押すと外し、ヘッダー内へのフォーカスや入力で戻す。
     let isFocusGuardActive = true;
 
     /**
@@ -93,8 +93,8 @@ export function createAutoHideHeaderController(input: AutoHideHeaderControllerIn
 
     /**
      * ヘッダー内のキーボードフォーカスを理由に、スクロールしてもヘッダーを表示し続けるか判定する。
-     * 検索窓は、マウスやタップで入れても :focus-visible になる。そのため、ホイールや指で
-     * スクロールした後は一覧を読み進めているとみなし、フォーカスが残っていても隠せるようにする。
+     * 検索窓は、マウスやタップで入れても :focus-visible になる。そのため、ホイールや指でスクロールした後や、
+     * スクロールバーなどヘッダーの外を押した後は一覧を読み進めているとみなし、フォーカスが残っていても隠せるようにする。
      * キー操作でのスクロールや、入力中に結果の描き直しやキーボード表示でページが動いたときは隠さない。
      * @returns 表示し続けるとき true
      */
@@ -163,6 +163,19 @@ export function createAutoHideHeaderController(input: AutoHideHeaderControllerIn
     }
 
     /**
+     * ヘッダーの外でポインタを押したとき、ヘッダー内のフォーカスによる表示の維持を外す。
+     * スクロールバーのつまみのドラッグやトラックのクリックには wheel も touchmove も届かないが、
+     * ページへの pointerdown は届く。検索窓を押したときは、キーボードが開くときの自動スクロールで隠さないよう外さない。
+     * 他の処理が伝播を止めても受けられるよう、捕捉の段階で受ける。
+     * @param event 押されたポインタのイベント
+     */
+    function handlePointerDown(event: PointerEvent): void {
+        const header = getHeader();
+        if (header && event.target instanceof Element && header.contains(event.target)) return;
+        isFocusGuardActive = false;
+    }
+
+    /**
      * ヘッダー内でのキー操作や文字入力を受け、ヘッダーを表示してフォーカスによる表示の維持を戻す。
      * スクロールで隠れた後に検索窓へ続けて入力しても、入力欄が見えないままにならないようにする。
      * ブラウザやキーボードによっては文字入力で keydown が届かないことがあるため、input でも受ける。
@@ -204,6 +217,7 @@ export function createAutoHideHeaderController(input: AutoHideHeaderControllerIn
         window.addEventListener("pageshow", handlePageShow);
         window.addEventListener("wheel", handleScrollGesture, { passive: true });
         window.addEventListener("touchmove", handleScrollGesture, { passive: true });
+        window.addEventListener("pointerdown", handlePointerDown, { capture: true, passive: true });
         header.addEventListener("focusin", handleHeaderFocusIn);
         header.addEventListener("focusout", handleHeaderFocusOut);
         header.addEventListener("keydown", handleHeaderInput);
