@@ -82,6 +82,17 @@ test("after typing in the search box, scrolling down with the wheel hides the he
     expect(await page.evaluate(() => window.scrollY)).toBeGreaterThan(headerHeight);
 });
 
+test("after typing in the search box, paging down with PageDown hides the header", async ({ page }) => {
+    await typeSearchForScrollableResults(page);
+    const header = page.locator(".header");
+
+    // 入力を終えて、フォーカスを外さずに PageDown でページを送る。検索窓の中でもページがスクロールする。
+    await page.keyboard.press("PageDown");
+    await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(200);
+    await expect(header).toHaveClass(/is-auto-hidden/);
+    await expect(page.locator("#searchBox")).toBeFocused();
+});
+
 test("while typing in the search box, the page moving by itself keeps the header visible", async ({ page }) => {
     await typeSearchForScrollableResults(page);
     const header = page.locator(".header");

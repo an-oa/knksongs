@@ -238,19 +238,42 @@ test("auto-hide header: pressing the search box keeps the header shown while the
     }
 });
 
-for (const inputEvent of ["keydown", "input"]) {
-    test(`auto-hide header: ${inputEvent} in the header after a scroll gesture shows and protects it again`, () => {
+// 文字キーと、検索窓のカーソル移動や、ボタンにフォーカスがあるときのスクロールに使う矢印キー、文字入力。
+for (const [inputEvent, key] of [["keydown", "a"], ["keydown", "ArrowDown"], ["input", undefined]] as const) {
+    const name = key ? `${inputEvent} ${key}` : inputEvent;
+    test(`auto-hide header: ${name} in the header after a scroll gesture shows and protects it again`, () => {
         const { restoreDom, header, searchBox } = setupFocusedSearchBox();
         try {
             invokeListener(restoreDom.window, "wheel", {});
             scrollPageTo(restoreDom.window, 200);
             assert.equal(header.classList.contains("is-auto-hidden"), true);
 
-            invokeListener(header, inputEvent, { target: searchBox });
+            invokeListener(header, inputEvent, { target: searchBox, key });
             assert.equal(header.classList.contains("is-auto-hidden"), false);
 
             scrollPageTo(restoreDom.window, 260);
             assert.equal(header.classList.contains("is-auto-hidden"), false);
+        } finally {
+            restoreDom();
+        }
+    });
+}
+
+for (const key of ["PageDown", "PageUp"]) {
+    test(`auto-hide header: ${key} in the search box lets the header hide on the scroll that follows`, () => {
+        const { restoreDom, header, searchBox } = setupFocusedSearchBox();
+        try {
+            scrollPageTo(restoreDom.window, 100);
+            assert.equal(header.classList.contains("is-auto-hidden"), false);
+
+            // 検索窓の中でもページを送るキーなので、隠さない扱いを外し、表示も戻さない。
+            invokeListener(header, "keydown", { target: searchBox, key });
+            scrollPageTo(restoreDom.window, 116);
+            assert.equal(header.classList.contains("is-auto-hidden"), true);
+            assert.equal(document.activeElement, searchBox);
+
+            invokeListener(header, "keydown", { target: searchBox, key });
+            assert.equal(header.classList.contains("is-auto-hidden"), true);
         } finally {
             restoreDom();
         }
