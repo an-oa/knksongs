@@ -176,6 +176,14 @@ feat: move settings into dedicated sidebar panel
 - テスト成功だけで合格とせず、期待する操作と表示結果が
   テストに含まれているか確認する。
 
+## Known Gaps
+
+- 既知の未対応を「残っている点」などとして PR に残す前に、直せるかを実際に試す。
+  難しそうだという見込みだけで対象外にしない。
+- 直せる場合は同じ変更で直す。直さない場合は、PR を作る前、
+  または PR を更新する前に、残してよいかを依頼者へ確認する。
+- PR本文やコミットメッセージに書くことを、依頼者への確認の代わりにしない。
+
 ## Complexity Reassessment
 
 - 実装中に pending state、timeout、cancel、stale event guard などが増え始めたら、
