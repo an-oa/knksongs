@@ -24,6 +24,9 @@ export function createAutoHideHeaderController(input: AutoHideHeaderControllerIn
     let scrollDirection: ScrollDirection = 0;
     let isScrollUpdateScheduled = false;
     let isSetup = false;
+    // ヘッダー内のキーボードフォーカスを理由に、表示を保つか。
+    // ホイールや指でスクロールすると外し、ヘッダー内へのフォーカスや入力で戻す。
+    let isFocusGuardActive = true;
 
     /**
      * 初期化済みのヘッダー要素を返す。
@@ -89,6 +92,17 @@ export function createAutoHideHeaderController(input: AutoHideHeaderControllerIn
     }
 
     /**
+     * ヘッダー内のキーボードフォーカスを理由に、スクロールしてもヘッダーを表示し続けるか判定する。
+     * 検索窓は、マウスやタップで入れても :focus-visible になる。そのため、ホイールや指で
+     * スクロールした後は一覧を読み進めているとみなし、フォーカスが残っていても隠せるようにする。
+     * キー操作でのスクロールや、入力中に結果の描き直しやキーボード表示でページが動いたときは隠さない。
+     * @returns 表示し続けるとき true
+     */
+    function isHeaderKeptByFocus(): boolean {
+        return isFocusGuardActive && hasFocusVisibleHeaderElement();
+    }
+
+    /**
      * 上端付近で常に表示する範囲として、今のヘッダーの高さを返す。
      * 初期化時に一度だけ測ると、CSS が当たる前の高さを使い続けることがあるので、判定のたびに測る。
      * 狭い画面でヘッダーが 2 段になったときの高さにも、そのまま追従する。
@@ -105,7 +119,7 @@ export function createAutoHideHeaderController(input: AutoHideHeaderControllerIn
     function syncHeaderForScroll(): void {
         isScrollUpdateScheduled = false;
         const scrollY = getPageScrollY();
-        if (isSidebarOpen() || hasFocusVisibleHeaderElement() || scrollY <= getTopVisibilityBoundary()) {
+        if (isSidebarOpen() || isHeaderKeptByFocus() || scrollY <= getTopVisibilityBoundary()) {
             showHeaderFrom(scrollY);
             return;
         }
@@ -136,6 +150,25 @@ export function createAutoHideHeaderController(input: AutoHideHeaderControllerIn
      * ヘッダー内へフォーカスが入ったとき、次の描画前にヘッダーを表示する。
      */
     function handleHeaderFocusIn(): void {
+        isFocusGuardActive = true;
+        showHeaderFrom(getPageScrollY());
+    }
+
+    /**
+     * ホイールや指でのスクロール操作を受け、ヘッダー内のフォーカスによる表示の維持を外す。
+     * 隠すかどうかは、続く scroll イベントでスクロールの向きを見て決める。
+     */
+    function handleScrollGesture(): void {
+        isFocusGuardActive = false;
+    }
+
+    /**
+     * ヘッダー内でのキー操作や文字入力を受け、ヘッダーを表示してフォーカスによる表示の維持を戻す。
+     * スクロールで隠れた後に検索窓へ続けて入力しても、入力欄が見えないままにならないようにする。
+     * ブラウザやキーボードによっては文字入力で keydown が届かないことがあるため、input でも受ける。
+     */
+    function handleHeaderInput(): void {
+        isFocusGuardActive = true;
         showHeaderFrom(getPageScrollY());
     }
 
@@ -169,8 +202,12 @@ export function createAutoHideHeaderController(input: AutoHideHeaderControllerIn
         window.addEventListener("scroll", scheduleScrollSync, { passive: true });
         window.addEventListener("resize", scheduleScrollSync);
         window.addEventListener("pageshow", handlePageShow);
+        window.addEventListener("wheel", handleScrollGesture, { passive: true });
+        window.addEventListener("touchmove", handleScrollGesture, { passive: true });
         header.addEventListener("focusin", handleHeaderFocusIn);
         header.addEventListener("focusout", handleHeaderFocusOut);
+        header.addEventListener("keydown", handleHeaderInput);
+        header.addEventListener("input", handleHeaderInput);
     }
 
     /**
