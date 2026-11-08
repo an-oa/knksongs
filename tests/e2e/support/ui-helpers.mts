@@ -133,6 +133,25 @@ export async function filterBySongTitle(page: Page, query: string) {
 }
 
 /**
+ * 利用者と同じく検索窓を押して検索語を入力し、フォーカスを残したまま結果が出るまで待つ。
+ * テスト都合でフォーカスを外さず、入力からそのまま次の操作へ進む流れを確かめるときに使う。
+ * @param page 操作するページ
+ * @param query 入力する検索語
+ * @param pressSearchBox 検索窓を押す操作。省略するとクリックする。タッチ画面ではタップを渡す
+ */
+export async function typeSearchQueryKeepingFocus(
+    page: Page,
+    query: string,
+    pressSearchBox: (searchBox: Locator) => Promise<void> = (searchBox) => searchBox.click()
+) {
+    const searchBox = page.locator("#searchBox");
+    await pressSearchBox(searchBox);
+    await page.keyboard.type(query);
+    await expect(page.locator(".song-card")).not.toHaveCount(0);
+    await expect(searchBox).toBeFocused();
+}
+
+/**
  * タイトルを含む結果カードを返す。
  */
 export function getSongCard(page: Page, title: string) {

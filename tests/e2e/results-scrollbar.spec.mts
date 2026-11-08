@@ -7,6 +7,7 @@ import {
     expectSidebarPopoverClosed,
     getBookmarkItem,
     openBookmarkPanel,
+    typeSearchQueryKeepingFocus,
     waitForInitialLoad
 } from "./support/ui-helpers.mts";
 
@@ -114,4 +115,69 @@ test("the cards settle when the page is about as tall as the screen", async ({ p
         await page.waitForTimeout(150);
         expect(await countLayoutChangesOverFrames(page), `viewport height ${height}`).toBe(0);
     }
+});
+
+/**
+ * 検索窓を押して検索語を入力し、フォーカスを残したまま、スクロールできる検索結果を表示する。
+ * @param page 操作するページ
+ */
+async function typeSearchForScrollableResults(page: Page) {
+    await installNetworkMocks(page);
+    await routeSongsJsonFixture(page, createScrollableResultSongs(60));
+    await page.goto("/");
+    await waitForInitialLoad(page);
+    await typeSearchQueryKeepingFocus(page, "Scroll Artist");
+    await expect.poll(() => page.evaluate(() => document.documentElement.scrollHeight - window.innerHeight))
+        .toBeGreaterThan(600);
+    await expect(page.locator(".header")).not.toHaveClass(/is-auto-hidden/);
+}
+
+/**
+ * ページの縦スクロールバーで押す位置を返す。
+ * ページの先頭にいるとき、つまみはスクロールバーの上端から、画面に見えている割合の長さを占める。
+ * トラックは、つまみより下の、画面の下端に近い位置を押す。
+ * @param page 操作するページ
+ */
+async function readScrollbarPoints(page: Page) {
+    return page.evaluate(() => {
+        const root = document.documentElement;
+        return {
+            x: Math.round((root.clientWidth + window.innerWidth) / 2),
+            thumbY: Math.round(window.innerHeight * window.innerHeight / root.scrollHeight / 2),
+            trackY: window.innerHeight - 40
+        };
+    });
+}
+
+/**
+ * スクロールバーで下へ進んだ後、検索窓のフォーカスを残したまま、ヘッダーが隠れたことを確かめる。
+ * @param page 操作するページ
+ */
+async function expectHeaderHiddenWithSearchFocus(page: Page) {
+    await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(200);
+    await expect(page.locator(".header")).toHaveClass(/is-auto-hidden/);
+    await expect(page.locator("#searchBox")).toBeFocused();
+}
+
+test("after typing in the search box, dragging the scrollbar thumb hides the header", async ({ page }) => {
+    await typeSearchForScrollableResults(page);
+    test.skip(await readScrollbarWidth(page) === 0, SCROLLBAR_SKIP_REASON);
+
+    // 入力を終えて、フォーカスを外さずに、スクロールバーのつまみを下へドラッグする。
+    const { x, thumbY } = await readScrollbarPoints(page);
+    await page.mouse.move(x, thumbY);
+    await page.mouse.down();
+    await page.mouse.move(x, thumbY + 200, { steps: 10 });
+    await page.mouse.up();
+    await expectHeaderHiddenWithSearchFocus(page);
+});
+
+test("after typing in the search box, clicking the scrollbar track hides the header", async ({ page }) => {
+    await typeSearchForScrollableResults(page);
+    test.skip(await readScrollbarWidth(page) === 0, SCROLLBAR_SKIP_REASON);
+
+    // 入力を終えて、フォーカスを外さずに、つまみより下のトラックを押して 1 画面分進む。
+    const { x, trackY } = await readScrollbarPoints(page);
+    await page.mouse.click(x, trackY);
+    await expectHeaderHiddenWithSearchFocus(page);
 });

@@ -1,10 +1,11 @@
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect, type Locator, type Page } from "@playwright/test";
 import { installNetworkMocks } from "./support/network-mocks.mts";
 import { routeSongsJsonFixture } from "./support/songs-network.mts";
 import { createScrollableResultSongs } from "./support/song-fixtures.mts";
 import {
     closeSidebar,
     openSidebar,
+    typeSearchQueryKeepingFocus,
     waitForInitialLoad
 } from "./support/ui-helpers.mts";
 
@@ -27,9 +28,112 @@ async function loadScrollableResults(page: Page) {
     await waitForInitialLoad(page);
     await page.locator("#searchBox").fill("Scroll Artist");
     await expect(page.locator(".song-card")).toHaveCount(48);
-    // 検索窓にフォーカスがある間はヘッダーを隠さないため、入力後にフォーカスを外す。
+    // scrollTo はホイールや指の操作を伴わないので、検索窓にフォーカスが残っていると入力中とみなして隠さない。
+    // ここではスクロールの向きによる表示の切り替えを確かめるため、入力後にフォーカスを外す。
+    // フォーカスを残したままの一連の操作は、下の「検索窓に入力した後」のテストで確かめる。
     await page.locator("#searchBox").blur();
 }
+
+/**
+ * 利用者と同じく検索窓を押して検索語を入力し、フォーカスを残したまま、スクロールできる検索結果を表示する。
+ * @param page 検証するページ
+ * @param pressSearchBox 検索窓を押す操作。省略するとクリックする。タッチ画面ではタップを渡す
+ */
+async function typeSearchForScrollableResults(page: Page, pressSearchBox?: (searchBox: Locator) => Promise<void>) {
+    await routeSongsJsonFixture(page, createScrollableResultSongs(60));
+    await page.reload();
+    await waitForInitialLoad(page);
+    await typeSearchQueryKeepingFocus(page, "Scroll Artist", pressSearchBox);
+    await expect.poll(() => page.evaluate(() => document.documentElement.scrollHeight - window.innerHeight))
+        .toBeGreaterThan(600);
+    await expect(page.locator(".header")).not.toHaveClass(/is-auto-hidden/);
+}
+
+/**
+ * 次の描画まで待ち、スクロールに応じたヘッダーの表示判定を終わらせる。
+ * @param page 検証するページ
+ */
+async function waitForAnimationFrames(page: Page) {
+    await page.evaluate(() => new Promise<void>((resolve) => {
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+    }));
+}
+
+test("after typing in the search box, scrolling down with the wheel hides the header", async ({ page }) => {
+    await typeSearchForScrollableResults(page);
+    const header = page.locator(".header");
+    const searchBox = page.locator("#searchBox");
+
+    // 入力を終えて、フォーカスを外さずに一覧の上でホイールを回す。
+    await page.mouse.move(640, 500);
+    await page.mouse.wheel(0, 400);
+    await expect(header).toHaveClass(/is-auto-hidden/);
+    await expect(searchBox).toBeFocused();
+    // WebKit はホイールのスクロールを滑らかに動かすので、隠れた時点ではまだ先頭の近くにいることがある。
+    // ページの先頭付近ではヘッダーを常に表示するため、スクロールが止まるまで待ってから次へ進む。
+    await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(400);
+
+    // 続けてキーを押すと、検索窓が見えるようヘッダーを戻す。
+    // 結果を描き直すとページの先頭へ戻って表示の理由が変わるので、カーソルを動かすだけのキーで確かめる。
+    // ブラウザもカーソルを見せるためにページを少し戻すことがあるが、先頭付近までは戻らない。
+    await page.keyboard.press("ArrowLeft");
+    await expect(header).not.toHaveClass(/is-auto-hidden/);
+    const headerHeight = await header.evaluate((element) => element.getBoundingClientRect().height);
+    expect(await page.evaluate(() => window.scrollY)).toBeGreaterThan(headerHeight);
+});
+
+test("after typing in the search box, paging down with PageDown hides the header", async ({ page }) => {
+    await typeSearchForScrollableResults(page);
+    const header = page.locator(".header");
+
+    // 入力を終えて、フォーカスを外さずに PageDown でページを送る。検索窓の中でもページがスクロールする。
+    await page.keyboard.press("PageDown");
+    await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(200);
+    await expect(header).toHaveClass(/is-auto-hidden/);
+    await expect(page.locator("#searchBox")).toBeFocused();
+});
+
+test("while typing in the search box, the page moving by itself keeps the header visible", async ({ page }) => {
+    await typeSearchForScrollableResults(page);
+    const header = page.locator(".header");
+
+    // 結果の描き直しやソフトウェアキーボードの表示では、利用者がスクロールしなくてもページが動く。
+    await page.evaluate(() => window.scrollTo(0, 320));
+    await waitForAnimationFrames(page);
+    await expect(header).not.toHaveClass(/is-auto-hidden/);
+
+    // 同じ位置から利用者がホイールで下へ進めば隠れる。
+    await page.mouse.move(640, 500);
+    await page.mouse.wheel(0, 200);
+    await expect(header).toHaveClass(/is-auto-hidden/);
+});
+
+test.describe("on a touch screen", () => {
+    test.use({ hasTouch: true, isMobile: true, viewport: { width: 412, height: 915 } });
+
+    test("after typing in the search box, swiping up hides the header", async ({ page, browserName }) => {
+        test.skip(browserName !== "chromium", "指でなぞる操作は Chromium の DevTools Protocol でだけ送れる");
+        await typeSearchForScrollableResults(page, (searchBox) => searchBox.tap());
+        const header = page.locator(".header");
+
+        // 入力を終えて、フォーカスを外さずに一覧を指で上へなぞり、下へ読み進める。
+        // Playwright の touchscreen は tap しかないので、触れたまま動かす操作はこちらで送る。
+        // Input.synthesizeScrollGesture は、この環境ではページをスクロールさせないため使わない。
+        const client = await page.context().newCDPSession(page);
+        await client.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: 206, y: 700 }] });
+        for (let step = 1; step <= 10; step++) {
+            await client.send("Input.dispatchTouchEvent", {
+                type: "touchMove",
+                touchPoints: [{ x: 206, y: 700 - step * 40 }]
+            });
+        }
+        await client.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+        await client.detach();
+        await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(200);
+        await expect(header).toHaveClass(/is-auto-hidden/);
+        await expect(page.locator("#searchBox")).toBeFocused();
+    });
+});
 
 test("header hides on downward scroll and returns on upward scroll", async ({ page }) => {
     await loadScrollableResults(page);
