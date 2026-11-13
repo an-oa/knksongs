@@ -96,7 +96,7 @@ test("songs json: rejects invalid URL video IDs and negative start seconds", () 
 });
 
 test("songs json: rejects stored video IDs that disagree with the URL", () => {
-    const song = createSongFixture({ videoId: "xyz123def45", bookmarkSongKey: "xyz123def45::1" });
+    const song = createSongFixture({ videoId: "xyz123def45", songKey: "xyz123def45::1" });
     const payload = {
         schemaVersion: SONGS_JSON_SCHEMA_VERSION,
         contentHash: "sha256:test",
@@ -164,25 +164,27 @@ test("songs json: rejects fields outside the current Song schema", () => {
     );
 });
 
-test("songs json: rejects duplicate song and bookmark keys", () => {
+test("songs json: rejects duplicate song keys and duplicate archive positions", () => {
     const first = createSongFixture();
+    // 同じ動画の同じ歌唱順。アーカイブが違っても、曲キーが重なる。
     const duplicateSongKey = createSongFixture({
-        videoId: "xyz123def45",
-        bookmarkSongKey: "xyz123def45::1",
+        archiveId: "archive-2",
         title: "Retake"
     });
-    const duplicateBookmarkKey = createSongFixture({
-        archiveId: "archive-2",
-        songKey: "archive-2::1"
+    // 同じアーカイブの同じ歌唱順。動画が違うので、曲キーは重ならない。
+    const duplicateArchiveOrder = createSongFixture({
+        videoId: "xyz123def45",
+        songKey: "xyz123def45::1",
+        url: "https://www.youtube.com/watch?v=xyz123def45&t=10s"
     });
 
     assert.throws(
         () => buildSongsJsonPayload([first, duplicateSongKey], "sha256:test", GENERATED_AT),
-        /songs\[1\]\.songKey .* duplicates .*songs\[0\]\.songKey/
+        /songs\[1\]\.songKey "abc123def45::1" duplicates .*songs\[0\]\.songKey/
     );
     assert.throws(
-        () => buildSongsJsonPayload([first, duplicateBookmarkKey], "sha256:test", GENERATED_AT),
-        /songs\[1\]\.bookmarkSongKey .* duplicates .*songs\[0\]\.bookmarkSongKey/
+        () => buildSongsJsonPayload([first, duplicateArchiveOrder], "sha256:test", GENERATED_AT),
+        /songs\[1\] archiveId and archiveOrder "archive-1::1" duplicate .*songs\[0\]/
     );
 });
 

@@ -1,5 +1,5 @@
 import type { LookupUiRuntimeState } from "../state.types";
-import { buildSongReferenceIndex } from "./song-identity.mjs";
+import { buildSongByKeyMap } from "./song-identity.mjs";
 
 /**
  * 曲参照用の検索マップが最新の曲配列を指しているかを返す。
@@ -8,9 +8,7 @@ function hasCurrentSongLookupMaps(
     lookupUi: LookupUiRuntimeState,
     songRows: Song[]
 ): boolean {
-    return lookupUi.songLookupSourceRef === songRows &&
-        lookupUi.songMapByBookmarkKey instanceof Map &&
-        lookupUi.songMapByKey instanceof Map;
+    return lookupUi.songLookupSourceRef === songRows && lookupUi.songMapByKey instanceof Map;
 }
 
 /**
@@ -24,14 +22,13 @@ export function ensureSongLookupMaps(
     const rows = Array.isArray(songRows) ? songRows : [];
     if (hasCurrentSongLookupMaps(lookupUi, rows)) return;
 
-    const referenceIndex = buildSongReferenceIndex(rows);
-    lookupUi.songMapByBookmarkKey = referenceIndex.songByBookmarkKey;
-    lookupUi.songMapByKey = referenceIndex.songByKey;
+    lookupUi.songMapByKey = buildSongByKeyMap(rows);
     lookupUi.songLookupSourceRef = rows;
 }
 
 /**
- * 曲参照から曲データを返す。
+ * 曲参照 (songKey) から曲データを返す。
+ * 旧形式の参照は解決しない。ブックマークを読み込んだ後の移行で、songKey へ書き換えてある。
  */
 export function resolveSongRef(
     lookupUi: LookupUiRuntimeState,
@@ -40,7 +37,7 @@ export function resolveSongRef(
 ): Song | null {
     ensureSongLookupMaps(lookupUi, songRows);
     if (typeof songRef === "string") {
-        return lookupUi.songMapByBookmarkKey.get(songRef) || lookupUi.songMapByKey.get(songRef) || null;
+        return lookupUi.songMapByKey.get(songRef) || null;
     }
     return null;
 }

@@ -1,11 +1,7 @@
 import { normalizeStreamRole } from "./stream-role.mjs";
 import { parseDateKey } from "./date-key.mjs";
 import { normalizeForSearch } from "./search-normalization.mjs";
-import {
-    buildBookmarkSongKey,
-    buildSongKey,
-    parseArchiveOrder
-} from "./song-identity.mjs";
+import { buildSongKey, parseArchiveOrder } from "./song-identity.mjs";
 import { assertSongsDataQuality } from "./songs-data-quality.mjs";
 import { extractYoutubeInfo } from "./youtube-url.mjs";
 
@@ -152,8 +148,7 @@ export function parseCsvToSongs(csvText: string): Song[] {
             archiveId,
             archiveOrder,
             videoId,
-            songKey: buildSongKey({ archiveId, archiveOrder }),
-            bookmarkSongKey: buildBookmarkSongKey({ videoId, archiveId, archiveOrder }),
+            songKey: buildSongKey({ videoId, archiveId, archiveOrder }),
             format: r[idx("形態")],
             streamRole: streamRoleIndex >= 0 ? normalizeStreamRole(r[streamRoleIndex]) : "",
             videoOrientation: parseVideoOrientation(r[idx("画面の向き")], i + 2),

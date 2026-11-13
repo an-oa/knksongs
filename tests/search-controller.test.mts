@@ -165,7 +165,7 @@ function createSearchUiState<Elements extends SearchTestUiElements>(input: {
     };
     const date: DateUiRuntimeState = { bounds: null, index: null, pendingValues: null };
     const lookup: LookupUiRuntimeState = {
-        songMapByBookmarkKey: new Map(), songMapByKey: new Map(), songLookupSourceRef: null
+        songMapByKey: new Map(), songLookupSourceRef: null
     };
     const language = { current: "ja" as SiteLanguage };
     return { el: input.el, search, date, lookup, language };
@@ -330,11 +330,11 @@ test("createSearchController: direct search synchronizes restored query validati
     assert.equal(searchBoxError.hidden, true);
 });
 
-test("createSearchController: active bookmark resolves rows by bookmarkSongKey", () => {
+test("createSearchController: active bookmark resolves rows by songKey", () => {
     const rows = [
-        makeRow({ songKey: "arch1::1", bookmarkSongKey: "videoA::1", title: "青い月", artist: "A", format: "配信" }),
-        makeRow({ songKey: "arch2::2", bookmarkSongKey: "videoB::2", title: "赤い星", artist: "B", format: "歌みた" }),
-        makeRow({ songKey: "arch3::3", bookmarkSongKey: "videoC::3", title: "白い空", artist: "C", format: "配信" })
+        makeRow({ songKey: "videoA::1", title: "青い月", artist: "A", format: "配信" }),
+        makeRow({ songKey: "videoB::2", title: "赤い星", artist: "B", format: "歌みた" }),
+        makeRow({ songKey: "videoC::3", title: "白い空", artist: "C", format: "配信" })
     ];
     const data: AppDataState = {
         allSongsRaw: rows,
@@ -379,7 +379,7 @@ test("createSearchController: active bookmark resolves rows by bookmarkSongKey",
     });
     controller.search();
 
-    assert.deepEqual(data.currentResults.map((row) => row.songKey), ["arch2::2", "arch1::1"]);
+    assert.deepEqual(data.currentResults.map((row) => row.songKey), ["videoB::2", "videoA::1"]);
     assert.equal(ui.el.resultCount.innerText, "ブックマーク: 検証 (2 件)");
 });
 

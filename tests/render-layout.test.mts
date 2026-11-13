@@ -82,7 +82,6 @@ function createRenderUiState<Elements extends {
             current: input.language ?? "ja"
         },
         lookup: {
-            songMapByBookmarkKey: new Map(),
             songMapByKey: new Map(),
             songLookupSourceRef: null
         }
@@ -887,7 +886,6 @@ test("bookmark: observes result tail and increases by RESULT_DISPLAY_BATCH_SIZE 
     try {
         const rows = Array.from({ length: 100 }, (_, index) => createSongFixture({
             songKey: `song-${index + 1}`,
-            bookmarkSongKey: `song-${index + 1}`,
             title: `曲${index + 1}`,
             artist: "artist",
             date: "2024-01-01",
@@ -1165,10 +1163,10 @@ test("render: drag reorder forwards reload-required save failures without changi
 test("render: active playback card can move back left without jumping to the end", () => {
     const cleanup = installFakeDom();
     try {
-        const rowA = makeRenderRow({ songKey: "a::1", bookmarkSongKey: "videoA::1", title: "A" });
-        const rowB = makeRenderRow({ songKey: "b::2", bookmarkSongKey: "videoB::2", title: "B" });
-        const rowC = makeRenderRow({ songKey: "c::3", bookmarkSongKey: "videoC::3", title: "C" });
-        const rowD = makeRenderRow({ songKey: "d::4", bookmarkSongKey: "videoD::4", title: "D" });
+        const rowA = makeRenderRow({ songKey: "a::1", title: "A" });
+        const rowB = makeRenderRow({ songKey: "b::2", title: "B" });
+        const rowC = makeRenderRow({ songKey: "c::3", title: "C" });
+        const rowD = makeRenderRow({ songKey: "d::4", title: "D" });
         const data = createRenderDataState({
             currentResults: [rowA, rowB, rowC, rowD],
             displayLimit: 10,
@@ -1176,7 +1174,7 @@ test("render: active playback card can move back left without jumping to the end
             bookmarks: {
                 bm1: {
                     name: "test",
-                    songs: [rowA.bookmarkSongKey, rowB.bookmarkSongKey, rowC.bookmarkSongKey, rowD.bookmarkSongKey]
+                    songs: [rowA.songKey, rowB.songKey, rowC.songKey, rowD.songKey]
                 }
             }
         });
@@ -1232,10 +1230,10 @@ test("render: active playback card can move back left without jumping to the end
             rowD.songKey
         ]);
         assert.deepEqual(data.bookmarks.bm1.songs, [
-            rowA.bookmarkSongKey,
-            rowB.bookmarkSongKey,
-            rowC.bookmarkSongKey,
-            rowD.bookmarkSongKey
+            rowA.songKey,
+            rowB.songKey,
+            rowC.songKey,
+            rowD.songKey
         ]);
         assert.deepEqual(
             Array.from(ui.el.resultList.children, (card) => {

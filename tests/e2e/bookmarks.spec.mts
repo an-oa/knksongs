@@ -148,11 +148,11 @@ test("bookmarks saved with older song references open the same songs and are rew
                 name: "Old Favorites",
                 songs: [
                     // 最初期の形式。archiveId と歌唱順の後ろに、保存した当時の URL が付く。
-                    `${songs[2].songKey}::${songs[2].url}`,
+                    `${songs[2].archiveId}::${songs[2].archiveOrder}::${songs[2].url}`,
                     // 保存した後に曲データの URL が変わっていても、同じ曲を指す。
-                    `${songs[0].songKey}::https://www.youtube.com/watch?v=${songs[0].videoId}&t=999s`,
+                    `${songs[0].archiveId}::${songs[0].archiveOrder}::https://www.youtube.com/watch?v=${songs[0].videoId}&t=999s`,
                     // その次の形式。archiveId と歌唱順だけ。
-                    songs[1].songKey
+                    `${songs[1].archiveId}::${songs[1].archiveOrder}`
                 ],
                 createdAt: 1
             }
@@ -161,13 +161,13 @@ test("bookmarks saved with older song references open the same songs and are rew
     await page.reload();
     await waitForInitialLoad(page);
 
-    // 読み込んだ時点で、今の保存用キー (videoId と歌唱順) へ書き換えて保存する。
+    // 読み込んだ時点で、今の曲キー (videoId と歌唱順) へ書き換えて保存する。
     await expect.poll(() => readStoredBookmarks(page)).toEqual({
         version: 3,
         bookmarks: {
             p_1: {
                 name: "Old Favorites",
-                songs: [songs[2].bookmarkSongKey, songs[0].bookmarkSongKey, songs[1].bookmarkSongKey],
+                songs: [songs[2].songKey, songs[0].songKey, songs[1].songKey],
                 createdAt: 1
             }
         }

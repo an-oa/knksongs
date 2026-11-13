@@ -8,7 +8,7 @@ const MAX_LISTED_REMAPS = 50;
 
 /** songs.json の1行のうち、キーと歌唱の照合に使う項目。 */
 type SongKeyRow = {
-    bookmarkSongKey: string;
+    songKey: string;
     title: string;
     titleNorm: string;
     artist: string;
@@ -54,11 +54,11 @@ export function parseSongKeyRows(text: string): SongKeyRow[] {
     const rows: SongKeyRow[] = [];
     for (const song of songs) {
         if (song === null || typeof song !== "object") continue;
-        const key = typeof song.bookmarkSongKey === "string" ? song.bookmarkSongKey.trim() : "";
+        const key = typeof song.songKey === "string" ? song.songKey.trim() : "";
         if (!key) continue;
         const title = typeof song.title === "string" ? song.title : "";
         rows.push({
-            bookmarkSongKey: key,
+            songKey: key,
             title,
             titleNorm: typeof song.titleNorm === "string" ? song.titleNorm : title,
             artist: typeof song.artist === "string" ? song.artist : "",
@@ -77,14 +77,14 @@ export function parseSongKeyRows(text: string): SongKeyRow[] {
  * @returns 別の歌唱を指すようになったキー。更新後の並び順
  */
 export function findSongKeyRemaps(beforeText: string, afterText: string): SongKeyRemap[] {
-    const beforeByKey = new Map(parseSongKeyRows(beforeText).map((row) => [row.bookmarkSongKey, row]));
+    const beforeByKey = new Map(parseSongKeyRows(beforeText).map((row) => [row.songKey, row]));
     const remaps: SongKeyRemap[] = [];
     for (const after of parseSongKeyRows(afterText)) {
-        const before = beforeByKey.get(after.bookmarkSongKey);
+        const before = beforeByKey.get(after.songKey);
         if (!before) continue;
         if (before.startSeconds === after.startSeconds || before.titleNorm === after.titleNorm) continue;
         remaps.push({
-            key: after.bookmarkSongKey,
+            key: after.songKey,
             before: { title: before.title, artist: before.artist, startSeconds: before.startSeconds },
             after: { title: after.title, artist: after.artist, startSeconds: after.startSeconds }
         });

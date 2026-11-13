@@ -33,7 +33,7 @@ async function openSeededBookmark(page: Page, songs: Song[], options: { thumbnai
             version: 3,
             bookmarks: { b1: { name, songs: songKeys, createdAt: 1 } }
         }));
-    }, { name: BOOKMARK_NAME, songKeys: songs.map((song) => song.bookmarkSongKey) });
+    }, { name: BOOKMARK_NAME, songKeys: songs.map((song) => song.songKey) });
     await page.reload();
     await waitForInitialLoad(page);
     if (options.thumbnails) await enablePlaybackSettings(page);
@@ -199,7 +199,7 @@ test("dragging a card by its handle moves it and saves the order", async ({ page
     await page.mouse.up();
 
     await expect.poll(() => readCardTitles(page)).toEqual(FIRST_TO_THIRD_TITLES);
-    expect(await readSavedSongKeys(page)).toEqual([1, 2, 0, 3, 4, 5].map((index) => songs[index].bookmarkSongKey));
+    expect(await readSavedSongKeys(page)).toEqual([1, 2, 0, 3, 4, 5].map((index) => songs[index].songKey));
 });
 
 test("the cards make room for the dragged card before it is dropped", async ({ page }) => {
@@ -211,12 +211,12 @@ test("the cards make room for the dragged card before it is dropped", async ({ p
     // 離す前から、移動元が 3 番目の枠へ移り、間のカードがよける。大きさは変わらず、まだ保存もしない。
     await startHandleDrag(page, cards.nth(0), [(await getCardPoints(cards.nth(2))).center]);
     await expect.poll(() => readCardTitles(page)).toEqual(FIRST_TO_THIRD_TITLES);
-    await expect(page.locator('#resultList > .song-card[data-song-key="scroll-archive-01::1"]')).toHaveClass(/dragging/);
+    await expect(page.locator('#resultList > .song-card[data-song-key="scroll00001::1"]')).toHaveClass(/dragging/);
     expect(await readCardSizes(page)).toEqual(sizesBefore);
-    expect(await readSavedSongKeys(page)).toEqual(songs.map((song) => song.bookmarkSongKey));
+    expect(await readSavedSongKeys(page)).toEqual(songs.map((song) => song.songKey));
 
     await page.mouse.up();
-    await expect.poll(() => readSavedSongKeys(page)).toEqual([1, 2, 0, 3, 4, 5].map((index) => songs[index].bookmarkSongKey));
+    await expect.poll(() => readSavedSongKeys(page)).toEqual([1, 2, 0, 3, 4, 5].map((index) => songs[index].songKey));
 });
 
 test("releasing right after a single move onto the target card still moves the card", async ({ page }) => {
@@ -245,7 +245,7 @@ test("releasing outside the list puts the cards back without saving", async ({ p
     await page.mouse.up();
 
     await expect.poll(() => readCardTitles(page)).toEqual(ORIGINAL_TITLES);
-    expect(await readSavedSongKeys(page)).toEqual(songs.map((song) => song.bookmarkSongKey));
+    expect(await readSavedSongKeys(page)).toEqual(songs.map((song) => song.songKey));
     await expect(page.locator("#resultList > .song-card.dragging")).toHaveCount(0);
 });
 
@@ -305,7 +305,7 @@ test("scrolling with the wheel during the drag carries the card to the card now 
     await page.mouse.up();
     await expect.poll(async () => {
         const savedKeys = await readSavedSongKeys(page);
-        return Array.isArray(savedKeys) ? savedKeys.indexOf(songs[0].bookmarkSongKey) : -1;
+        return Array.isArray(savedKeys) ? savedKeys.indexOf(songs[0].songKey) : -1;
     }).toBe(shownIndex);
 });
 
@@ -324,7 +324,7 @@ test("releasing in the gap between cards keeps the order shown during the drag",
     await page.mouse.move(placed.x + placed.width / 2, placed.y + placed.height + 5, { steps: 4 });
     await page.mouse.up();
 
-    await expect.poll(() => readSavedSongKeys(page)).toEqual([1, 2, 0, 3, 4, 5].map((index) => songs[index].bookmarkSongKey));
+    await expect.poll(() => readSavedSongKeys(page)).toEqual([1, 2, 0, 3, 4, 5].map((index) => songs[index].songKey));
     expect(await readCardTitles(page)).toEqual(FIRST_TO_THIRD_TITLES);
 });
 
@@ -363,7 +363,7 @@ test("a taller card does not make the cards flip back and forth", async ({ page 
         expect(await readCardKeys(page)).toEqual(expected);
     }
     await page.mouse.up();
-    await expect.poll(() => readSavedSongKeys(page)).toEqual([1, 0, 2, 3].map((index) => songs[index].bookmarkSongKey));
+    await expect.poll(() => readSavedSongKeys(page)).toEqual([1, 0, 2, 3].map((index) => songs[index].songKey));
 });
 
 test("dragging a title link does not rearrange the cards", async ({ page }) => {
@@ -386,7 +386,7 @@ test("dropping onto the video of a playing card moves the card and keeps the vid
     await openSeededBookmark(page, createScrollableResultSongs(6), { thumbnails: true });
     const cards = page.locator("#resultList > .song-card");
     // 再生中のカードは並べ替えで位置が変わるので、曲キーで指す。
-    const playingCard = page.locator('#resultList > .song-card[data-song-key="scroll-archive-03::1"]');
+    const playingCard = page.locator('#resultList > .song-card[data-song-key="scroll00003::1"]');
     await playingCard.locator(".thumb").click();
     await waitForMockYoutube(page);
     const video = playingCard.locator("iframe");
@@ -413,7 +413,7 @@ test("holding the card near the bottom edge scrolls the page and loads more card
     expect(initialCount).toBeLessThan(songs.length);
     const cardsOnFirstScreen = await cards.evaluateAll((elements) => elements.filter((card) => card.getBoundingClientRect().top < window.innerHeight).length);
 
-    const source = page.locator('#resultList > .song-card[data-song-key="scroll-archive-01::1"]');
+    const source = page.locator('#resultList > .song-card[data-song-key="scroll00001::1"]');
     const center = (await getCardPoints(cards.nth(0))).center;
     // 画面の下端の近くで止めると、ページが自動でスクロールし、末尾に近づくと続きを読み込む。
     await startHandleDrag(page, cards.nth(0), [{ x: center.x, y: viewport.height - 5 }]);
@@ -432,7 +432,7 @@ test("holding the card near the bottom edge scrolls the page and loads more card
 
     const readSavedIndex = async () => {
         const savedKeys = await readSavedSongKeys(page);
-        return Array.isArray(savedKeys) ? savedKeys.indexOf(songs[0].bookmarkSongKey) : -1;
+        return Array.isArray(savedKeys) ? savedKeys.indexOf(songs[0].songKey) : -1;
     };
     await expect.poll(readSavedIndex).toBeGreaterThanOrEqual(cardsOnFirstScreen);
     expect((await readCardKeys(page)).indexOf(songs[0].songKey)).toBe(await readSavedIndex());
@@ -454,7 +454,7 @@ test("pressing Esc during the drag puts the cards back without saving", async ({
     await page.mouse.move(5, 5, { steps: 4 });
     await page.mouse.up();
     expect(await readCardTitles(page)).toEqual(ORIGINAL_TITLES);
-    expect(await readSavedSongKeys(page)).toEqual(songs.map((song) => song.bookmarkSongKey));
+    expect(await readSavedSongKeys(page)).toEqual(songs.map((song) => song.songKey));
 });
 
 test("while dragging, the cards slide aside toward the gap in the dragged direction", async ({ page }) => {
@@ -481,7 +481,7 @@ test("while dragging, the cards slide aside toward the gap in the dragged direct
     }
     // 離したときは、もう見えている順序なので、動かない。
     await page.mouse.up();
-    await expect.poll(() => readSavedSongKeys(page)).toEqual([1, 2, 0, 3, 4, 5].map((index) => songs[index].bookmarkSongKey));
+    await expect.poll(() => readSavedSongKeys(page)).toEqual([1, 2, 0, 3, 4, 5].map((index) => songs[index].songKey));
     expect(await takeCardAnimations(page)).toEqual([]);
 
     // 下から上へ（5 番目を 2 番目へ）：よけるカードは下へ、移動元は上へスライドする。
@@ -584,7 +584,7 @@ test.describe("touch", () => {
                 (await getCardPoints(cards.nth(2))).center
             ], { holdMs });
 
-            await expect.poll(() => readSavedSongKeys(page)).toEqual([1, 2, 0, 3, 4, 5].map((index) => songs[index].bookmarkSongKey));
+            await expect.poll(() => readSavedSongKeys(page)).toEqual([1, 2, 0, 3, 4, 5].map((index) => songs[index].songKey));
             expect(await readCardTitles(page)).toEqual(FIRST_TO_THIRD_TITLES);
             expect(await page.evaluate(() => window.scrollY)).toBe(scrollYBefore);
             expect(await page.evaluate(() => window.getSelection()?.toString() ?? "")).toBe("");

@@ -201,7 +201,7 @@ test("search results with thumbnails keep the card being read in place when wide
     const readingPosition = await readReadingPosition(page);
     if (!readingPosition) throw new Error("No card is being read");
     // カードの高さは小数になり、スクロール位置を整数へ丸める向きはブラウザで違うので、1px までの差は許す。
-    expect(readingPosition.songKey).toBe("scroll-archive-25::1");
+    expect(readingPosition.songKey).toBe("scroll00025::1");
     expect(Math.abs(readingPosition.top + 30)).toBeLessThanOrEqual(1);
 
     // 読んでいた位置はリサイズ前に記録しているので、ヘッダーが 2 段から 1 段に縮んでも、画面上の位置は変わらない。
@@ -229,7 +229,7 @@ test("bookmark results keep the card being read in place when narrowing and wide
             version: 3,
             bookmarks: { b1: { name: "Long Favorites", songs: songKeys, createdAt: 1 } }
         }));
-    }, songs.map((song) => song.bookmarkSongKey));
+    }, songs.map((song) => song.songKey));
     await page.reload();
     await waitForInitialLoad(page);
     await openSidebar(page);

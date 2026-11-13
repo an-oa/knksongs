@@ -202,13 +202,13 @@ flowchart TD
   3列とも正規化した値を `titleEnNorm` / `artistEnNorm` / `artistSortNorm` として検索に使う。
   `Artist Sort Name` は MusicBrainz の sort name に倣い、人名を「姓, 名」、文字の代わりの記号を文字に直した値とする
 - `songs.json` / `songs-meta.json` は、現在表示・再生可能な曲を配信する派生成果物とする
-- 両JSONはschema Version 6として、同じ `contentHash` とUTC ISO 8601形式の `generatedAt` を持つ。
+- 両JSONはschema Version 7として、同じ `contentHash` とUTC ISO 8601形式の `generatedAt` を持つ。
   `generatedAt` はcontentHashが変わった場合だけ更新し、同じ内容の定期生成では引き継ぐ
 - 実行時は現行schemaだけを受け付け、不正・旧schemaのキャッシュは未キャッシュと同じ取得経路へ進む。公開JSON採用時は上書きし、採用失敗時だけ非同期で削除する
 - 公開対象でもURLが空の行は、現在再生できない曲の履歴としてCSVへ残し、エラーにせず派生JSONから除外する。
   URLが非空で不正な場合は品質エラーとして生成を停止する
 - CSVから公開対象曲へ変換した直後に、必須文字列、YouTube URL・動画ID、再生範囲、
-  `archiveOrder`の整数性、曲参照キーの生成規則と一意性を全件検証する。
+  `archiveOrder`の整数性、曲キーの生成規則と一意性、`archiveId` と `archiveOrder` の組の一意性を全件検証する。
   問題はCSV行番号と曲名でまとめて報告し、検証成功前はどちらのJSONも書き換えない
 - CSV行番号は変換中だけ曲候補と同じオブジェクトに保持し、`SongRow`や派生JSONには含めない
 - 開始位置`0`と終了位置`null`は、ショート・切り抜き・歌みたなどの動画全体を再生する正常値とする。
@@ -217,14 +217,14 @@ flowchart TD
 - JSONの生成・読み込み・キャッシュ復元では、リンクがHTTPSのYouTube URLであること、
   許可ホストと動画ID形式、URLと再生用動画IDの一致を検証する
 - 派生JSONの検証では、両ファイルの構文、各曲の必須フィールド・型・未知フィールドを含むスキーマ、
-  曲参照キーの生成規則と一意性、
+  曲キーの生成規則と一意性、`archiveId` と `archiveOrder` の組の一意性、
   `contentHash`と`generatedAt`同士の一致、曲配列から再計算したhashとの一致だけを確認し、
   曲データの意味的品質は再判定しない
 
 ## データモデル（概要）
 `SongRow`
 - date / dateKey / archiveId / archiveOrder
-- videoId / songKey / bookmarkSongKey / format / streamRole / videoOrientation / isRelay / isHarmony
+- videoId / songKey / format / streamRole / videoOrientation / isRelay / isHarmony
 - title / artist / titleYomi / artistYomi
 - titleEn / artistEn（英語表記。シートの値をそのまま持つ）
 - endSeconds
@@ -232,17 +232,24 @@ flowchart TD
 - titleEnNorm / artistEnNorm / artistSortNorm（並び替え用の英名は表示しないため、正規化済みの値だけを持つ）
 - url
 
-### 曲参照キーの役割分担
-- `songKey`: `archiveId::archiveOrder` を使う内部参照キー。カード再利用、描画更新、既存の画面内処理で利用する。
-- `bookmarkSongKey`: `videoId::archiveOrder` を優先するブックマーク保存用キー。`videoId` を抽出できない場合は `songKey` へフォールバックする。
-- キー生成、旧参照の正規化、参照インデックス構築、一意性検証は`song-identity`へ集約する。
-- ブックマーク検索では `bookmarkSongKey` を優先して曲行へ解決し、旧ブックマークの曲参照は現行キーへ移行する。
-  - 旧形式は、`songKey`（`archiveId::archiveOrder`）と、その後ろに URL を付けた最初期の形式（`archiveId::archiveOrder::url`）の 2 つ。
+### 曲キー
+- `songKey`: `videoId::archiveOrder`。曲を指すキーはこの 1 つで、画面内の参照（カードの再利用、再生、並べ替え）と
+  ブックマークの保存の両方に使う。`videoId` を抽出できない行だけ、`archiveId::archiveOrder` で代用する
+  - 以前は、画面内の `songKey`（`archiveId::archiveOrder`）と保存用の `bookmarkSongKey`（`videoId::archiveOrder`）を分けていた。
+    使い分ける理由がなく、読み替えと 2 つの対応表が要るだけだったので、保存用の値に統一した。
+    保存済みのブックマークが曲を指す値は変わらない
+- キー生成、旧参照の正規化、対応表の構築、一意性検証は`song-identity`へ集約する。
+- `archiveId` と `archiveOrder` の組（シートの「#」と「##」）が曲ごとに違うことも検証する。
+  「#」を打ち間違えて別の配信の曲が同じ位置に入ると、動画が違うので `songKey` の重複では見つからないため
+- ブックマークは `songKey` で曲行へ解決する。旧形式で保存された曲参照は、保存済みのブックマークを読み込んだ後と、
+  ファイルから取り込むときに `songKey` へ移行し、実行時の解決では旧形式を扱わない
+  - 旧形式は、`archiveId::archiveOrder` と、その後ろに URL を付けた最初期の形式（`archiveId::archiveOrder::url`）の 2 つ。
     どちらも先頭の `archiveId` と `archiveOrder` だけで曲を特定し、URL は見ない
-  - そのため、最初期の形式のキーは曲データに持たせない。URL を含む分だけ `songs.json` が大きくなり、
-    読み込みのたびに生成規則との照合も必要になるため
+  - 旧形式のキーは曲データに持たせず、移行のときに曲行の `archiveId` と `archiveOrder` から作る
+  - 移行後の保存ができなかったとき（別のタブの変更を見つけたときなど）も、その画面の state には移行後の参照を入れる。
+    旧形式のままでは曲を引けないため
 - 旧数値参照はCSV行位置の変化で別の曲を指し得るため解決せず、実行時モデルへ持ち込まず読み込み時に除外する。
-- `bookmarkSongKey` も歌唱順を含むので、シートで歌唱順を入れ替えたり途中に曲を足したりすると、後ろの番号のキーが別の歌唱を指す。
+- `songKey` は歌唱順を含むので、シートで歌唱順を入れ替えたり途中に曲を足したりすると、後ろの番号のキーが別の歌唱を指す。
   保存済みのブックマークは訪問者の端末にあって直せないので、曲データの更新で見つけて Issue で知らせる（[曲データ更新](#曲データ更新update-songs-jsonyml)）。
 
 ## 検索・絞り込みロジック
@@ -455,7 +462,7 @@ flowchart LR
   - localStorage key の `searchStateV1` は保存場所の互換維持用で、payload の `version` は検索条件 schema の版数として別に管理する
 - ブックマーク情報（ブックマーク名・曲参照/順序・作成日時）
 - ブックマーク保存 payload は `version` を持つ。version 3では実行時の曲参照を文字列だけに限定し、
-  旧文字列参照は曲データ読み込み後に現行の `bookmarkSongKey` へ保存し直す
+  旧文字列参照は曲データ読み込み後に現行の `songKey` へ保存し直す
 - 最新曲データで解決できない文字列の曲参照は削除せず保持し、将来同じ参照の曲が復帰したときに再解決する。
   旧形式の数値参照は安定した識別子ではないため、読み込み・インポート時に除外する
 - エクスポートするJSONはブックマーク保存 payload と同じ構造にし、選んだブックマークだけを含める。インポート時は同じ検証/移行を通す
@@ -514,7 +521,7 @@ IndexedDB保存：
   - 受信・キャッシュ読込ごとに `JSON.parse` は1回行い、同じ曲配列を検証と初回表示で使う
   - 構造検証の正常系は既知の全項目と値の型を1回の走査で確認し、不正時だけ詳細な診断を組み立てる
   - 曲キーは一時配列や曲ごとの検証用オブジェクトを作らず生成し、キーの整合性・一意性の検証を保つ
-  - 識別子の検証規則はiteratorで共有し、実行時は最初の問題で停止、CSV品質診断は全件収集する。診断順は行ごとの整合性、songKey重複、bookmarkSongKey重複を維持する
+  - 識別子の検証規則はiteratorで共有し、実行時は最初の問題で停止、CSV品質診断は全件収集する。診断順は行ごとの整合性、`archiveId` と `archiveOrder` の組の重複、songKey重複とする
   - IndexedDBへは受信したJSON文字列をそのまま渡し、保存完了を初期表示の待ち条件に含めない
 - 段階表示（追加読み込み）
   - 通常検索・ブックマーク検索・おすすめで、一覧の末尾へ近づくと `RESULT_DISPLAY_BATCH_SIZE` 単位で追加表示
@@ -576,7 +583,7 @@ IndexedDB保存：
 - commit jobではnpmやartifact内のコードを実行せず、JSONを固定の2パスへコピーする
 - 差分がない場合は token 発行、コミット、CI、deploy のいずれも行わない。生成中に `main` が進んだ場合は古いデータのコミットをskipする
 - commit jobがpushした後、`report-key-remaps` jobがそのcommitと親の `data/songs.json` を比べる。
-  同じ `bookmarkSongKey` で開始時刻と曲名の両方が変わったキーを、別の歌唱を指すようになったものとして数える。
+  同じ `songKey` で開始時刻と曲名の両方が変わったキーを、別の歌唱を指すようになったものとして数える。
   曲名の表記の修正や開始時刻の修正だけでは数えない（2026-11-02 時点で、過去71回の更新に当てはまるものはなかった）
 - 見つかった場合は `bookmark-key-remap` label の Issue を作り、repository owner へ assign する。公開は止めない。
   シートの歌唱順の変更が意図したものかを確かめるための通知で、Issue は更新のたびに新しく作る

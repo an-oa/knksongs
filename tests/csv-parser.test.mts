@@ -14,6 +14,18 @@ test("csv: explicit video orientation is parsed from 画面の向き", () => {
     assert.equal(songs[0].endSeconds, 581);
 });
 
+test("csv: the song key is the video ID and the order within the archive", () => {
+    const csv = [
+        "#,配信日,配信上の立場,画面の向き,公開範囲,形態,歌枠リレー？,ハモリあり？,##,曲名,アーティスト名,キョクメイ,アーティストメイ,URL,終了時刻,メモ",
+        "161,2025/11/23,,横,全体,配信,,,1,First,Artist,ファースト,アーティスト,https://www.youtube.com/watch?v=1QvjYDqhWsk&t=152s,0:07:41,",
+        "161,2025/11/23,,横,全体,配信,,,2,Second,Artist,セカンド,アーティスト,https://www.youtube.com/watch?v=1QvjYDqhWsk&t=500s,0:12:00,"
+    ].join("\n");
+    const songs = parseCsvToSongs(csv);
+
+    // ブックマークはこのキーで曲を保存する。シートの「#」を振り直しても、動画と歌唱順が同じなら変わらない。
+    assert.deepEqual(songs.map((song) => song.songKey), ["1QvjYDqhWsk::1", "1QvjYDqhWsk::2"]);
+});
+
 test("csv: 配信上の立場 column keeps 収録 rows parseable", () => {
     const csv = [
         "#,配信日,配信上の立場,画面の向き,公開範囲,形態,歌枠リレー？,ハモリあり？,##,曲名,アーティスト名,キョクメイ,アーティストメイ,URL,終了時刻,メモ",
@@ -181,7 +193,7 @@ test("csv: archiveOrder must contain an integer only", () => {
     );
 });
 
-test("csv: duplicate song keys report both source rows", () => {
+test("csv: an archive position used by two rows reports both source rows", () => {
     const csv = [
         "#,配信日,配信上の立場,画面の向き,公開範囲,形態,歌枠リレー？,ハモリあり？,##,曲名,アーティスト名,キョクメイ,アーティストメイ,URL,終了時刻,メモ",
         "1,2026/03/11,,横,全体,配信,,,1,First Take,Artist,ファーストテイク,アーティスト,https://www.youtube.com/watch?v=abc123def45,,",
@@ -190,6 +202,6 @@ test("csv: duplicate song keys report both source rows", () => {
 
     assert.throws(
         () => parseCsvToSongs(csv),
-        /CSV 3行目「Retake」: songKey .* duplicates CSV 2行目「First Take」/
+        /CSV 3行目「Retake」: archiveId and archiveOrder "1::1" duplicates CSV 2行目「First Take」/
     );
 });

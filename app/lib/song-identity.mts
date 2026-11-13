@@ -3,7 +3,6 @@ export type SongIdentityRow = {
     archiveOrder?: unknown;
     videoId?: unknown;
     songKey?: unknown;
-    bookmarkSongKey?: unknown;
 };
 
 export type SongIdentityIssue =
@@ -12,24 +11,25 @@ export type SongIdentityIssue =
         index: number;
     }
     | {
+        /** songKey が生成規則と一致しない。 */
         kind: "mismatched-key";
         index: number;
-        fieldName: "songKey" | "bookmarkSongKey";
         expected: string;
     }
     | {
+        /** 同じ songKey を持つ曲が前にある。 */
         kind: "duplicate-key";
         index: number;
         firstIndex: number;
-        fieldName: "songKey" | "bookmarkSongKey";
+        value: string;
+    }
+    | {
+        /** archiveId と archiveOrder の組が同じ曲が前にある。value は buildArchiveSongKey の値。 */
+        kind: "duplicate-archive-order";
+        index: number;
+        firstIndex: number;
         value: string;
     };
-
-export type SongReferenceIndex<Row extends SongIdentityRow> = {
-    songByBookmarkKey: Map<string, Row>;
-    songByKey: Map<string, Row>;
-    bookmarkSongKeys: Set<string>;
-};
 
 /**
  * アーカイブ内の歌唱順を整数として解析し、空欄や整数でない値はnullを返す。
@@ -42,99 +42,116 @@ export function parseArchiveOrder(raw: unknown): number | null {
     return Number.isSafeInteger(parsed) ? parsed : null;
 }
 
-/** 現在仕様の曲キー（archiveId + archiveOrder）を生成する。 */
-export function buildSongKey(input: SongIdentityRow): string {
-    const archiveId = String(input.archiveId ?? "").trim();
-    const orderPart = Number.isSafeInteger(input.archiveOrder)
-        ? String(input.archiveOrder)
-        : "";
-    return `${archiveId}::${orderPart}`;
+/** キーの後半に使う歌唱順の文字列を返す。整数でなければ空文字。 */
+function formatArchiveOrderPart(archiveOrder: unknown): string {
+    return Number.isSafeInteger(archiveOrder) ? String(archiveOrder) : "";
 }
 
 /**
- * ブックマーク保存用の曲キー（videoId + archiveOrder）を生成する。
+ * 曲キー（videoId + archiveOrder）を生成する。
+ * 画面内での曲の参照と、ブックマークの保存の両方に、この 1 つのキーを使う。
  * videoIdがない場合だけarchiveIdへフォールバックする。
+ * @param input キーの材料を持つ曲行
+ * @returns 曲キー
  */
-export function buildBookmarkSongKey(input: SongIdentityRow): string {
+export function buildSongKey(input: SongIdentityRow): string {
     const keyHead = String(input.videoId ?? "").trim() || String(input.archiveId ?? "").trim();
-    const orderPart = Number.isSafeInteger(input.archiveOrder)
-        ? String(input.archiveOrder)
-        : "";
-    return `${keyHead}::${orderPart}`;
-}
-
-/** 曲行からブックマーク保存に使う参照キーを返す。 */
-export function getBookmarkSongRef(row: SongIdentityRow | null | undefined): string {
-    if (!row || typeof row !== "object") return "";
-    if (typeof row.bookmarkSongKey === "string" && row.bookmarkSongKey.trim()) {
-        return row.bookmarkSongKey.trim();
-    }
-    return typeof row.songKey === "string" ? row.songKey.trim() : "";
+    return `${keyHead}::${formatArchiveOrderPart(input.archiveOrder)}`;
 }
 
 /**
- * 旧形式の曲参照キーを現在のsongKey形式へ正規化する。
- * 最初期の形式（archiveId::archiveOrder::url）も、先頭の archiveId と archiveOrder だけを読んで同じ曲へ対応づける。
- * URL は曲の特定に使わないので、曲データにはこの形式のキーを持たせない。
+ * アーカイブ内の位置を表すキー（archiveId + archiveOrder）を生成する。
+ * シートの「#」と「##」の組が曲ごとに違うことの検証に使う。
+ * 2026-04 より前のブックマークはこの形で曲を指していたので、旧ブックマークの移行にも使う。
+ * 曲データには持たせず、必要なときに曲行から作る。
+ * @param input archiveId と archiveOrder を持つ曲行
+ * @returns アーカイブ内の位置を表すキー
+ */
+export function buildArchiveSongKey(input: SongIdentityRow): string {
+    return `${String(input.archiveId ?? "").trim()}::${formatArchiveOrderPart(input.archiveOrder)}`;
+}
+
+/**
+ * 旧形式の曲参照を、アーカイブ内の位置を表すキー（buildArchiveSongKey の形）へ正規化する。
+ * 旧形式は archiveId::archiveOrder と、その後ろに URL を付けた最初期の形式（archiveId::archiveOrder::url）の 2 つ。
+ * どちらも先頭の archiveId と archiveOrder だけを読む。URL は曲の特定に使わない。
  * 旧ブックマークの移行用で、旧形式の互換を打ち切るときに削除できる。
  * @param ref ブックマークに保存されていた曲参照
- * @returns 現在のsongKey。archiveId と整数の archiveOrder を読み取れなければ null
+ * @returns アーカイブ内の位置を表すキー。archiveId と整数の archiveOrder を読み取れなければ null
  */
-export function normalizeLegacySongRefToCurrent(ref: string | null | undefined): string | null {
+export function normalizeLegacySongRefToArchiveKey(ref: string | null | undefined): string | null {
     if (typeof ref !== "string") return null;
     const parts = ref.split("::");
     if (parts.length < 2) return null;
     const archiveId = (parts[0] || "").trim();
     const archiveOrder = parseArchiveOrder(parts[1]);
     if (!archiveId || archiveOrder === null) return null;
-    return buildSongKey({ archiveId, archiveOrder });
+    return buildArchiveSongKey({ archiveId, archiveOrder });
 }
 
 /**
- * 曲参照の解決と旧形式移行に使うインデックスを構築する。
+ * 曲キーから曲行を引く対応表を作る。
  * 重複は入力検証で拒否する前提とし、防御的に先に現れた行を保持する。
+ * @param songRows 曲行
+ * @returns 曲キーから曲行への対応表
  */
-export function buildSongReferenceIndex<Row extends SongIdentityRow>(
-    songRows: readonly Row[]
-): SongReferenceIndex<Row> {
-    const songByBookmarkKey = new Map<string, Row>();
+export function buildSongByKeyMap<Row extends SongIdentityRow>(songRows: readonly Row[]): Map<string, Row> {
     const songByKey = new Map<string, Row>();
-    const bookmarkSongKeys = new Set<string>();
-
     for (const row of songRows) {
-        const bookmarkSongRef = getBookmarkSongRef(row);
-        if (bookmarkSongRef) {
-            bookmarkSongKeys.add(bookmarkSongRef);
-            if (!songByBookmarkKey.has(bookmarkSongRef)) {
-                songByBookmarkKey.set(bookmarkSongRef, row);
-            }
-        }
         if (typeof row.songKey === "string" && row.songKey && !songByKey.has(row.songKey)) {
             songByKey.set(row.songKey, row);
         }
     }
-
-    return {
-        songByBookmarkKey,
-        songByKey,
-        bookmarkSongKeys
-    };
+    return songByKey;
 }
 
-/** 指定キーの重複を入力順に返す。呼び出し元が停止すれば残りの走査も行わない。 */
+/**
+ * アーカイブ内の位置を表すキーから、今の曲キーを引く対応表を作る。
+ * 旧ブックマークの移行用で、旧形式の互換を打ち切るときに削除できる。
+ * 重複は入力検証で拒否する前提とし、防御的に先に現れた行を保持する。
+ * @param songRows 曲行
+ * @returns アーカイブ内の位置を表すキーから曲キーへの対応表
+ */
+export function buildSongKeyByArchiveKeyMap(songRows: readonly SongIdentityRow[]): Map<string, string> {
+    const songKeyByArchiveKey = new Map<string, string>();
+    for (const row of songRows) {
+        if (typeof row.songKey !== "string" || !row.songKey) continue;
+        const archiveKey = getValidArchiveSongKey(row);
+        if (archiveKey && !songKeyByArchiveKey.has(archiveKey)) songKeyByArchiveKey.set(archiveKey, row.songKey);
+    }
+    return songKeyByArchiveKey;
+}
+
+/**
+ * archiveId と整数の archiveOrder がそろった行だけ、アーカイブ内の位置を表すキーを返す。
+ * @param row 曲行
+ * @returns アーカイブ内の位置を表すキー。材料が欠けていれば null
+ */
+function getValidArchiveSongKey(row: SongIdentityRow): string | null {
+    if (!Number.isSafeInteger(row.archiveOrder) || !String(row.archiveId ?? "").trim()) return null;
+    return buildArchiveSongKey(row);
+}
+
+/**
+ * キーの重複を入力順に返す。呼び出し元が停止すれば残りの走査も行わない。
+ * @param songRows 検証する曲行
+ * @param kind 返す診断の種類
+ * @param getKey 行からキーを取り出す関数。重複を調べない行では null か空文字を返す
+ */
 function* iterateDuplicateKeyIssues(
     songRows: readonly unknown[],
-    fieldName: "songKey" | "bookmarkSongKey"
+    kind: "duplicate-key" | "duplicate-archive-order",
+    getKey: (row: SongIdentityRow) => unknown
 ): Generator<SongIdentityIssue> {
     const firstIndexByKey = new Map<string, number>();
     for (let index = 0; index < songRows.length; index++) {
         const row = songRows[index];
         if (!isSongIdentityRow(row)) continue;
-        const value = row[fieldName];
+        const value = getKey(row);
         if (typeof value !== "string" || !value) continue;
         const firstIndex = firstIndexByKey.get(value);
         if (firstIndex !== undefined) {
-            yield { kind: "duplicate-key", index, firstIndex, fieldName, value };
+            yield { kind, index, firstIndex, value };
         } else {
             firstIndexByKey.set(value, index);
         }
@@ -147,7 +164,7 @@ function isSongIdentityRow(row: unknown): row is SongIdentityRow {
 }
 
 /**
- * 共通の検証規則を診断順（行ごとの整合性、songKey重複、bookmarkSongKey重複）で返す。
+ * 共通の検証規則を診断順（行ごとの整合性、archiveId と archiveOrder の組の重複、songKey重複）で返す。
  * 全件診断と実行時の早期終了で、検証条件と最初の問題の意味を共有する。
  */
 function* iterateSongIdentityIssues(songRows: readonly unknown[]): Generator<SongIdentityIssue> {
@@ -158,16 +175,14 @@ function* iterateSongIdentityIssues(songRows: readonly unknown[]): Generator<Son
             yield { kind: "invalid-archive-order", index };
             continue;
         }
-        const songKeyIssue = getMismatchedKeyIssue(row, index, "songKey", buildSongKey(row));
-        if (songKeyIssue) yield songKeyIssue;
-        const bookmarkIssue = getMismatchedKeyIssue(row, index, "bookmarkSongKey", buildBookmarkSongKey(row));
-        if (bookmarkIssue) yield bookmarkIssue;
+        const expected = buildSongKey(row);
+        if (row.songKey !== expected) yield { kind: "mismatched-key", index, expected };
     }
-    yield* iterateDuplicateKeyIssues(songRows, "songKey");
-    yield* iterateDuplicateKeyIssues(songRows, "bookmarkSongKey");
+    yield* iterateDuplicateKeyIssues(songRows, "duplicate-archive-order", getValidArchiveSongKey);
+    yield* iterateDuplicateKeyIssues(songRows, "duplicate-key", (row) => row.songKey);
 }
 
-/** CSV品質診断向けに、曲キーの整合性と一意性の問題を従来と同じ順序で全件返す。 */
+/** CSV品質診断向けに、曲キーの整合性と一意性の問題を診断順で全件返す。 */
 export function validateSongIdentities(songRows: readonly unknown[]): SongIdentityIssue[] {
     return Array.from(iterateSongIdentityIssues(songRows));
 }
@@ -175,14 +190,4 @@ export function validateSongIdentities(songRows: readonly unknown[]): SongIdenti
 /** 実行時JSON検証向けに最初の問題で停止し、全件分の診断配列を作らない。 */
 export function findFirstSongIdentityIssue(songRows: readonly unknown[]): SongIdentityIssue | null {
     return iterateSongIdentityIssues(songRows).next().value ?? null;
-}
-
-/** 生成規則と異なるキーだけ診断にし、正常な曲ごとの一時オブジェクトを省く。 */
-function getMismatchedKeyIssue(
-    row: SongIdentityRow,
-    index: number,
-    fieldName: "songKey" | "bookmarkSongKey",
-    expected: string
-): SongIdentityIssue | null {
-    return row[fieldName] !== expected ? { kind: "mismatched-key", index, fieldName, expected } : null;
 }
