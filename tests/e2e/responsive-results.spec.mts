@@ -326,7 +326,7 @@ test("shrinking only the height keeps the recommendations on screen while a vert
     await installNetworkMocks(page);
     const songs = createScrollableResultSongs(160).map((song) => {
         const url = `https://www.youtube.com/shorts/${song.videoId}`;
-        return { ...song, format: "オリ曲", url, legacySongKey: `${song.songKey}::${url}` };
+        return { ...song, format: "オリ曲", url };
     });
     await routeSongsJsonFixture(page, songs);
     await page.goto("/");

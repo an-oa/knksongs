@@ -2,7 +2,6 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
     buildBookmarkSongKey,
-    buildLegacySongKey,
     buildSongKey,
     buildSongReferenceIndex,
     findFirstSongIdentityIssue,
@@ -16,13 +15,11 @@ test("song identity: builds all keys from one canonical rule", () => {
     const row = {
         archiveId: " archive-1 ",
         archiveOrder: 2,
-        videoId: " video-1 ",
-        url: " https://youtu.be/video-1 "
+        videoId: " video-1 "
     };
 
     assert.equal(buildSongKey(row), "archive-1::2");
     assert.equal(buildBookmarkSongKey(row), "video-1::2");
-    assert.equal(buildLegacySongKey(row), "archive-1::2::https://youtu.be/video-1");
 });
 
 test("song identity: parses only complete safe integers", () => {
@@ -78,7 +75,7 @@ test("song identity: first-issue validation preserves diagnostic priority over e
         { kind: "duplicate-key", index: 2, fieldName: "bookmarkSongKey" }
     ]);
     for (const input of [[], [null, 42, []], [first], [first, { ...first }], rows,
-        [createSongFixture({ songKey: "bad", bookmarkSongKey: "bad", legacySongKey: "bad" })]]) {
+        [createSongFixture({ songKey: "bad", bookmarkSongKey: "bad" })]]) {
         assert.deepEqual(findFirstSongIdentityIssue(input), validateSongIdentities(input)[0] ?? null);
     }
 });

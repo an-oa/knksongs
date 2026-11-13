@@ -3,7 +3,6 @@ import { parseDateKey } from "./date-key.mjs";
 import { normalizeForSearch } from "./search-normalization.mjs";
 import {
     buildBookmarkSongKey,
-    buildLegacySongKey,
     buildSongKey,
     parseArchiveOrder
 } from "./song-identity.mjs";
@@ -147,7 +146,6 @@ export function parseCsvToSongs(csvText: string): Song[] {
         const artistEn = optionalText(r, "Artist Name");
         const archiveOrder = parseArchiveOrder(r[idx("##")]);
         const { videoId } = extractYoutubeInfo(url);
-        const legacySongKey = buildLegacySongKey({ archiveId, archiveOrder, url });
         const song: CsvSongCandidate["song"] = {
             date: r[idx("配信日")],
             dateKey: parseDateKey(r[idx("配信日")]),
@@ -156,7 +154,6 @@ export function parseCsvToSongs(csvText: string): Song[] {
             videoId,
             songKey: buildSongKey({ archiveId, archiveOrder }),
             bookmarkSongKey: buildBookmarkSongKey({ videoId, archiveId, archiveOrder }),
-            legacySongKey,
             format: r[idx("形態")],
             streamRole: streamRoleIndex >= 0 ? normalizeStreamRole(r[streamRoleIndex]) : "",
             videoOrientation: parseVideoOrientation(r[idx("画面の向き")], i + 2),

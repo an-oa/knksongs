@@ -38,8 +38,7 @@ function createSongsJson(
     return JSON.stringify(buildSongsJsonPayload([
         createSongFixture({
             archiveId,
-            songKey,
-            legacySongKey: `${songKey}::https://www.youtube.com/watch?v=abc123def45&t=10s`
+            songKey
         })
     ], contentHash, generatedAt));
 }
@@ -224,7 +223,6 @@ test("songs data source: structurally invalid network json is not cached and fal
 test("songs data source: unsafe links in network and cached JSON fall back to validated CSV", async (t) => {
     const payload: SongsJsonPayload = JSON.parse(createSongsJson("unsafe-archive::1", "sha256:unsafe"));
     payload.songs[0].url = "javascript:alert(1)";
-    payload.songs[0].legacySongKey = "unsafe-archive::1::javascript:alert(1)";
     const unsafeJson = JSON.stringify(payload);
     const songsJsonCache = createFakeTextCacheStore(unsafeJson);
     t.mock.method(console, "warn", () => {});

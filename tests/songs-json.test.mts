@@ -48,7 +48,7 @@ test("songs json: accepts supported HTTPS YouTube URL forms", () => {
         "https://www.youtube.com/shorts/abc123def45",
         "https://www.youtube.com/live/abc123def45"
     ]) {
-        const song = createSongFixture({ url, legacySongKey: `archive-1::1::${url}` });
+        const song = createSongFixture({ url });
         const payload = buildSongsJsonPayload([song], "sha256:test", GENERATED_AT);
         assert.deepEqual(parseSongsJsonPayload(JSON.stringify(payload)).songs, [song], url);
     }
@@ -65,7 +65,7 @@ test("songs json: rejects unsafe protocols and unsupported YouTube hosts", () =>
         ["//www.youtube.com/watch?v=abc123def45", /url must be an absolute https: YouTube URL/]
     ];
     for (const [url, expected] of cases) {
-        const song = createSongFixture({ url, legacySongKey: `archive-1::1::${url}` });
+        const song = createSongFixture({ url });
         const payload = {
             schemaVersion: SONGS_JSON_SCHEMA_VERSION,
             contentHash: "sha256:test",
@@ -84,7 +84,7 @@ test("songs json: rejects invalid URL video IDs and negative start seconds", () 
         ["https://www.youtube.com/watch?v=abc123def45&t=-1", /startSeconds must be a finite number/]
     ];
     for (const [url, expected] of cases) {
-        const song = createSongFixture({ url, legacySongKey: `archive-1::1::${url}` });
+        const song = createSongFixture({ url });
         const payload = {
             schemaVersion: SONGS_JSON_SCHEMA_VERSION,
             contentHash: "sha256:test",
@@ -173,8 +173,7 @@ test("songs json: rejects duplicate song and bookmark keys", () => {
     });
     const duplicateBookmarkKey = createSongFixture({
         archiveId: "archive-2",
-        songKey: "archive-2::1",
-        legacySongKey: "archive-2::1::https://www.youtube.com/watch?v=abc123def45&t=10s"
+        songKey: "archive-2::1"
     });
 
     assert.throws(

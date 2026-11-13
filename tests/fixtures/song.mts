@@ -11,7 +11,6 @@ export function createSongFixture(overrides: Partial<Song> = {}): Song {
         videoId: "abc123def45",
         songKey: "archive-1::1",
         bookmarkSongKey: "abc123def45::1",
-        legacySongKey: "archive-1::1::https://www.youtube.com/watch?v=abc123def45&t=10s",
         format: "配信",
         streamRole: "",
         videoOrientation: "vertical",

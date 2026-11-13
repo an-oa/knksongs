@@ -8,7 +8,6 @@ type Song = {
   videoId: string;
   songKey: string;
   bookmarkSongKey: string;
-  legacySongKey: string;
   format: string;
   streamRole: string;
   videoOrientation: VideoOrientation;
