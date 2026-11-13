@@ -10,7 +10,7 @@
  * 辞書を import すると、startup.mts が最初に読むコードが増えて、曲データの取得を始めるのが遅れる。
  */
 import { createLoadErrorElement } from "./lib/load-error-view.mjs";
-import { reloadPage } from "./lib/page-reload.mjs";
+import { refreshPreloadedModules, reloadPage } from "./lib/page-reload.mjs";
 
 /** 読み込み失敗の表示に出す文言。言語は index.html の埋め込みスクリプトが決めた <html lang> に合わせる。 */
 export const STARTUP_ERROR_TEXT = {
@@ -29,6 +29,10 @@ export const STARTUP_ERROR_TEXT = {
 /**
  * 件数表示と結果一覧に、読み込みに失敗したことと、ページを読み込み直すボタンを出す。
  * 英語で開いたときに中身を隠している印 (i18n-pending) も外し、失敗をすぐ見せる。
+ *
+ * 表示した後、先読みを指定している module を裏で取り直しておく。
+ * 画面の「再読み込み」ボタンは読み込み直す前に自分で取り直すが、ブラウザ自身の再読み込みにはその機会がない。
+ * WebKit は先読みに失敗した module を覚えているので、取り直しておかないと、通信が戻っていても同じ失敗を繰り返す。
  */
 export function showStartupLoadError(): void {
     const root = document.documentElement;
@@ -37,8 +41,10 @@ export function showStartupLoadError(): void {
     const resultCount = document.getElementById("resultCount");
     if (resultCount) resultCount.textContent = text.title;
     const resultList = document.getElementById("resultList");
-    if (!resultList) return;
-    resultList.replaceChildren(createLoadErrorElement(text, () => { void reloadPage(); }));
-    // 複数列の配置で付けた高さが残っていると、表示の下に空白ができる。
-    resultList.style.height = "";
+    if (resultList) {
+        resultList.replaceChildren(createLoadErrorElement(text, () => { void reloadPage(); }));
+        // 複数列の配置で付けた高さが残っていると、表示の下に空白ができる。
+        resultList.style.height = "";
+    }
+    void refreshPreloadedModules();
 }

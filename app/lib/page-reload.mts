@@ -33,14 +33,24 @@ async function refreshUrls(urls: string[], timeoutMs: number): Promise<void> {
 }
 
 /**
- * ページを読み込み直す。読み込みに失敗したときに出す「再読み込み」ボタンから使う。
- * その前に、HTML が先読みを指定している module を、キャッシュを使わずに取り直す。
+ * HTML が先読みを指定している module を、キャッシュを使わずに取り直す。
  * WebKit は、先読みに失敗した module を覚えていて、読み込み直しても取りに行かないため、
- * そのまま読み込み直すと、通信が戻っていても同じ失敗を繰り返す。取り直しておくと、読み込み直した後は成功する。
+ * そのまま読み込み直すと、通信が戻っていても同じ失敗を繰り返す。取り直しておくと、読み込み直した後は取りに行く。
+ * 取り直しそのものが失敗しても、WebKit は覚えていた失敗を捨てるので、次に読み込み直した時には取りに行く。
+ * 取り直しに失敗しても、待ち時間を過ぎても、例外にせず終える。
+ * @param options 取り直しを待つ上限
+ */
+export async function refreshPreloadedModules(options: PageReloadOptions = {}): Promise<void> {
+    await refreshUrls(getPreloadedModuleUrls(), options.timeoutMs ?? MODULE_REFRESH_TIMEOUT_MS);
+}
+
+/**
+ * ページを読み込み直す。読み込みに失敗したときに出す「再読み込み」ボタンから使う。
+ * その前に、先読みを指定している module を取り直す (refreshPreloadedModules)。
  * 取り直しに失敗しても、待ち時間を過ぎても、読み込み直しは行う。
  * @param options 取り直しを待つ上限
  */
 export async function reloadPage(options: PageReloadOptions = {}): Promise<void> {
-    await refreshUrls(getPreloadedModuleUrls(), options.timeoutMs ?? MODULE_REFRESH_TIMEOUT_MS);
+    await refreshPreloadedModules(options);
     window.location.reload();
 }

@@ -1,4 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
+import { startFailingSiteServer } from "./support/failing-site-server.mts";
 import { installNetworkMocks } from "./support/network-mocks.mts";
 import { getSongCard, waitForInitialLoad } from "./support/ui-helpers.mts";
 
@@ -80,6 +81,33 @@ test.describe("when the app code cannot be loaded", () => {
                 await page.locator("#searchBox").fill("Manual Song");
                 await expect(getSongCard(page, "Manual Song")).toBeVisible();
             });
+        });
+    }
+
+    for (const { way, reloadPage } of [
+        { way: "the browser's own reload", reloadPage: (page: Page) => page.reload() },
+        { way: "the reload button", reloadPage: (page: Page) => page.getByRole("button", { name: "再読み込み" }).click() }
+    ]) {
+        test(`${way} recovers after the server failed to deliver the app code`, async ({ page }) => {
+            // WebKit は、サーバーから失敗を受け取った先読みを覚えていて、読み込み直しても取りに行かない。
+            // 通信の差し替えでは再現しないので、実際のサーバーに失敗を返させる。
+            const server = await startFailingSiteServer(BOOTSTRAP_ROUTE);
+            try {
+                await installNetworkMocks(page);
+                await page.goto(server.url);
+                await expect(page.locator("#resultList .result-load-error")).toBeVisible();
+                // 失敗を出した時に、ページは先読みした module を裏で取り直す。サーバーはまだ失敗を返す。
+                await expect.poll(() => server.getFailedRequestCount()).toBe(2);
+
+                server.recover();
+                await reloadPage(page);
+                await waitForInitialLoad(page);
+                await expect(page.locator("#resultList .result-load-error")).toHaveCount(0);
+                await page.locator("#searchBox").fill("Manual Song");
+                await expect(getSongCard(page, "Manual Song")).toBeVisible();
+            } finally {
+                await server.stop();
+            }
         });
     }
 });

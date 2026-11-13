@@ -1,6 +1,6 @@
 import test, { type TestContext } from "node:test";
 import assert from "node:assert/strict";
-import { reloadPage } from "../app/lib/page-reload.mts";
+import { refreshPreloadedModules, reloadPage } from "../app/lib/page-reload.mts";
 import { installFakeDom } from "./test-helpers.mts";
 
 /**
@@ -97,6 +97,40 @@ test("page reload: a page without preloaded modules reloads at once", async (t) 
         await reloadPage();
         assert.equal(fetchMock.mock.callCount(), 0);
         assert.equal(calls.reload, 1);
+    } finally {
+        dom();
+    }
+});
+
+test("page reload: refreshing alone fetches the preloaded modules again and leaves the page as it is", async (t) => {
+    const dom = installFakeDom();
+    try {
+        const calls = createPageWithPreloads(dom, [
+            "https://example.test/browser/bootstrap-AAAA.mjs",
+            "https://example.test/browser/chunk-BBBB.mjs"
+        ]);
+        const fetchMock = mockFetch(t, async () => new Response("export {};"));
+
+        await refreshPreloadedModules();
+
+        assert.deepEqual(fetchMock.mock.calls.map(({ arguments: [url, options] }) => [url, options?.cache]), [
+            ["https://example.test/browser/bootstrap-AAAA.mjs", "reload"],
+            ["https://example.test/browser/chunk-BBBB.mjs", "reload"]
+        ]);
+        assert.equal(calls.reload, 0);
+    } finally {
+        dom();
+    }
+});
+
+test("page reload: refreshing alone ends quietly when the modules cannot be fetched", async (t) => {
+    const dom = installFakeDom();
+    try {
+        const calls = createPageWithPreloads(dom, ["https://example.test/browser/bootstrap-AAAA.mjs"]);
+        mockFetch(t, async () => { throw new TypeError("network down"); });
+
+        await assert.doesNotReject(refreshPreloadedModules());
+        assert.equal(calls.reload, 0);
     } finally {
         dom();
     }
