@@ -1,5 +1,6 @@
 import type { YoutubeSharedPlaybackState } from "./lib/youtube/shared-playback.mjs";
 import type { RecommendedSearchCache } from "./lib/search-recommendation.mjs";
+import type { SearchBooleanFilterKey } from "./lib/search-boolean-filters.mjs";
 import type { SiteLanguage } from "./lib/site-language.mjs";
 
 /**
@@ -26,9 +27,9 @@ export type AppDataState = {
   currentResults: Song[];
   /** 現在 DOM に表示する検索結果の上限件数。 */
   displayLimit: number;
-  /** ブックマーク名をキーにした保存済みブックマーク。 */
+  /** ブックマーク ID をキーにした保存済みブックマーク。 */
   bookmarks: Record<string, BookmarkRecord>;
-  /** 現在表示中のブックマーク名。通常検索時は null。 */
+  /** 現在表示中のブックマークの ID。通常検索時は null。 */
   activeBookmark: string | null;
 };
 
@@ -95,28 +96,35 @@ export type AppUiElements = Partial<{
   bookmarkNotificationRegion: HTMLElement | null;
 }>;
 
+/**
+ * 検索条件のうち、検索語・真偽値フィルター・日付範囲。動画の種類は selectedFormats に持つ。
+ * 検索と保存はここから読む。入力欄は、利用者の操作を受けてここを書き換え、ここの値を映すだけにする。
+ * 入力欄の値を正にすると、ブラウザがフォームの値を復元したときに食い違い、補正のための状態が増える。
+ */
+export type SearchConditionsState = {
+  /** 検索窓に入力した検索語。前後の空白も入力のまま持つ。 */
+  query: string;
+  /** 真偽値フィルターごとの選択状態。 */
+  booleanFilters: Record<SearchBooleanFilterKey, boolean>;
+  /**
+   * 開始日。YYYY・YYYY-MM・YYYY-MM-DD のいずれかで、未選択は空文字。
+   * 日付の選択肢は曲データの読み込み後に決まるので、それまでは復元した値をここに持ち、読み込み後に選択欄へ映す。
+   */
+  dateFrom: string;
+  /** 終了日。形式と扱いは dateFrom と同じ。 */
+  dateTo: string;
+};
+
 /** 検索 UI の入力状態や派生キャッシュ。 */
 export type SearchUiRuntimeState = {
+  /** 検索語・真偽値フィルター・日付範囲の検索条件。 */
+  conditions: SearchConditionsState;
   /** 選択中の形式フィルタ。 */
   selectedFormats: Set<string>;
   /** 条件未指定時に表示するおすすめ曲のキャッシュ。 */
   recommendedCache: RecommendedSearchCache | null;
   /** 曲データ読み込みが完了して検索可能かどうか。 */
   dataReady: boolean;
-  /** ユーザーが検索語を編集したかどうか。 */
-  userTouchedQuery: boolean;
-  /** ユーザーが検索フィルタを編集したかどうか。 */
-  userTouchedFilters: boolean;
-  /** 保存済み検索条件の復元処理が完了したかどうか。 */
-  hasRestoredSearchState: boolean;
-};
-
-/** 曲データ読み込み前に一時保持する日付セレクト復元値。 */
-export type DateUiPendingValues = {
-  /** 開始日側の `YYYY-MM-DD` 文字列。 */
-  from: string | null;
-  /** 終了日側の `YYYY-MM-DD` 文字列。 */
-  to: string | null;
 };
 
 /** 日付フィルタ UI の境界値と選択肢生成用キャッシュ。 */
@@ -125,8 +133,6 @@ export type DateUiRuntimeState = {
   bounds: SearchDateRange | null;
   /** `YYYY-MM` ごとの選択可能な日一覧。 */
   index: Map<string, number[]> | null;
-  /** 日付セレクト初期化後に適用する保留値。 */
-  pendingValues: DateUiPendingValues | null;
 };
 
 /** サムネイル表示と連続再生に関わる UI ランタイム状態。 */

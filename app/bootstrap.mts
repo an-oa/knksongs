@@ -92,7 +92,7 @@ type RenderCallbacksInput = {
 
 type StorageCallbacksInput = {
     getRenderController: () => ReturnType<typeof createRenderController>;
-    dateFilterController: ReturnType<typeof createDateFilterController>;
+    getSearchUiActions: () => ReturnType<typeof createSearchUiActions>;
     searchCoordinator: ReturnType<typeof createSearchCoordinator>;
     getBookmarkUiController: () => ReturnType<typeof createBookmarkUiController> | null;
 };
@@ -173,17 +173,17 @@ function createRenderCallbacks({
 }
 
 /**
- * storage controller から日付・検索実行・ブックマーク UI へ委譲する callback 群を作成する。
+ * storage controller から検索条件の入力欄・検索実行・ブックマーク UI へ委譲する callback 群を作成する。
+ * 検索 UI 操作は storage controller より後に作るので、呼び出し時に getter で解決する。
  */
 function createStorageCallbacks({
     getRenderController,
-    dateFilterController,
+    getSearchUiActions,
     searchCoordinator,
     getBookmarkUiController
 }: StorageCallbacksInput): Parameters<typeof createStorageController>[0]["callbacks"] {
     return {
-        getDateSelectValue: (kind) => dateFilterController.getDateSelectValue(kind),
-        applyPendingDateValues: () => dateFilterController.applyPendingDateValues(),
+        renderSearchConditions: () => getSearchUiActions().renderConditions(),
         updateDisplay: () => getRenderController().updateDisplay(),
         renderBookmarks: () => {
             const bookmarkUiController = getBookmarkUiController();
@@ -261,11 +261,11 @@ function createAppControllers() {
     });
 
     /**
-     * 日付選択肢と選択中の期間を、検索処理とデータ更新処理から共有する controller。
+     * 日付の選択肢を作り、選んだ期間を検索条件の状態 (appUiState.search.conditions) と同期する controller。
      */
     const dateFilterController = createDateFilterController({
         ui: appUiState,
-        onDateSelectionChange: () => searchUiActions.markFilterTouched({ immediate: true })
+        onDateSelectionChange: () => searchUiActions.commitFilterChange({ immediate: true })
     });
 
     /**
@@ -274,14 +274,13 @@ function createAppControllers() {
     const resultCountController = createResultCountController({ ui: appUiState });
 
     /**
-     * 検索 UI から条件を読み取り、表示対象の曲配列を appDataState.currentResults へ反映する controller。
+     * 検索条件の状態を読み取り、表示対象の曲配列を appDataState.currentResults へ反映する controller。
      * 描画更新は renderController へ委譲し、結果リストのスクロール位置もここで揃える。
      */
     const searchController = createSearchController({
         data: appDataState,
         ui: appUiState,
         searchFiltersController,
-        dateFilterController,
         constants: {
             RANDOM_DISPLAY_COUNT,
             MIN_PERFORMANCE_FOR_RANDOM,
@@ -407,7 +406,7 @@ function createAppControllers() {
         },
         callbacks: createStorageCallbacks({
             getRenderController: () => renderController,
-            dateFilterController,
+            getSearchUiActions: () => searchUiActions,
             searchCoordinator,
             getBookmarkUiController: () => bookmarkUiController
         })
@@ -461,9 +460,10 @@ function createAppControllers() {
     });
 
     /**
-     * 日付入力、検索実行、保存を明示的な依存として受け取り、検索 UI 操作を束ねる。
+     * 検索窓と絞り込みの操作を検索条件の状態へ書き、検索実行と保存につなぐ。
+     * 日付入力、検索実行、保存を明示的な依存として受け取る。
      */
-    const searchUiActions = createSearchUiActions({
+    const searchUiActions: ReturnType<typeof createSearchUiActions> = createSearchUiActions({
         ui: appUiState,
         search: searchUiState,
         searchFiltersController,
@@ -489,11 +489,11 @@ function createAppControllers() {
     const resultSummaryController = createResultSummaryController({
         ui: appUiState,
         conditions: {
-            getQuery: () => appUiState.el.searchBox?.value ?? "",
+            getQuery: () => searchUiState.conditions.query,
             getDateValue: (kind) => dateFilterController.getDateSelectValue(kind),
             getSelectedFormats: () => DEFAULT_FORMATS.filter((format) => searchUiState.selectedFormats.has(format)),
             areAllFormatsSelected: () => searchFiltersController.areAllFormatsSelected(),
-            isBooleanFilterEnabled: (key) => appUiState.el[key]?.checked === true,
+            isBooleanFilterEnabled: (key) => searchUiState.conditions.booleanFilters[key],
             isBookmarkActive: () => appDataState.activeBookmark !== null
         },
         actions: {
@@ -538,11 +538,11 @@ function createAppControllers() {
     });
 
     /**
-     * bfcache 復帰やフォーカス復帰時に、保存済み設定と検索 UI を再同期する controller。
+     * bfcache 復帰やフォーカス復帰時に、保存済み設定を読み直し、検索条件の入力欄を状態へ揃え直す controller。
      */
     const uiSyncController = createUiSyncController({
         uiSyncPasses: UI_SYNC_PASSES,
-        syncSearchUI: searchUiActions.syncSearchUI,
+        refreshConditionInputs: searchUiActions.refreshConditionInputs,
         applyThemeFromStorage: () => applyThemeFromStorage({ ui: appUiState }),
         applyPlaybackSettingsFromStorage: () => playbackSettingsController.applyPlaybackSettingsFromStorage(),
         applySiteLanguageFromStorage: () => {
@@ -609,7 +609,7 @@ async function initUI(): Promise<void> {
     siteLanguageController.setup();
 
     searchFiltersController.setupFilterOptions({
-        onFilterChange: searchUiActions.markFilterTouched
+        onFilterChange: searchUiActions.commitFilterChange
     });
     autoHideHeaderController.setup();
     sidebarController.setupUIHandlers();
@@ -635,9 +635,6 @@ async function initUI(): Promise<void> {
         return;
     }
     bookmarkPersistenceController.migrateLegacyBookmarkSongRefs();
-    if (initialData.shouldResetConditions) {
-        searchUiActions.resetSearchConditions(false);
-    }
     searchCoordinator.search();
 }
 

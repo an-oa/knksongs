@@ -13,7 +13,9 @@ const makeRow = createSearchSongFixtureFactory();
  * 年月日のセレクトは、実ページと同じく .date-select-group で側ごとにまとめる。
  */
 function createDateUiState() {
-    const date: DateUiRuntimeState = { bounds: null, index: null, pendingValues: null };
+    const date: DateUiRuntimeState = { bounds: null, index: null };
+    /** 検索条件のうち日付範囲。controller は選択欄で選んだ値をここへ書き、ここの値を選択欄へ映す。 */
+    const search = { conditions: { dateFrom: "", dateTo: "" } };
     const el = {
         dateFromYear: document.createElement("select"),
         dateFromMonth: document.createElement("select"),
@@ -30,7 +32,20 @@ function createDateUiState() {
     const toGroup = document.createElement("div");
     toGroup.className = "date-select-group";
     toGroup.append(el.dateToYear, el.dateToMonth, el.dateToDay);
-    return { el, date, fromGroup, language: { current: "ja" as SiteLanguage } };
+    return { el, date, search, fromGroup, language: { current: "ja" as SiteLanguage } };
+}
+
+/**
+ * 選択欄で選んでいる日付を、YYYY・YYYY-MM・YYYY-MM-DD の文字列で読む。
+ * 検索条件の状態ではなく、選択欄そのものの値を確かめるときに使う。
+ * @param ui 日付コントローラー検証用の UI 状態
+ * @param kind 読む側
+ */
+function readSelectedDate(ui: ReturnType<typeof createDateUiState>, kind: "from" | "to") {
+    const selects = kind === "from"
+        ? [ui.el.dateFromYear, ui.el.dateFromMonth, ui.el.dateFromDay]
+        : [ui.el.dateToYear, ui.el.dateToMonth, ui.el.dateToDay];
+    return selects.map((select) => select.value).filter(Boolean).join("-");
 }
 
 
@@ -71,20 +86,22 @@ test("createDateFilterController: syncDateSelectOptions constrains end-side opti
     }
 });
 
-test("createDateFilterController: getDateSelectValue returns partial date values", () => {
+test("createDateFilterController: getDateSelectValue returns the dates held in the conditions state", () => {
     const restoreDom = installFakeDom();
     try {
         const ui = createDateUiState();
         const controller = createDateFilterController({ ui });
+        assert.equal(controller.getDateSelectValue("from"), "");
+        assert.equal(controller.getDateSelectValue("to"), "");
 
-        ui.el.dateFromYear.value = "2024";
-        assert.equal(controller.getDateSelectValue("from"), "2024");
-
-        ui.el.dateFromMonth.value = "02";
+        ui.search.conditions.dateFrom = "2024-02";
+        ui.search.conditions.dateTo = "2024-02-10";
         assert.equal(controller.getDateSelectValue("from"), "2024-02");
+        assert.equal(controller.getDateSelectValue("to"), "2024-02-10");
 
-        ui.el.dateFromDay.value = "10";
-        assert.equal(controller.getDateSelectValue("from"), "2024-02-10");
+        // 選択欄だけを書き換えても、確定するまでは状態を変えない。
+        ui.el.dateFromYear.value = "2025";
+        assert.equal(controller.getDateSelectValue("from"), "2024-02");
     } finally {
         restoreDom();
     }
@@ -109,18 +126,22 @@ test("createDateFilterController: month change commits corrected day candidates 
 
         controller.commitDateInputChange(ui.el.dateFromMonth);
 
+        // 通知を受けた側が読む時点で、補正を終えた値が検索条件の状態に入っている。
         assert.deepEqual(committedValues, ["2024-03"]);
-        assert.equal(controller.getDateSelectValue("from"), "2024-03");
+        assert.equal(ui.search.conditions.dateFrom, "2024-03");
+        assert.equal(readSelectedDate(ui, "from"), "2024-03");
         assert.deepEqual(getSelectValues(ui.el.dateFromDay), ["", "05", "20"]);
         assert.deepEqual(getSelectValues(ui.el.dateToMonth), [""]);
         controller.commitDateSelectionClear("from");
         assert.deepEqual(committedValues, ["2024-03", ""]);
+        assert.equal(ui.search.conditions.dateFrom, "");
+        assert.equal(readSelectedDate(ui, "from"), "");
     } finally {
         restoreDom();
     }
 });
 
-test("createDateFilterController: applyDateSelectValue restores partial date values", () => {
+test("createDateFilterController: applyDateSelectValue shows partial date values in the selects", () => {
     const restoreDom = installFakeDom();
     try {
         const ui = createDateUiState();
@@ -135,20 +156,20 @@ test("createDateFilterController: applyDateSelectValue restores partial date val
         controller.applyDateSelectValue("from", "2024-02");
         controller.applyDateSelectValue("to", "2024");
 
-        assert.equal(controller.getDateSelectValue("from"), "2024-02");
+        assert.equal(readSelectedDate(ui, "from"), "2024-02");
         assert.equal(ui.el.dateFromDay.value, "");
-        assert.equal(controller.getDateSelectValue("to"), "2024");
+        assert.equal(readSelectedDate(ui, "to"), "2024");
         assert.equal(ui.el.dateToMonth.value, "");
         assert.equal(ui.el.dateToDay.value, "");
 
         controller.applyDateSelectValue("from", "2024-02-10");
         controller.applyDateSelectValue("from", "2024-02");
-        assert.equal(controller.getDateSelectValue("from"), "2024-02");
+        assert.equal(readSelectedDate(ui, "from"), "2024-02");
         assert.equal(ui.el.dateFromDay.value, "");
 
         controller.applyDateSelectValue("to", "2024-03-05");
         controller.applyDateSelectValue("to", "2024");
-        assert.equal(controller.getDateSelectValue("to"), "2024");
+        assert.equal(readSelectedDate(ui, "to"), "2024");
         assert.equal(ui.el.dateToMonth.value, "");
         assert.equal(ui.el.dateToDay.value, "");
     } finally {
@@ -156,7 +177,7 @@ test("createDateFilterController: applyDateSelectValue restores partial date val
     }
 });
 
-test("createDateFilterController: reapplying date bounds preserves complete selections", () => {
+test("createDateFilterController: reapplying date bounds keeps the committed selections", () => {
     const restoreDom = installFakeDom();
     try {
         const ui = createDateUiState();
@@ -167,13 +188,23 @@ test("createDateFilterController: reapplying date bounds preserves complete sele
         ];
 
         controller.applyDateInputRange(rows);
-        controller.applyDateSelectValue("from", "2025-03-15");
-        controller.applyDateSelectValue("to", "2025-04-20");
+        // 利用者が選択欄で選んで確定した値は、検索条件の状態に入る。
+        ui.el.dateFromYear.value = "2025";
+        controller.commitDateInputChange(ui.el.dateFromYear);
+        ui.el.dateFromMonth.value = "03";
+        controller.commitDateInputChange(ui.el.dateFromMonth);
+        ui.el.dateFromDay.value = "15";
+        controller.commitDateInputChange(ui.el.dateFromDay);
+        ui.search.conditions.dateTo = "2025-04-20";
+        controller.renderDateSelection();
+        assert.deepEqual(ui.search.conditions, { dateFrom: "2025-03-15", dateTo: "2025-04-20" });
 
+        // 選択肢を作り直しても、状態に持つ値を選択欄へ映し直す。
         controller.applyDateInputRange(rows);
 
-        assert.equal(controller.getDateSelectValue("from"), "2025-03-15");
-        assert.equal(controller.getDateSelectValue("to"), "2025-04-20");
+        assert.equal(readSelectedDate(ui, "from"), "2025-03-15");
+        assert.equal(readSelectedDate(ui, "to"), "2025-04-20");
+        assert.deepEqual(ui.search.conditions, { dateFrom: "2025-03-15", dateTo: "2025-04-20" });
     } finally {
         restoreDom();
     }
@@ -193,7 +224,7 @@ test("createDateFilterController: applyDateSelectValue rounds unavailable saved 
         controller.applyDateInputRange(rows);
         controller.applyDateSelectValue("from", "2024-02-15");
 
-        assert.equal(controller.getDateSelectValue("from"), "2024-02");
+        assert.equal(readSelectedDate(ui, "from"), "2024-02");
         assert.equal(ui.el.dateFromDay.value, "");
         assert.deepEqual(controller.getPartialDateRange("from"), {
             minKey: 20240201,
@@ -203,12 +234,36 @@ test("createDateFilterController: applyDateSelectValue rounds unavailable saved 
         controller.resetDateSelects();
         controller.applyDateSelectValue("to", "2024-02-15");
 
-        assert.equal(controller.getDateSelectValue("to"), "2024-02");
+        assert.equal(readSelectedDate(ui, "to"), "2024-02");
         assert.equal(ui.el.dateToDay.value, "");
         assert.deepEqual(controller.getPartialDateRange("to"), {
             minKey: 20240201,
             maxKey: 20240229
         });
+    } finally {
+        restoreDom();
+    }
+});
+
+test("createDateFilterController: restored dates that cannot be selected are corrected in the state too", () => {
+    const restoreDom = installFakeDom();
+    try {
+        const ui = createDateUiState();
+        const controller = createDateFilterController({ ui });
+        // 保存した日 (15 日) の曲がなくなり、範囲外の年も保存されていた場合。
+        ui.search.conditions.dateFrom = "2024-02-15";
+        ui.search.conditions.dateTo = "2031";
+
+        controller.applyDateInputRange([
+            makeRow({ dateKey: 20240210 }),
+            makeRow({ dateKey: 20240220 }),
+            makeRow({ dateKey: 20240305 })
+        ]);
+
+        // 選択欄に出せる値へ丸め、検索と保存が読む状態も選択欄と同じ値にする。
+        assert.equal(readSelectedDate(ui, "from"), "2024-02");
+        assert.equal(readSelectedDate(ui, "to"), "");
+        assert.deepEqual(ui.search.conditions, { dateFrom: "2024-02", dateTo: "" });
     } finally {
         restoreDom();
     }
@@ -231,17 +286,17 @@ test("createDateFilterController: clampDateInputsIfNeeded preserves partial oppo
         ui.el.dateToYear.value = "2024";
         controller.clampDateInputsIfNeeded();
         controller.syncDateSelectOptions();
-        assert.equal(controller.getDateSelectValue("to"), "2024");
+        assert.equal(readSelectedDate(ui, "to"), "2024");
 
         ui.el.dateToMonth.value = "02";
         controller.clampDateInputsIfNeeded();
         controller.syncDateSelectOptions();
-        assert.equal(controller.getDateSelectValue("to"), "2024-02");
+        assert.equal(readSelectedDate(ui, "to"), "2024-02");
 
         ui.el.dateToDay.value = "15";
         controller.clampDateInputsIfNeeded();
         controller.syncDateSelectOptions();
-        assert.equal(controller.getDateSelectValue("to"), "2024-02-15");
+        assert.equal(readSelectedDate(ui, "to"), "2024-02-15");
 
         controller.resetDateSelects();
         controller.applyDateSelectValue("to", "2024-03-05");
@@ -249,17 +304,17 @@ test("createDateFilterController: clampDateInputsIfNeeded preserves partial oppo
         ui.el.dateFromYear.value = "2024";
         controller.clampDateInputsIfNeeded();
         controller.syncDateSelectOptions();
-        assert.equal(controller.getDateSelectValue("from"), "2024");
+        assert.equal(readSelectedDate(ui, "from"), "2024");
 
         ui.el.dateFromMonth.value = "02";
         controller.clampDateInputsIfNeeded();
         controller.syncDateSelectOptions();
-        assert.equal(controller.getDateSelectValue("from"), "2024-02");
+        assert.equal(readSelectedDate(ui, "from"), "2024-02");
 
         ui.el.dateFromDay.value = "10";
         controller.clampDateInputsIfNeeded();
         controller.syncDateSelectOptions();
-        assert.equal(controller.getDateSelectValue("from"), "2024-02-10");
+        assert.equal(readSelectedDate(ui, "from"), "2024-02-10");
     } finally {
         restoreDom();
     }
@@ -286,8 +341,9 @@ test("createDateFilterController: clampDateInputsToBounds clamps and preserves c
 
         controller.clampDateInputsToBounds(20240210, 20240305);
 
-        assert.equal(controller.getDateSelectValue("from"), "2024-03-05");
-        assert.equal(controller.getDateSelectValue("to"), "2024-03-05");
+        assert.equal(readSelectedDate(ui, "from"), "2024-03-05");
+        assert.equal(readSelectedDate(ui, "to"), "2024-03-05");
+        assert.deepEqual(ui.search.conditions, { dateFrom: "2024-03-05", dateTo: "2024-03-05" });
     } finally {
         restoreDom();
     }
@@ -317,28 +373,70 @@ test("createDateFilterController: clampDateInputsIfNeeded keeps partial year sel
     }
 });
 
-test("createDateFilterController: applyPendingDateValues restores selections and clears pending state", () => {
+test("createDateFilterController: dates restored before the song data arrives are shown once the options exist", () => {
     const restoreDom = installFakeDom();
     try {
         const ui = createDateUiState();
         const controller = createDateFilterController({ ui });
-        const rows = [
+        ui.search.conditions.dateFrom = "2024-02-10";
+        ui.search.conditions.dateTo = "2024-03-05";
+
+        // 選択肢がまだないので選択欄には映せないが、状態は消さずに持ち続ける。
+        controller.renderDateSelection();
+        assert.equal(readSelectedDate(ui, "from"), "");
+        assert.deepEqual(ui.search.conditions, { dateFrom: "2024-02-10", dateTo: "2024-03-05" });
+
+        controller.applyDateInputRange([
             makeRow({ dateKey: 20240210 }),
             makeRow({ dateKey: 20240215 }),
             makeRow({ dateKey: 20240305 })
-        ];
+        ]);
 
-        controller.applyDateInputRange(rows);
-        ui.date.pendingValues = {
-            from: "2024-02-10",
-            to: "2024-03-05"
-        };
+        assert.equal(readSelectedDate(ui, "from"), "2024-02-10");
+        assert.equal(readSelectedDate(ui, "to"), "2024-03-05");
+        assert.deepEqual(ui.search.conditions, { dateFrom: "2024-02-10", dateTo: "2024-03-05" });
+    } finally {
+        restoreDom();
+    }
+});
 
-        controller.applyPendingDateValues();
+test("createDateFilterController: renderDateSelection replaces what the selects showed with the state", () => {
+    const restoreDom = installFakeDom();
+    try {
+        const ui = createDateUiState();
+        const controller = createDateFilterController({ ui });
+        controller.applyDateInputRange([
+            makeRow({ dateKey: 20240210 }),
+            makeRow({ dateKey: 20240305 })
+        ]);
+        controller.applyDateSelectValue("from", "2024-02-10");
+        controller.applyDateSelectValue("to", "2024-03-05");
 
-        assert.equal(controller.getDateSelectValue("from"), "2024-02-10");
-        assert.equal(controller.getDateSelectValue("to"), "2024-03-05");
-        assert.equal(ui.date.pendingValues, null);
+        // 状態が未選択なら、選択欄に残っていた値も消す。
+        ui.search.conditions.dateTo = "2024-03";
+        controller.renderDateSelection();
+
+        assert.equal(readSelectedDate(ui, "from"), "");
+        assert.equal(readSelectedDate(ui, "to"), "2024-03");
+        assert.deepEqual(ui.search.conditions, { dateFrom: "", dateTo: "2024-03" });
+    } finally {
+        restoreDom();
+    }
+});
+
+test("createDateFilterController: resetting clears the state even before the options exist", () => {
+    const restoreDom = installFakeDom();
+    try {
+        const ui = createDateUiState();
+        const controller = createDateFilterController({ ui });
+        ui.search.conditions.dateFrom = "2024-02-10";
+        ui.search.conditions.dateTo = "2024-03-05";
+
+        controller.resetDateSelectGroup("to");
+        assert.deepEqual(ui.search.conditions, { dateFrom: "2024-02-10", dateTo: "" });
+
+        controller.resetDateSelects();
+        assert.deepEqual(ui.search.conditions, { dateFrom: "", dateTo: "" });
     } finally {
         restoreDom();
     }
@@ -424,8 +522,9 @@ test("createDateFilterController: clear buttons clear only their own side", () =
 
         invokeListener(ui.el.clearDateToBtn, "click", {});
 
-        assert.equal(controller.getDateSelectValue("from"), "2024-02-10");
-        assert.equal(controller.getDateSelectValue("to"), "");
+        assert.equal(readSelectedDate(ui, "from"), "2024-02-10");
+        assert.equal(readSelectedDate(ui, "to"), "");
+        assert.deepEqual(ui.search.conditions, { dateFrom: "2024-02-10", dateTo: "" });
         assert.equal(notificationCount, 1);
     } finally {
         restoreDom();

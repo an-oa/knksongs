@@ -1,6 +1,12 @@
 import test from "node:test";
 import type { SiteLanguage } from "../app/lib/site-language.mts";
-import type { AppDataState, SearchUiRuntimeState, DateUiRuntimeState, LookupUiRuntimeState } from "../app/state.types";
+import type {
+    AppDataState,
+    SearchConditionsState,
+    SearchUiRuntimeState,
+    DateUiRuntimeState,
+    LookupUiRuntimeState
+} from "../app/state.types";
 import assert from "node:assert/strict";
 import { createSearchFiltersController } from "../app/ui/search-filters/controller.mts";
 import { createSearchSongFixtureFactory } from "./fixtures/search-song.mts";
@@ -9,6 +15,8 @@ import { createSearchController } from "../app/controllers/search.mts";
 import { createSearchCoordinator } from "../app/controllers/search-coordinator.mts";
 import { createDateFilterController } from "../app/ui/date/filter.mts";
 import { createResultCountController } from "../app/ui/result-summary/count.mts";
+import { createInitialSearchConditions } from "../app/state.mts";
+import { SEARCH_BOOLEAN_FILTER_KEYS } from "../app/lib/search-boolean-filters.mts";
 
 const makeRow = createSearchSongFixtureFactory();
 
@@ -149,6 +157,38 @@ type SearchTestUiElements = Parameters<typeof createSearchController>[0]["ui"]["
     Parameters<typeof createSearchFiltersController>[0]["ui"]["el"] &
     Parameters<typeof createResultCountController>[0]["ui"]["el"];
 
+/**
+ * テストの入力欄のモックを、検索条件の状態へつなぐ。
+ * 本番では search-actions が、入力欄の操作を状態へ書く。検索 controller は状態だけを読むので、
+ * ここでは入力欄のモックへの書き込みを利用者の操作として扱い、そのまま状態へ書く。
+ * 入力欄に最初から入っている値は、復元済みの条件として状態へ移す。
+ * @param el テストが用意した入力欄のモック
+ * @param conditions つなぐ先の検索条件の状態
+ */
+function bindInputsToConditions(el: SearchTestUiElements, conditions: SearchConditionsState) {
+    const searchBox = el.searchBox;
+    if (searchBox) {
+        conditions.query = searchBox.value;
+        Object.defineProperty(searchBox, "value", {
+            get: () => conditions.query,
+            set: (value: string) => { conditions.query = value; },
+            configurable: true,
+            enumerable: true
+        });
+    }
+    for (const key of SEARCH_BOOLEAN_FILTER_KEYS) {
+        const checkbox = el[key];
+        if (!checkbox) continue;
+        conditions.booleanFilters[key] = Boolean(checkbox.checked);
+        Object.defineProperty(checkbox, "checked", {
+            get: () => conditions.booleanFilters[key],
+            set: (value: boolean) => { conditions.booleanFilters = { ...conditions.booleanFilters, [key]: value }; },
+            configurable: true,
+            enumerable: true
+        });
+    }
+}
+
 /** 検索コントローラー検証用の UI 状態を作る。 */
 function createSearchUiState<Elements extends SearchTestUiElements>(input: {
     el: Elements;
@@ -156,14 +196,13 @@ function createSearchUiState<Elements extends SearchTestUiElements>(input: {
     recommendedCache?: SearchUiRuntimeState["recommendedCache"];
 }) {
     const search: SearchUiRuntimeState = {
+        conditions: createInitialSearchConditions(),
         selectedFormats: input.selectedFormats,
         recommendedCache: input.recommendedCache ?? null,
-        dataReady: false,
-        userTouchedQuery: false,
-        userTouchedFilters: false,
-        hasRestoredSearchState: false
+        dataReady: false
     };
-    const date: DateUiRuntimeState = { bounds: null, index: null, pendingValues: null };
+    bindInputsToConditions(input.el, search.conditions);
+    const date: DateUiRuntimeState = { bounds: null, index: null };
     const lookup: LookupUiRuntimeState = {
         songMapByKey: new Map(), songLookupSourceRef: null
     };
@@ -191,8 +230,7 @@ function createSearchControllerForTest(input: {
         searchFiltersController: createSearchFiltersController({
             ui: input.ui,
             defaultFormats
-        }),
-        dateFilterController: createDateFilterController({ ui: input.ui })
+        })
     });
 }
 
@@ -838,4 +876,54 @@ test("createSearchController: recommendation count is capped by available recomm
     assert.equal(data.currentResults.length, 0);
     assert.equal(controller.refreshRecommendedDisplay(), false, "empty recommendations do not trigger a render");
     assert.equal(updateCount, 2);
+});
+
+test("createSearchController: conditions are read from the state, not from the inputs", () => {
+    const rows = [
+        makeRow({ songKey: "march", title: "March Song", dateKey: 20240331, isRelay: true }),
+        makeRow({ songKey: "april", title: "April Song", dateKey: 20240401, isRelay: true }),
+        makeRow({ songKey: "december", title: "December Song", dateKey: 20241231 }),
+        makeRow({ songKey: "next-year", title: "Next Year Song", dateKey: 20250101, isRelay: true })
+    ];
+    const data: AppDataState = { allSongsRaw: rows, bookmarks: {}, activeBookmark: null, currentResults: [], displayLimit: 0 };
+    // 入力欄のモックを置かず、状態だけを書き換える。
+    const ui = createSearchUiState({
+        el: { resultCount: { innerText: "" } },
+        selectedFormats: new Set(["配信"])
+    });
+    const controller = createSearchControllerForTest({
+        data,
+        ui,
+        constants: { RANDOM_DISPLAY_COUNT: 10, MIN_PERFORMANCE_FOR_RANDOM: 1, RESULT_DISPLAY_BATCH_SIZE: 30 },
+        defaultFormats: ["配信"],
+        callbacks: createSearchCallbacks()
+    });
+
+    // 年月だけの開始日は月の最初の日、年だけの終了日は年の最後の日として扱う。
+    ui.search.conditions.dateFrom = "2024-04";
+    ui.search.conditions.dateTo = "2024";
+    controller.search();
+    assert.deepEqual(data.currentResults.map((row) => row.songKey), ["april", "december"]);
+    assert.deepEqual(controller.getSearchState(), {
+        queryRaw: "",
+        collabHostOnly: false,
+        collabGuestOnly: false,
+        relayOnly: false,
+        harmonyOnly: false,
+        dateFromKey: 20240401,
+        dateToKey: 20241231,
+        hasDateFilter: true
+    });
+
+    ui.search.conditions.booleanFilters = { ...ui.search.conditions.booleanFilters, relayOnly: true };
+    controller.search();
+    assert.deepEqual(data.currentResults.map((row) => row.songKey), ["april"]);
+
+    // 検索語は、前後の空白を除いて使う。
+    ui.search.conditions.dateFrom = "";
+    ui.search.conditions.dateTo = "";
+    ui.search.conditions.query = "  next year  ";
+    controller.search();
+    assert.deepEqual(data.currentResults.map((row) => row.songKey), ["next-year"]);
+    assert.equal(ui.el.resultCount.innerText, "1 件がヒット");
 });

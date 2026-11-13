@@ -4,6 +4,7 @@ import { createBookmarkPersistenceController } from "../app/controllers/bookmark
 import { createStorageController } from "../app/controllers/storage.mts";
 import { createSearchFiltersController } from "../app/ui/search-filters/controller.mts";
 import { createFakeLocalStorage, readStoredText } from "./fixtures/local-storage.mts";
+import { createInitialSearchConditions } from "../app/state.mts";
 import { createSongFixture } from "./fixtures/song.mts";
 import type { BookmarkRecord } from "../app/state.types";
 import { installFakeDom } from "./test-helpers.mts";
@@ -37,15 +38,9 @@ function setupStorageController({
     const ui = {
         el: {},
         search: {
+            conditions: createInitialSearchConditions(),
             selectedFormats: new Set<string>(),
-            userTouchedQuery: false,
-            userTouchedFilters: false,
-            hasRestoredSearchState: false,
             dataReady: dataReady ?? true
-        },
-        date: {
-            bounds: null,
-            pendingValues: null
         },
         language: { current: "ja" as SiteLanguage }
     };
@@ -71,8 +66,7 @@ function setupStorageController({
             MAX_BOOKMARK_NAME_LENGTH: maxBookmarkNameLength ?? Number.POSITIVE_INFINITY
         },
         callbacks: {
-            getDateSelectValue: () => "",
-            applyPendingDateValues: () => {},
+            renderSearchConditions: () => {},
             renderBookmarks: () => { renderCount += 1; },
             updateDisplay: () => {},
             cancelScheduledSearch: () => {},

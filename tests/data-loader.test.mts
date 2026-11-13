@@ -20,8 +20,6 @@ function createSong(songKey: string): Song {
 type DataLoaderHarnessOptions = {
     searchBoxDisabled?: boolean;
     recommendedCache?: AppUiState["search"]["recommendedCache"];
-    hasRestoredSearchState?: boolean;
-    pendingValues?: AppUiState["date"]["pendingValues"];
     dateBounds?: SearchDateRange;
 };
 
@@ -37,17 +35,13 @@ function createDataLoaderHarness(options: DataLoaderHarnessOptions = {}) {
     };
     const search: Parameters<typeof createDataLoader>[0]["ui"]["search"] = {
         recommendedCache: options.recommendedCache ?? { songs: [], requestedCount: 1 },
-        dataReady: false,
-        hasRestoredSearchState: options.hasRestoredSearchState ?? false
+        dataReady: false
     };
     const ui = {
         el: {
             searchBox
         },
-        search,
-        date: {
-            pendingValues: options.pendingValues ?? null
-        }
+        search
     } satisfies Parameters<typeof createDataLoader>[0]["ui"];
 
     const calls: {
@@ -95,7 +89,7 @@ function createLoaderWithDataSource(
     });
 }
 
-test("data loader: loaded songs enable search and report that initial conditions need reset", async () => {
+test("data loader: loaded songs enable search and reset the recommendation cache", async () => {
     const restoreDom = installFakeDom();
     try {
         const song = createSong("archive-1::1");
@@ -111,7 +105,7 @@ test("data loader: loaded songs enable search and report that initial conditions
         assert.equal(harness.calls.applyDateInputRangeArgs.length, 1);
         assert.equal(harness.calls.applyDateInputRangeArgs[0], harness.data.allSongsRaw);
         assert.deepEqual(harness.calls.clampDateInputsToBoundsArgs, [[20260311, 20260311]]);
-        assert.deepEqual(result, { loaded: true, shouldResetConditions: true });
+        assert.deepEqual(result, { loaded: true });
         assert.equal(harness.ui.search.recommendedCache, null);
         assert.equal(harness.ui.search.dataReady, true);
         assert.equal(harness.ui.el.searchBox.disabled, false);
@@ -120,12 +114,10 @@ test("data loader: loaded songs enable search and report that initial conditions
     }
 });
 
-test("data loader: cache source skips reset when pending state exists and leaves the count to the search", async () => {
+test("data loader: a cached snapshot is applied the same way and leaves the count to the search", async () => {
     const restoreDom = installFakeDom();
     try {
-        const harness = createDataLoaderHarness({
-            pendingValues: { from: "2026-01-01", to: null }
-        });
+        const harness = createDataLoaderHarness();
         const loader = createLoaderWithDataSource({
             initialSnapshot: {
                 songs: [createSong("cached-archive::1")],
@@ -139,7 +131,7 @@ test("data loader: cache source skips reset when pending state exists and leaves
         assert.deepEqual(harness.calls.resultCountStates, [{ kind: "loadingData" }]);
         assert.equal(harness.ui.search.dataReady, true);
         assert.equal(harness.ui.el.searchBox.disabled, false);
-        assert.deepEqual(result, { loaded: true, shouldResetConditions: false });
+        assert.deepEqual(result, { loaded: true });
     } finally {
         restoreDom();
     }

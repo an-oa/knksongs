@@ -9,7 +9,8 @@
  * 状態を更新する処理は持たない。更新は各 controller が担当する。
  */
 import { INITIAL_PLAYBACK_SETTING_VALUES } from "./lib/playback-settings/definitions.mjs";
-import type { AppState, PlaybackUiRuntimeState } from "./state.types";
+import { createDefaultSearchBooleanFilters } from "./lib/search-boolean-filters.mjs";
+import type { AppState, PlaybackUiRuntimeState, SearchConditionsState } from "./state.types";
 
 export const RANDOM_DISPLAY_COUNT = 48;
 export const MIN_PERFORMANCE_FOR_RANDOM = 3;
@@ -23,7 +24,8 @@ export const BOOKMARK_STORAGE_VERSION = 3;
 export const MAX_BOOKMARK_COUNT = 20;
 export const MAX_SONGS_PER_BOOKMARK = 120;
 export const MAX_BOOKMARK_NAME_LENGTH = 64;
-// Paint preview/フォーム復元の後追い対策で複数回同期する。
+// 保存値で決まる設定 (テーマ・再生設定・言語) の入力欄を、画面へ戻ったときに複数回同期する。
+// ブラウザのフォーム復元が後から値を書き換えることがあるため。
 export const UI_SYNC_PASSES = 2;
 export const SEARCH_DEBOUNCE_MS = 200;
 export const YT_IFRAME_API_SRC = "https://www.youtube.com/iframe_api";
@@ -31,10 +33,24 @@ export const YT_IFRAME_API_SELECTOR = 'script[data-yt-iframe-api="true"]';
 export const YT_IFRAME_READY_POLL_MS = 50;
 
 /**
+ * 検索語・真偽値フィルター・日付範囲の検索条件の、何も指定していない初期値を作成する。
+ * 本番コードでは appState 初期化に使い、テストの状態作りにも使うため export している。
+ * @returns 条件を何も指定していない検索条件
+ */
+export function createInitialSearchConditions(): SearchConditionsState {
+    return {
+        query: "",
+        booleanFilters: createDefaultSearchBooleanFilters(),
+        dateFrom: "",
+        dateTo: ""
+    };
+}
+
+/**
  * 再生 UI ランタイム状態の初期値を作成する。
  * 本番コードでは appState 初期化に使い、設定 default との同期を
  * 単体テストするため export している。
- * @returns {PlaybackUiRuntimeState}
+ * @returns 再生 UI ランタイム状態の初期値
  */
 export function createInitialPlaybackUiRuntimeState(): PlaybackUiRuntimeState {
     return {
@@ -54,17 +70,14 @@ export const appState: AppState = {
     ui: {
         el: {}, // DOM要素のキャッシュ用
         search: {
+            conditions: createInitialSearchConditions(),
             selectedFormats: new Set(),
             dataReady: false,
-            userTouchedQuery: false,
-            userTouchedFilters: false,
-            hasRestoredSearchState: false,
             recommendedCache: null
         },
         date: {
             bounds: null,
-            index: null,
-            pendingValues: null
+            index: null
         },
         playback: createInitialPlaybackUiRuntimeState(),
         lookup: {

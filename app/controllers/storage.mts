@@ -3,7 +3,8 @@
  *
  * ブックマークの作成・改名・削除、曲の追加・削除・並べ替え、検索対象としての選択、
  * エクスポート・インポートを受け持ち、件数・曲数・名前の長さの上限もここで検証する。
- * 検索条件は localStorage へ保存・復元する (../lib/storage/search-state-schema)。
+ * 検索条件は、検索条件の状態 (ui.search) を localStorage へ保存・復元する (../lib/storage/search-state-schema)。
+ * 入力欄は読まず、復元した状態を入力欄へ映すのは callbacks に任せる。
  * ブックマーク本体の読み書きは ./bookmark-persistence.mts、
  * ファイルの解析と統合は ../lib/storage/bookmark-transfer に任せる。
  *
@@ -21,9 +22,7 @@ import {
     buildStoredSearchStatePayload,
     parseStoredSearchStatePayload
 } from "../lib/storage/search-state-schema.mjs";
-import type { SearchBooleanFilterElements } from "../lib/search-boolean-filters.mjs";
-import { collectSearchBooleanFilterState } from "../lib/search-boolean-filters.mjs";
-import type { DateSelectKind } from "../ui/date/filter.mjs";
+import { toSearchBooleanFilterState } from "../lib/search-boolean-filters.mjs";
 import type {
     BookmarkLoadResult,
     BookmarkSaveFailure,
@@ -37,15 +36,8 @@ import type {
 
 type StorageDataState = Pick<AppDataState, "allSongsRaw" | "bookmarks" | "activeBookmark" | "currentResults">;
 
-type StorageUiElements = { searchBox?: Pick<HTMLInputElement, "value"> | null } &
-    SearchBooleanFilterElements;
-
 type StorageUiState = {
-    el: StorageUiElements;
-    search: Pick<AppUiState["search"],
-        "dataReady" | "userTouchedQuery" | "userTouchedFilters" | "hasRestoredSearchState"
-    >;
-    date: Pick<AppUiState["date"], "bounds" | "pendingValues">;
+    search: Pick<AppUiState["search"], "dataReady" | "conditions">;
 };
 
 type StorageConstants = {
@@ -59,12 +51,12 @@ type StorageConstants = {
 
 type StorageSearchFiltersController = {
     getSelectedFormatValues: () => string[];
-    applyStoredFilterState: (payload: Record<string, unknown>) => void;
+    applySelectedFormats: (formats: unknown) => void;
 };
 
 type StorageCallbacks = {
-    getDateSelectValue: (kind: DateSelectKind) => string;
-    applyPendingDateValues: () => void;
+    /** 検索条件の状態を、検索窓・絞り込み・日付の入力欄へ映す。保存済みの条件を復元した後に呼ぶ。 */
+    renderSearchConditions: () => void;
     renderBookmarks: () => void;
     updateDisplay: () => void;
     cancelScheduledSearch: () => void;
@@ -129,7 +121,6 @@ export function createStorageController({
     callbacks
 }: StorageControllerInput) {
     const searchUiState = ui.search;
-    const dateUi = ui.date;
     const {
         SEARCH_STATE_KEY,
         DEFAULT_FORMATS,
@@ -145,8 +136,7 @@ export function createStorageController({
         replaceBookmarksFromConfirmedImport
     } = bookmarkPersistenceController;
     const {
-        getDateSelectValue,
-        applyPendingDateValues,
+        renderSearchConditions,
         renderBookmarks,
         updateDisplay,
         cancelScheduledSearch,
@@ -467,28 +457,16 @@ export function createStorageController({
     }
 
     /**
-     * 保存時の日付条件を、UI適用前は保留値から、適用後はselect要素から取得する。
-     * @param kind 値を読む側
-     */
-    function getDateValueForStorage(kind: DateSelectKind): string {
-        if (dateUi.pendingValues) {
-            const pendingValue = dateUi.pendingValues[kind];
-            return typeof pendingValue === "string" ? pendingValue : "";
-        }
-        return getDateSelectValue(kind);
-    }
-
-    /**
-     * 現在の検索条件をローカルストレージへ保存する。
+     * 検索条件の状態をローカルストレージへ保存する。
      */
     function saveSearchState(): void {
         try {
-            const searchBox = ui.el.searchBox;
+            const conditions = searchUiState.conditions;
             const payload = buildStoredSearchStatePayload({
-                query: searchBox && typeof searchBox.value === "string" ? searchBox.value : "",
-                ...collectSearchBooleanFilterState(ui),
-                dateFrom: getDateValueForStorage("from"),
-                dateTo: getDateValueForStorage("to"),
+                query: conditions.query,
+                ...conditions.booleanFilters,
+                dateFrom: conditions.dateFrom,
+                dateTo: conditions.dateTo,
                 formats: searchFiltersController.getSelectedFormatValues(),
                 activeBookmarkId: data.activeBookmark || preservedUnsupportedActiveBookmarkId
             });
@@ -538,7 +516,7 @@ export function createStorageController({
     }
 
     /**
-     * 保存済み検索条件を UI と state へ復元する。
+     * 保存済み検索条件を、検索条件の状態と選択中のブックマークへ復元する。入力欄へは呼び出し元が映す。
      */
     function restoreSearchStateFromStorage(bookmarkLoadResult: BookmarkLoadResult): void {
         preservedUnsupportedActiveBookmarkId = null;
@@ -549,18 +527,12 @@ export function createStorageController({
             const parsed = parseStoredSearchStatePayload(raw, {
                 defaultFormats: DEFAULT_FORMATS
             });
-            const searchBox = ui.el.searchBox;
-            if (searchBox && typeof parsed.query === "string") {
-                searchBox.value = parsed.query;
-            }
-            searchFiltersController.applyStoredFilterState(parsed);
-            dateUi.pendingValues = {
-                from: parsed.dateFrom,
-                to: parsed.dateTo
-            };
-            if (dateUi.bounds) {
-                applyPendingDateValues();
-            }
+            const conditions = searchUiState.conditions;
+            conditions.query = parsed.query;
+            conditions.booleanFilters = toSearchBooleanFilterState(parsed);
+            conditions.dateFrom = parsed.dateFrom;
+            conditions.dateTo = parsed.dateTo;
+            searchFiltersController.applySelectedFormats(parsed.formats);
             const canValidateActiveBookmark = bookmarkLoadResult.supported;
             const activeBookmarkId = canValidateActiveBookmark && parsed.activeBookmarkId &&
                 Object.hasOwn(data.bookmarks, parsed.activeBookmarkId)
@@ -573,9 +545,6 @@ export function createStorageController({
                 ? null
                 : parsed.activeBookmarkId;
             data.activeBookmark = activeBookmarkId;
-            searchUiState.userTouchedQuery = true;
-            searchUiState.userTouchedFilters = true;
-            searchUiState.hasRestoredSearchState = true;
             if (activeBookmarkWasInvalid) {
                 parsed.activeBookmarkId = null;
                 localStorage.setItem(
@@ -590,10 +559,12 @@ export function createStorageController({
 
     /**
      * ブックマークと検索条件を読み込み、参照を照合して一度だけ一覧を描画する。
+     * 保存済みの条件がなくても、検索条件の状態を入力欄へ映し、入力欄を状態と同じにそろえる。
      */
     function restorePersistedState(): void {
         const bookmarkLoadResult = loadBookmarksFromStorage();
         restoreSearchStateFromStorage(bookmarkLoadResult);
+        renderSearchConditions();
         renderBookmarks();
     }
 

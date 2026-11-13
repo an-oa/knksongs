@@ -5,8 +5,8 @@ import { createRenderController } from "../app/controllers/render.mts";
 import { createSearchController } from "../app/controllers/search.mts";
 import { extractYoutubeInfo } from "../app/lib/youtube-url.mts";
 import { createSearchFiltersController } from "../app/ui/search-filters/controller.mts";
-import { createDateFilterController } from "../app/ui/date/filter.mts";
 import { createBookmarkReorderFixture } from "./support/bookmark-reorder-fixture.mts";
+import { createInitialSearchConditions } from "../app/state.mts";
 import {
     createYoutubePlaybackStartResult,
     YOUTUBE_PLAYBACK_START_STATUS
@@ -60,17 +60,14 @@ function createRenderUiState<Elements extends {
     return {
         el: input.el,
         search: {
+            conditions: createInitialSearchConditions(),
             selectedFormats: input.selectedFormats ?? new Set(["配信"]),
             dataReady: input.dataReady ?? true,
-            recommendedCache: null,
-            userTouchedQuery: false,
-            userTouchedFilters: false,
-            hasRestoredSearchState: false
+            recommendedCache: null
         },
         date: {
             bounds: null,
-            index: null,
-            pendingValues: null
+            index: null
         },
         playback: {
             activeThumb: input.activeThumb ?? null
@@ -952,7 +949,6 @@ test("bookmark: observes result tail and increases by RESULT_DISPLAY_BATCH_SIZE 
                 ui,
                 defaultFormats: ["配信", "歌みた", "ショート", "切り抜き"]
             }),
-            dateFilterController: createDateFilterController({ ui }),
             constants: {
                 RANDOM_DISPLAY_COUNT: 48,
                 MIN_PERFORMANCE_FOR_RANDOM: 3,

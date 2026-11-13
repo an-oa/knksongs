@@ -471,3 +471,43 @@ test("an artist name can be selected and a click on the blank area clears the se
 
     await expect.poll(() => page.evaluate(() => window.getSelection()?.toString() ?? "")).toBe("");
 });
+
+test("inputs changed without the user typing are put back to the conditions the results were made from", async ({ page }) => {
+    await page.locator("#searchBox").fill("Manual Song");
+    await expect(page.locator("#resultCount")).toHaveText("1 件がヒット");
+    await openSidebar(page);
+
+    // ブラウザがフォームの値を復元した場合と同じく、操作のイベントなしで入力欄だけを書き換える。
+    await page.evaluate(() => {
+        const searchBox = document.querySelector<HTMLInputElement>("#searchBox");
+        const relayOnly = document.querySelector<HTMLInputElement>("#relayOnly");
+        const formatCheckbox = document.querySelector<HTMLInputElement>("#formatsList input");
+        if (!searchBox || !relayOnly || !formatCheckbox) throw new Error("The condition inputs are missing");
+        searchBox.value = "restored by the browser";
+        relayOnly.checked = true;
+        formatCheckbox.checked = false;
+        window.dispatchEvent(new Event("pageshow"));
+    });
+
+    await expect(page.locator("#searchBox")).toHaveValue("Manual Song");
+    await expect(page.locator("#relayOnly")).not.toBeChecked();
+    await expect(page.locator("#formatsList input").first()).toBeChecked();
+    // 条件そのものは変わっていないので、結果も保存した条件もそのまま。
+    await expect(page.locator("#resultCount")).toHaveText("1 件がヒット");
+    expect(await page.evaluate(() => JSON.parse(localStorage.getItem("searchStateV1") ?? "{}").query)).toBe("Manual Song");
+});
+
+test("the condition inputs ask the browser not to restore their values", async ({ page }) => {
+    await openSidebar(page);
+    for (const selector of [
+        "#searchBox", "#relayOnly", "#harmonyOnly", "#collabHostOnly", "#collabGuestOnly",
+        "#dateFromYear", "#dateFromMonth", "#dateFromDay", "#dateToYear", "#dateToMonth", "#dateToDay"
+    ]) {
+        await expect(page.locator(selector), selector).toHaveAttribute("autocomplete", "off");
+    }
+    const formatCheckboxes = page.locator("#formatsList input");
+    await expect(formatCheckboxes).not.toHaveCount(0);
+    for (const checkbox of await formatCheckboxes.all()) {
+        await expect(checkbox).toHaveAttribute("autocomplete", "off");
+    }
+});

@@ -103,6 +103,8 @@
       <div class="sidebar-actions">
         <button id="clearBtn" class="text-clear-btn" type="button" data-i18n="clearConditions">条件をクリア</button>
       </div>
+      <!-- 検索条件と設定の入力欄は、アプリが持つ状態と保存値から映す。autocomplete="off" を付けて、
+           ブラウザが再読み込みや「戻る」で前の値を復元し、状態と食い違うのを防ぐ。 -->
       <section class="sidebar-group">
         <div class="sidebar-group-body">
           <fieldset class="sidebar-section sidebar-fieldset">
@@ -111,11 +113,11 @@
               <span class="section-label date-row-label">From</span>
               <div class="date-select-group">
                 <label class="visually-hidden" for="dateFromYear" data-i18n="dateFromYear">開始年</label>
-                <select id="dateFromYear" class="date-select year"></select>
+                <select id="dateFromYear" class="date-select year" autocomplete="off"></select>
                 <label class="visually-hidden" for="dateFromMonth" data-i18n="dateFromMonth">開始月</label>
-                <select id="dateFromMonth" class="date-select month"></select>
+                <select id="dateFromMonth" class="date-select month" autocomplete="off"></select>
                 <label class="visually-hidden" for="dateFromDay" data-i18n="dateFromDay">開始日</label>
-                <select id="dateFromDay" class="date-select day"></select>
+                <select id="dateFromDay" class="date-select day" autocomplete="off"></select>
               </div>
               <button id="clearDateFromBtn" class="date-clear-btn" aria-label="開始日をクリア" data-i18n-aria-label="clearDateFrom">&times;</button>
             </div>
@@ -123,11 +125,11 @@
               <span class="section-label date-row-label">To</span>
               <div class="date-select-group">
                 <label class="visually-hidden" for="dateToYear" data-i18n="dateToYear">終了年</label>
-                <select id="dateToYear" class="date-select year"></select>
+                <select id="dateToYear" class="date-select year" autocomplete="off"></select>
                 <label class="visually-hidden" for="dateToMonth" data-i18n="dateToMonth">終了月</label>
-                <select id="dateToMonth" class="date-select month"></select>
+                <select id="dateToMonth" class="date-select month" autocomplete="off"></select>
                 <label class="visually-hidden" for="dateToDay" data-i18n="dateToDay">終了日</label>
-                <select id="dateToDay" class="date-select day"></select>
+                <select id="dateToDay" class="date-select day" autocomplete="off"></select>
               </div>
               <button id="clearDateToBtn" class="date-clear-btn" aria-label="終了日をクリア" data-i18n-aria-label="clearDateTo">&times;</button>
             </div>
@@ -140,10 +142,10 @@
 
           <fieldset class="sidebar-section sidebar-fieldset sidebar-flags">
             <legend class="visually-hidden" data-i18n="moreFilters">追加条件</legend>
-            <label class="checkbox-item" for="relayOnly"><input type="checkbox" id="relayOnly"> <span data-i18n="relayOnly">歌枠リレー</span></label>
-            <label class="checkbox-item" for="collabHostOnly"><input type="checkbox" id="collabHostOnly"> <span data-i18n="collabHostOnly">コラボ(ホスト)</span></label>
-            <label class="checkbox-item" for="harmonyOnly"><input type="checkbox" id="harmonyOnly"> <span data-i18n="harmonyOnly">ハモリあり</span></label>
-            <label class="checkbox-item" for="collabGuestOnly"><input type="checkbox" id="collabGuestOnly"> <span data-i18n="collabGuestOnly">コラボ(ゲスト)</span></label>
+            <label class="checkbox-item" for="relayOnly"><input type="checkbox" id="relayOnly" autocomplete="off"> <span data-i18n="relayOnly">歌枠リレー</span></label>
+            <label class="checkbox-item" for="collabHostOnly"><input type="checkbox" id="collabHostOnly" autocomplete="off"> <span data-i18n="collabHostOnly">コラボ(ホスト)</span></label>
+            <label class="checkbox-item" for="harmonyOnly"><input type="checkbox" id="harmonyOnly" autocomplete="off"> <span data-i18n="harmonyOnly">ハモリあり</span></label>
+            <label class="checkbox-item" for="collabGuestOnly"><input type="checkbox" id="collabGuestOnly" autocomplete="off"> <span data-i18n="collabGuestOnly">コラボ(ゲスト)</span></label>
           </fieldset>
         </div>
       </section>
@@ -174,7 +176,7 @@
               <div class="menu-item-toggle">
                 <span id="thumbnail-toggle-label" data-i18n="thumbnails">サムネイル表示</span>
                 <label class="switch">
-                  <input type="checkbox" id="thumbnail-toggle" aria-labelledby="thumbnail-toggle-label">
+                  <input type="checkbox" id="thumbnail-toggle" autocomplete="off" aria-labelledby="thumbnail-toggle-label">
                   <span class="slider"></span>
                 </label>
               </div>
@@ -184,7 +186,7 @@
               <div class="menu-item-toggle">
                 <span id="theme-toggle-label" data-i18n="darkMode">ダークモード</span>
                 <label class="switch">
-                  <input type="checkbox" id="theme-toggle" aria-labelledby="theme-toggle-label">
+                  <input type="checkbox" id="theme-toggle" autocomplete="off" aria-labelledby="theme-toggle-label">
                   <span class="slider"></span>
                 </label>
               </div>
@@ -203,7 +205,7 @@
                 <div class="menu-item-toggle">
                   <span id="youtube-nocookie-toggle-label" data-i18n="privacyMode">プライバシー強化</span>
                   <label class="switch">
-                    <input type="checkbox" id="youtube-nocookie-toggle" aria-labelledby="youtube-nocookie-toggle-label" aria-describedby="youtube-nocookie-toggle-help">
+                    <input type="checkbox" id="youtube-nocookie-toggle" autocomplete="off" aria-labelledby="youtube-nocookie-toggle-label" aria-describedby="youtube-nocookie-toggle-help">
                     <span class="slider"></span>
                   </label>
                 </div>
@@ -216,7 +218,7 @@
                 <div class="menu-item-toggle">
                   <span id="play-archive-to-end-toggle-label" data-i18n="playArchiveToEnd">アーカイブ全体を再生</span>
                   <label class="switch">
-                    <input type="checkbox" id="play-archive-to-end-toggle" aria-labelledby="play-archive-to-end-toggle-label" aria-describedby="play-archive-to-end-toggle-help">
+                    <input type="checkbox" id="play-archive-to-end-toggle" autocomplete="off" aria-labelledby="play-archive-to-end-toggle-label" aria-describedby="play-archive-to-end-toggle-help">
                     <span class="slider"></span>
                   </label>
                 </div>
@@ -230,7 +232,7 @@
                   <div class="menu-item-toggle">
                     <span id="continuous-playback-toggle-label" data-i18n="continuousPlayback">終了後、次の曲を再生</span>
                     <label class="switch">
-                      <input type="checkbox" id="continuous-playback-toggle" aria-labelledby="continuous-playback-toggle-label">
+                      <input type="checkbox" id="continuous-playback-toggle" autocomplete="off" aria-labelledby="continuous-playback-toggle-label">
                       <span class="slider"></span>
                     </label>
                   </div>
@@ -243,7 +245,7 @@
                   <div class="menu-item-toggle">
                     <span id="loop-playback-toggle-label" data-i18n="loopPlayback">リピート再生</span>
                     <label class="switch">
-                      <input type="checkbox" id="loop-playback-toggle" aria-labelledby="loop-playback-toggle-label">
+                      <input type="checkbox" id="loop-playback-toggle" autocomplete="off" aria-labelledby="loop-playback-toggle-label">
                       <span class="slider"></span>
                     </label>
                   </div>
@@ -310,7 +312,7 @@
         <div class="header-search">
           <svg class="header-search-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5 21 21"/></svg>
           <label class="visually-hidden" for="searchBox" data-i18n="searchLabel">曲名・アーティスト名・読みで検索</label>
-          <input type="text" id="searchBox" placeholder="曲名・歌手・読み..." data-i18n-placeholder="searchPlaceholder" aria-errormessage="searchBoxError" disabled>
+          <input type="text" id="searchBox" placeholder="曲名・歌手・読み..." data-i18n-placeholder="searchPlaceholder" aria-errormessage="searchBoxError" autocomplete="off" disabled>
         </div>
         <svg class="header-spots header-spots-wide header-spots-wide-right" viewBox="0 0 170 64" aria-hidden="true" focusable="false">
           <path d="M10 0h100c-2 12-10 22-24 25-10 2-14 12-28 13-15 1-27-7-33-18C21 12 14 6 10 0z"/>

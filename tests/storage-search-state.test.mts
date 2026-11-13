@@ -4,6 +4,7 @@ import { createBookmarkPersistenceController } from "../app/controllers/bookmark
 import { createStorageController } from "../app/controllers/storage.mts";
 import { createSearchFiltersController } from "../app/ui/search-filters/controller.mts";
 import { createFakeLocalStorage, readStoredText } from "./fixtures/local-storage.mts";
+import { createInitialSearchConditions } from "../app/state.mts";
 import type { BookmarkRecord } from "../app/state.types";
 import type { SiteLanguage } from "../app/lib/site-language.mts";
 import { installFakeDom } from "./test-helpers.mts";
@@ -62,7 +63,8 @@ function createStorageControllerForTest(input: {
 function createActiveBookmarkRestoreHarness(bookmarks: Record<string, BookmarkRecord>, options: {
     activeBookmark?: string | null;
     dataReady?: boolean;
-    pendingValues?: import("../app/state.types").DateUiPendingValues | null;
+    /** 検索条件の状態に持たせておく日付範囲。曲データの読み込み前は、選択欄へ映さずここにだけ持つ。 */
+    dateRange?: { from: string; to: string };
     bookmarkStorageVersion?: number;
 } = {}) {
     let renderCount = 0;
@@ -75,19 +77,15 @@ function createActiveBookmarkRestoreHarness(bookmarks: Record<string, BookmarkRe
         activeBookmark: options.activeBookmark ?? null
     };
     const ui = {
-        el: {
-            searchBox: { value: "" }
-        },
+        el: {},
         search: {
+            conditions: {
+                ...createInitialSearchConditions(),
+                dateFrom: options.dateRange?.from ?? "",
+                dateTo: options.dateRange?.to ?? ""
+            },
             selectedFormats: new Set<string>(),
-            dataReady: options.dataReady ?? true,
-            userTouchedQuery: false,
-            userTouchedFilters: false,
-            hasRestoredSearchState: false
-        },
-        date: {
-            bounds: null,
-            pendingValues: options.pendingValues ?? null
+            dataReady: options.dataReady ?? true
         },
         language: { current: "ja" as SiteLanguage }
     };
@@ -101,8 +99,7 @@ function createActiveBookmarkRestoreHarness(bookmarks: Record<string, BookmarkRe
             BOOKMARK_STORAGE_VERSION: options.bookmarkStorageVersion
         },
         callbacks: {
-            getDateSelectValue: () => "",
-            applyPendingDateValues: () => {},
+            renderSearchConditions: () => {},
             renderBookmarks: () => { renderCount += 1; },
             cancelScheduledSearch: () => { cancelCount += 1; },
             scheduleSearch: () => { scheduleCount += 1; }
@@ -111,18 +108,19 @@ function createActiveBookmarkRestoreHarness(bookmarks: Record<string, BookmarkRe
     return {
         controller,
         data,
+        ui,
         getRenderCount: () => renderCount,
         getScheduleCount: () => scheduleCount,
         getCancelCount: () => cancelCount
     };
 }
 
-test("restorePersistedState: main branch payload restores into sliced ui state", () => {
+test("restorePersistedState: a stored payload is restored into the conditions state, then shown in the inputs", () => {
     const restoreDom = installFakeDom();
     const prevLocalStorage = globalThis.localStorage;
     globalThis.localStorage = createFakeLocalStorage();
     try {
-        let applyPendingCallCount = 0;
+        const conditionsAtRender: unknown[] = [];
         const data: Parameters<typeof createStorageController>[0]["data"] = {
             allSongsRaw: [],
             currentResults: [],
@@ -130,23 +128,11 @@ test("restorePersistedState: main branch payload restores into sliced ui state",
             activeBookmark: null
         };
         const ui = {
-            el: {
-                searchBox: { value: "" },
-                collabHostOnly: { checked: false },
-                collabGuestOnly: { checked: false },
-                relayOnly: { checked: false },
-                harmonyOnly: { checked: false }
-            },
+            el: {},
             search: {
+                conditions: createInitialSearchConditions(),
                 selectedFormats: new Set<string>(),
-                dataReady: false,
-                userTouchedQuery: false,
-                userTouchedFilters: false,
-                hasRestoredSearchState: false
-            },
-            date: {
-                bounds: { minKey: 20240210, maxKey: 20240305 },
-                pendingValues: null
+                dataReady: false
             },
             language: { current: "ja" as SiteLanguage }
         };
@@ -161,10 +147,8 @@ test("restorePersistedState: main branch payload restores into sliced ui state",
                 MAX_SONGS_PER_BOOKMARK: 120
             },
             callbacks: {
-                getDateSelectValue: () => "",
-                applyPendingDateValues: () => {
-                    applyPendingCallCount += 1;
-                    ui.date.pendingValues = null;
+                renderSearchConditions: () => {
+                    conditionsAtRender.push(structuredClone(ui.search.conditions));
                 },
                 renderBookmarks: () => {},
                 scheduleSearch: () => {}
@@ -183,45 +167,43 @@ test("restorePersistedState: main branch payload restores into sliced ui state",
 
         controller.restorePersistedState();
 
-        assert.equal(ui.el.searchBox.value, "群青");
-        assert.equal(ui.el.collabHostOnly.checked, true);
-        assert.equal(ui.el.collabGuestOnly.checked, true);
-        assert.equal(ui.el.relayOnly.checked, true);
-        assert.equal(ui.el.harmonyOnly.checked, false);
+        const restoredConditions = {
+            query: "群青",
+            booleanFilters: { collabHostOnly: true, collabGuestOnly: true, relayOnly: true, harmonyOnly: false },
+            dateFrom: "2024-02-10",
+            dateTo: "2024-03-05"
+        };
+        assert.deepEqual(ui.search.conditions, restoredConditions);
         assert.deepEqual(Array.from(ui.search.selectedFormats), ["配信", "歌みた"]);
-        assert.equal(ui.search.userTouchedQuery, true);
-        assert.equal(ui.search.userTouchedFilters, true);
-        assert.equal(ui.search.hasRestoredSearchState, true);
-        assert.equal(ui.date.pendingValues, null);
-        assert.equal(applyPendingCallCount, 1);
+        // 入力欄へ映すのは 1 回だけで、状態を復元し終えてから行う。
+        assert.deepEqual(conditionsAtRender, [restoredConditions]);
     } finally {
         globalThis.localStorage = prevLocalStorage;
         restoreDom();
     }
 });
 
-test("saveSearchState: writes current schema version", () => {
+test("saveSearchState: writes the conditions state with the current schema version", () => {
     const prevLocalStorage = globalThis.localStorage;
     globalThis.localStorage = createFakeLocalStorage();
     try {
         const ui = {
+            // 入力欄は状態と違う値にしておき、保存が状態だけを読むことを確かめる。
             el: {
-                searchBox: { value: "群青" },
-                collabHostOnly: { checked: true },
-                collabGuestOnly: { checked: false },
-                relayOnly: { checked: true },
-                harmonyOnly: { checked: false }
+                collabHostOnly: { checked: false },
+                collabGuestOnly: { checked: true },
+                relayOnly: { checked: false },
+                harmonyOnly: { checked: true }
             },
             search: {
+                conditions: {
+                    query: "群青",
+                    booleanFilters: { collabHostOnly: true, collabGuestOnly: false, relayOnly: true, harmonyOnly: false },
+                    dateFrom: "2024",
+                    dateTo: ""
+                },
                 selectedFormats: new Set(["配信", "収録"]),
-                dataReady: false,
-                userTouchedQuery: false,
-                userTouchedFilters: false,
-                hasRestoredSearchState: false
-            },
-            date: {
-                bounds: null,
-                pendingValues: null
+                dataReady: false
             },
             language: { current: "ja" as SiteLanguage }
         };
@@ -243,8 +225,7 @@ test("saveSearchState: writes current schema version", () => {
                 MAX_SONGS_PER_BOOKMARK: 120
             },
             callbacks: {
-                getDateSelectValue: (kind) => kind === "from" ? "2024" : "",
-                applyPendingDateValues: () => {},
+                renderSearchConditions: () => {},
                 renderBookmarks: () => {},
                 scheduleSearch: () => {}
             }
@@ -302,7 +283,7 @@ test("active bookmark transitions: state, persistence, rendering, and search sta
     }
 });
 
-test("active bookmark transitions: pending date conditions survive changes before song data is ready", () => {
+test("active bookmark transitions: date conditions not yet shown in the selects survive changes before song data is ready", () => {
     const prevLocalStorage = globalThis.localStorage;
     globalThis.localStorage = createFakeLocalStorage();
     try {
@@ -310,10 +291,7 @@ test("active bookmark transitions: pending date conditions survive changes befor
             "bookmark-1": { name: "Favorites", songs: [], createdAt: 1 }
         }, {
             dataReady: false,
-            pendingValues: {
-                from: "2024-02",
-                to: "2024-03"
-            }
+            dateRange: { from: "2024-02", to: "2024-03" }
         });
 
         const result = harness.controller.selectActiveBookmark("bookmark-1");
@@ -404,6 +382,9 @@ test("restorePersistedState: clears and normalizes an active bookmark id that is
         assert.equal(normalizedSearchState.query, "群青");
         assert.equal(normalizedSearchState.dateFrom, "2024-02");
         assert.equal(normalizedSearchState.dateTo, "2024-03");
+        assert.equal(harness.ui.search.conditions.query, "群青");
+        assert.equal(harness.ui.search.conditions.dateFrom, "2024-02");
+        assert.equal(harness.ui.search.conditions.dateTo, "2024-03");
     } finally {
         globalThis.localStorage = prevLocalStorage;
     }
@@ -478,21 +459,12 @@ test("restorePersistedState: legacy all-format state includes recording in new d
         };
         const ui = {
             el: {
-                searchBox: { value: "" },
-                relayOnly: { checked: false },
-                harmonyOnly: { checked: false },
                 formatsList
             },
             search: {
+                conditions: createInitialSearchConditions(),
                 selectedFormats: new Set<string>(),
-                dataReady: false,
-                userTouchedQuery: false,
-                userTouchedFilters: false,
-                hasRestoredSearchState: false
-            },
-            date: {
-                bounds: null,
-                pendingValues: null
+                dataReady: false
             },
             language: { current: "ja" as SiteLanguage }
         };
@@ -512,8 +484,7 @@ test("restorePersistedState: legacy all-format state includes recording in new d
                 MAX_SONGS_PER_BOOKMARK: 120
             },
             callbacks: {
-                getDateSelectValue: () => "",
-                applyPendingDateValues: () => {},
+                renderSearchConditions: () => {},
                 renderBookmarks: () => {},
                 scheduleSearch: () => {}
             }
@@ -532,7 +503,6 @@ test("restorePersistedState: legacy all-format state includes recording in new d
 
         assert.deepEqual(Array.from(ui.search.selectedFormats), defaultFormats);
         assert.deepEqual(formatCheckboxes.map((checkbox) => checkbox.checked), [true, true, true, true, true]);
-        assert.equal(ui.search.hasRestoredSearchState, true);
     } finally {
         globalThis.localStorage = prevLocalStorage;
         restoreDom();
@@ -554,21 +524,12 @@ test("restorePersistedState: current payload keeps recording unchecked when user
         };
         const ui = {
             el: {
-                searchBox: { value: "" },
-                relayOnly: { checked: false },
-                harmonyOnly: { checked: false },
                 formatsList
             },
             search: {
+                conditions: createInitialSearchConditions(),
                 selectedFormats: new Set<string>(),
-                dataReady: false,
-                userTouchedQuery: false,
-                userTouchedFilters: false,
-                hasRestoredSearchState: false
-            },
-            date: {
-                bounds: null,
-                pendingValues: null
+                dataReady: false
             },
             language: { current: "ja" as SiteLanguage }
         };
@@ -588,8 +549,7 @@ test("restorePersistedState: current payload keeps recording unchecked when user
                 MAX_SONGS_PER_BOOKMARK: 120
             },
             callbacks: {
-                getDateSelectValue: () => "",
-                applyPendingDateValues: () => {},
+                renderSearchConditions: () => {},
                 renderBookmarks: () => {},
                 scheduleSearch: () => {}
             }
@@ -609,7 +569,6 @@ test("restorePersistedState: current payload keeps recording unchecked when user
 
         assert.deepEqual(Array.from(ui.search.selectedFormats), ["配信", "歌みた", "ショート", "切り抜き"]);
         assert.deepEqual(formatCheckboxes.map((checkbox) => checkbox.checked), [true, true, true, true, false]);
-        assert.equal(ui.search.hasRestoredSearchState, true);
     } finally {
         globalThis.localStorage = prevLocalStorage;
         restoreDom();
@@ -633,21 +592,12 @@ test("restorePersistedState: invalid saved formats fall back to defaults and syn
         };
         const ui = {
             el: {
-                searchBox: { value: "" },
-                relayOnly: { checked: false },
-                harmonyOnly: { checked: false },
                 formatsList
             },
             search: {
+                conditions: createInitialSearchConditions(),
                 selectedFormats: new Set(["旧値"]),
-                dataReady: false,
-                userTouchedQuery: false,
-                userTouchedFilters: false,
-                hasRestoredSearchState: false
-            },
-            date: {
-                bounds: null,
-                pendingValues: null
+                dataReady: false
             },
             language: { current: "ja" as SiteLanguage }
         };
@@ -667,8 +617,7 @@ test("restorePersistedState: invalid saved formats fall back to defaults and syn
                 MAX_SONGS_PER_BOOKMARK: 120
             },
             callbacks: {
-                getDateSelectValue: () => "",
-                applyPendingDateValues: () => {},
+                renderSearchConditions: () => {},
                 renderBookmarks: () => {},
                 scheduleSearch: () => {}
             }
@@ -687,9 +636,44 @@ test("restorePersistedState: invalid saved formats fall back to defaults and syn
         assert.deepEqual(Array.from(ui.search.selectedFormats), ["配信", "歌みた"]);
         assert.equal(formatCheckboxes[0].checked, true);
         assert.equal(formatCheckboxes[1].checked, true);
-        assert.equal(ui.search.hasRestoredSearchState, true);
     } finally {
         globalThis.localStorage = prevLocalStorage;
         restoreDom();
+    }
+});
+
+test("restorePersistedState: without a stored payload the default conditions are still shown in the inputs", () => {
+    const prevLocalStorage = globalThis.localStorage;
+    globalThis.localStorage = createFakeLocalStorage();
+    try {
+        let renderConditionsCount = 0;
+        const ui = {
+            el: {},
+            search: {
+                conditions: createInitialSearchConditions(),
+                selectedFormats: new Set<string>(["配信"]),
+                dataReady: false
+            },
+            language: { current: "ja" as SiteLanguage }
+        };
+        const controller = createStorageControllerForTest({
+            data: { allSongsRaw: [], currentResults: [], bookmarks: {}, activeBookmark: null },
+            ui,
+            constants: { DEFAULT_FORMATS: ["配信"], SEARCH_STATE_KEY: "searchStateTest" },
+            callbacks: {
+                renderSearchConditions: () => { renderConditionsCount += 1; },
+                renderBookmarks: () => {},
+                scheduleSearch: () => {}
+            }
+        });
+
+        controller.restorePersistedState();
+
+        // ブラウザが入力欄へ前の値を復元していても、状態 (何も指定していない条件) の値へ揃える。
+        assert.equal(renderConditionsCount, 1);
+        assert.deepEqual(ui.search.conditions, createInitialSearchConditions());
+        assert.equal(globalThis.localStorage.getItem("searchStateTest"), null);
+    } finally {
+        globalThis.localStorage = prevLocalStorage;
     }
 });

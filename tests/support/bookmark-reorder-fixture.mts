@@ -1,4 +1,5 @@
 import { createStorageController } from "../../app/controllers/storage.mts";
+import { createInitialSearchConditions } from "../../app/state.mts";
 import type { AppDataState } from "../../app/state.types";
 import type { BookmarkSaveResult } from "../../app/controllers/bookmark-persistence.mts";
 
@@ -11,11 +12,9 @@ export function createBookmarkReorderFixture({ data, saveBookmarks, updateDispla
     return createStorageController({
         data,
         ui: {
-            el: {},
-            search: { dataReady: true, userTouchedQuery: false, userTouchedFilters: false, hasRestoredSearchState: false },
-            date: { bounds: null, pendingValues: null }
+            search: { dataReady: true, conditions: createInitialSearchConditions() }
         },
-        searchFiltersController: { getSelectedFormatValues: () => [], applyStoredFilterState: () => {} },
+        searchFiltersController: { getSelectedFormatValues: () => [], applySelectedFormats: () => {} },
         bookmarkPersistenceController: {
             loadBookmarksFromStorage: () => ({ supported: true }),
             saveBookmarks: (bookmarks = data.bookmarks) => saveBookmarks(bookmarks),
@@ -31,8 +30,7 @@ export function createBookmarkReorderFixture({ data, saveBookmarks, updateDispla
             MAX_BOOKMARK_NAME_LENGTH: Number.POSITIVE_INFINITY
         },
         callbacks: {
-            getDateSelectValue: () => "",
-            applyPendingDateValues: () => {},
+            renderSearchConditions: () => {},
             renderBookmarks: () => {},
             updateDisplay,
             cancelScheduledSearch: () => {},
