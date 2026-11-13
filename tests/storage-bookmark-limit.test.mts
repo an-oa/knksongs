@@ -771,13 +771,11 @@ test("migrateLegacyBookmarkSongRefs: rewrites old songKey refs to bookmarkSongKe
         data.allSongsRaw = [
             createSongFixture({
                 songKey: "arch1::1",
-                bookmarkSongKey: "videoA::1",
-                legacySongKey: "arch1::1::https://youtu.be/videoA"
+                bookmarkSongKey: "videoA::1"
             }),
             createSongFixture({
                 songKey: "arch2::2",
-                bookmarkSongKey: "videoB::2",
-                legacySongKey: "arch2::2::https://youtu.be/videoB"
+                bookmarkSongKey: "videoB::2"
             })
         ];
         globalThis.localStorage.setItem("bookmarksTest", JSON.stringify(storedBookmarks));
@@ -825,8 +823,7 @@ test("migrateLegacyBookmarkSongRefs: preserves current bookmarkSongKey refs and 
         data.allSongsRaw = [
             createSongFixture({
                 songKey: "arch1::1",
-                bookmarkSongKey: "videoA::1",
-                legacySongKey: "arch1::1::https://youtu.be/videoA"
+                bookmarkSongKey: "videoA::1"
             })
         ];
         globalThis.localStorage.setItem("bookmarksTest", JSON.stringify(storedBookmarks));
@@ -852,11 +849,11 @@ test("migrateLegacyBookmarkSongRefs: retries unresolved legacy refs after songs 
     const prevLocalStorage = globalThis.localStorage;
     globalThis.localStorage = createFakeLocalStorage();
     try {
-        const legacySongKey = "arch1::1::https://youtu.be/videoA";
+        const legacySongRef = "arch1::1::https://youtu.be/videoA";
         const storedBookmarks = {
             p_1: {
                 name: "temporarily unresolved ref",
-                songs: [legacySongKey],
+                songs: [legacySongRef],
                 createdAt: 1710000000000
             }
         };
@@ -881,8 +878,7 @@ test("migrateLegacyBookmarkSongRefs: retries unresolved legacy refs after songs 
         data.allSongsRaw = [
             createSongFixture({
                 songKey: "arch1::1",
-                bookmarkSongKey: "videoA::1",
-                legacySongKey
+                bookmarkSongKey: "videoA::1"
             })
         ];
         bookmarkPersistenceController.migrateLegacyBookmarkSongRefs();
@@ -919,8 +915,7 @@ test("replaceAllBookmarksFromJsonText: replaces current bookmarks and clears mis
         data.allSongsRaw = [
             createSongFixture({
                 songKey: "arch1::1",
-                bookmarkSongKey: "videoA::1",
-                legacySongKey: "arch1::1::https://youtu.be/videoA"
+                bookmarkSongKey: "videoA::1"
             })
         ];
 
@@ -1024,8 +1019,7 @@ test("migrateLegacyBookmarkSongRefs: emits opt-in debug logs when migration runs
         data.allSongsRaw = [
             createSongFixture({
                 songKey: "arch1::1",
-                bookmarkSongKey: "videoA::1",
-                legacySongKey: "arch1::1::https://youtu.be/videoA"
+                bookmarkSongKey: "videoA::1"
             })
         ];
         globalThis.localStorage.setItem("debugBookmarkMigration", "true");

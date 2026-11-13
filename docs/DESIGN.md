@@ -202,7 +202,7 @@ flowchart TD
   3列とも正規化した値を `titleEnNorm` / `artistEnNorm` / `artistSortNorm` として検索に使う。
   `Artist Sort Name` は MusicBrainz の sort name に倣い、人名を「姓, 名」、文字の代わりの記号を文字に直した値とする
 - `songs.json` / `songs-meta.json` は、現在表示・再生可能な曲を配信する派生成果物とする
-- 両JSONはschema Version 5として、同じ `contentHash` とUTC ISO 8601形式の `generatedAt` を持つ。
+- 両JSONはschema Version 6として、同じ `contentHash` とUTC ISO 8601形式の `generatedAt` を持つ。
   `generatedAt` はcontentHashが変わった場合だけ更新し、同じ内容の定期生成では引き継ぐ
 - 実行時は現行schemaだけを受け付け、不正・旧schemaのキャッシュは未キャッシュと同じ取得経路へ進む。公開JSON採用時は上書きし、採用失敗時だけ非同期で削除する
 - 公開対象でもURLが空の行は、現在再生できない曲の履歴としてCSVへ残し、エラーにせず派生JSONから除外する。
@@ -224,7 +224,7 @@ flowchart TD
 ## データモデル（概要）
 `SongRow`
 - date / dateKey / archiveId / archiveOrder
-- videoId / songKey / bookmarkSongKey / legacySongKey / format / streamRole / videoOrientation / isRelay / isHarmony
+- videoId / songKey / bookmarkSongKey / format / streamRole / videoOrientation / isRelay / isHarmony
 - title / artist / titleYomi / artistYomi
 - titleEn / artistEn（英語表記。シートの値をそのまま持つ）
 - endSeconds
@@ -236,7 +236,11 @@ flowchart TD
 - `songKey`: `archiveId::archiveOrder` を使う内部参照キー。カード再利用、描画更新、既存の画面内処理で利用する。
 - `bookmarkSongKey`: `videoId::archiveOrder` を優先するブックマーク保存用キー。`videoId` を抽出できない場合は `songKey` へフォールバックする。
 - キー生成、旧参照の正規化、参照インデックス構築、一意性検証は`song-identity`へ集約する。
-- ブックマーク検索では `bookmarkSongKey` を優先して曲行へ解決し、旧ブックマークの `songKey` / `legacySongKey` は現行キーへ移行する。
+- ブックマーク検索では `bookmarkSongKey` を優先して曲行へ解決し、旧ブックマークの曲参照は現行キーへ移行する。
+  - 旧形式は、`songKey`（`archiveId::archiveOrder`）と、その後ろに URL を付けた最初期の形式（`archiveId::archiveOrder::url`）の 2 つ。
+    どちらも先頭の `archiveId` と `archiveOrder` だけで曲を特定し、URL は見ない
+  - そのため、最初期の形式のキーは曲データに持たせない。URL を含む分だけ `songs.json` が大きくなり、
+    読み込みのたびに生成規則との照合も必要になるため
 - 旧数値参照はCSV行位置の変化で別の曲を指し得るため解決せず、実行時モデルへ持ち込まず読み込み時に除外する。
 - `bookmarkSongKey` も歌唱順を含むので、シートで歌唱順を入れ替えたり途中に曲を足したりすると、後ろの番号のキーが別の歌唱を指す。
   保存済みのブックマークは訪問者の端末にあって直せないので、曲データの更新で見つけて Issue で知らせる（[曲データ更新](#曲データ更新update-songs-jsonyml)）。

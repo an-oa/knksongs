@@ -116,9 +116,11 @@ export function buildStoredBookmarksPayload(bookmarks: unknown, version: number)
 
 /**
  * 旧文字列形式のブックマーク曲IDを現行の bookmarkSongKey へ移行する。
+ * 旧形式は、songKey（archiveId::archiveOrder）と、その後ろに URL を付けた最初期の形式の 2 つ。
+ * どちらも archiveId と archiveOrder で曲を特定し、URL は見ない。
  * 安定して復元できない旧数値参照は実行時モデルへ持ち込まず除外する。
- * @param {{ bookmarks: Record<string, *>, songRows: Array<*> }} input
- * @returns {{ updated: boolean, changedBookmarkIds: string[], changes: BookmarkMigrationChange[] }}
+ * @param input 移行するブックマークと、参照の解決に使う曲行
+ * @returns 変更の有無、変更したブックマークの ID、変更前後の曲参照
  */
 export function migrateLegacyBookmarkSongRefsToCurrent(input: BookmarkMigrationInput) {
     const bookmarks: Record<string, { songs?: unknown }> =
@@ -144,8 +146,6 @@ export function migrateLegacyBookmarkSongRefsToCurrent(input: BookmarkMigrationI
                 else if (referenceIndex.songByKey.has(trimmedRef)) {
                     const row = referenceIndex.songByKey.get(trimmedRef);
                     normalized = getBookmarkSongRef(row) || null;
-                } else if (referenceIndex.bookmarkKeyByLegacyKey.has(trimmedRef)) {
-                    normalized = referenceIndex.bookmarkKeyByLegacyKey.get(trimmedRef) || null;
                 } else {
                     const converted = normalizeLegacySongRefToCurrent(trimmedRef);
                     if (converted && referenceIndex.songByKey.has(converted)) {

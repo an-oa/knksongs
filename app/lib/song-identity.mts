@@ -2,10 +2,8 @@ export type SongIdentityRow = {
     archiveId?: unknown;
     archiveOrder?: unknown;
     videoId?: unknown;
-    url?: unknown;
     songKey?: unknown;
     bookmarkSongKey?: unknown;
-    legacySongKey?: unknown;
 };
 
 export type SongIdentityIssue =
@@ -16,7 +14,7 @@ export type SongIdentityIssue =
     | {
         kind: "mismatched-key";
         index: number;
-        fieldName: "songKey" | "bookmarkSongKey" | "legacySongKey";
+        fieldName: "songKey" | "bookmarkSongKey";
         expected: string;
     }
     | {
@@ -30,7 +28,6 @@ export type SongIdentityIssue =
 export type SongReferenceIndex<Row extends SongIdentityRow> = {
     songByBookmarkKey: Map<string, Row>;
     songByKey: Map<string, Row>;
-    bookmarkKeyByLegacyKey: Map<string, string>;
     bookmarkSongKeys: Set<string>;
 };
 
@@ -66,11 +63,6 @@ export function buildBookmarkSongKey(input: SongIdentityRow): string {
     return `${keyHead}::${orderPart}`;
 }
 
-/** 旧仕様互換の曲キー（archiveId + archiveOrder + url）を生成する。 */
-export function buildLegacySongKey(input: SongIdentityRow): string {
-    return `${buildSongKey(input)}::${String(input.url ?? "").trim()}`;
-}
-
 /** 曲行からブックマーク保存に使う参照キーを返す。 */
 export function getBookmarkSongRef(row: SongIdentityRow | null | undefined): string {
     if (!row || typeof row !== "object") return "";
@@ -80,7 +72,14 @@ export function getBookmarkSongRef(row: SongIdentityRow | null | undefined): str
     return typeof row.songKey === "string" ? row.songKey.trim() : "";
 }
 
-/** 旧形式の曲参照キーを現在のsongKey形式へ正規化する。 */
+/**
+ * 旧形式の曲参照キーを現在のsongKey形式へ正規化する。
+ * 最初期の形式（archiveId::archiveOrder::url）も、先頭の archiveId と archiveOrder だけを読んで同じ曲へ対応づける。
+ * URL は曲の特定に使わないので、曲データにはこの形式のキーを持たせない。
+ * 旧ブックマークの移行用で、旧形式の互換を打ち切るときに削除できる。
+ * @param ref ブックマークに保存されていた曲参照
+ * @returns 現在のsongKey。archiveId と整数の archiveOrder を読み取れなければ null
+ */
 export function normalizeLegacySongRefToCurrent(ref: string | null | undefined): string | null {
     if (typeof ref !== "string") return null;
     const parts = ref.split("::");
@@ -100,7 +99,6 @@ export function buildSongReferenceIndex<Row extends SongIdentityRow>(
 ): SongReferenceIndex<Row> {
     const songByBookmarkKey = new Map<string, Row>();
     const songByKey = new Map<string, Row>();
-    const bookmarkKeyByLegacyKey = new Map<string, string>();
     const bookmarkSongKeys = new Set<string>();
 
     for (const row of songRows) {
@@ -114,16 +112,11 @@ export function buildSongReferenceIndex<Row extends SongIdentityRow>(
         if (typeof row.songKey === "string" && row.songKey && !songByKey.has(row.songKey)) {
             songByKey.set(row.songKey, row);
         }
-        if (typeof row.legacySongKey === "string" && row.legacySongKey && bookmarkSongRef &&
-            !bookmarkKeyByLegacyKey.has(row.legacySongKey)) {
-            bookmarkKeyByLegacyKey.set(row.legacySongKey, bookmarkSongRef);
-        }
     }
 
     return {
         songByBookmarkKey,
         songByKey,
-        bookmarkKeyByLegacyKey,
         bookmarkSongKeys
     };
 }
@@ -165,13 +158,10 @@ function* iterateSongIdentityIssues(songRows: readonly unknown[]): Generator<Son
             yield { kind: "invalid-archive-order", index };
             continue;
         }
-        const songKey = buildSongKey(row);
-        const songKeyIssue = getMismatchedKeyIssue(row, index, "songKey", songKey);
+        const songKeyIssue = getMismatchedKeyIssue(row, index, "songKey", buildSongKey(row));
         if (songKeyIssue) yield songKeyIssue;
         const bookmarkIssue = getMismatchedKeyIssue(row, index, "bookmarkSongKey", buildBookmarkSongKey(row));
         if (bookmarkIssue) yield bookmarkIssue;
-        const legacyIssue = getMismatchedKeyIssue(row, index, "legacySongKey", `${songKey}::${String(row.url ?? "").trim()}`);
-        if (legacyIssue) yield legacyIssue;
     }
     yield* iterateDuplicateKeyIssues(songRows, "songKey");
     yield* iterateDuplicateKeyIssues(songRows, "bookmarkSongKey");
@@ -191,7 +181,7 @@ export function findFirstSongIdentityIssue(songRows: readonly unknown[]): SongId
 function getMismatchedKeyIssue(
     row: SongIdentityRow,
     index: number,
-    fieldName: "songKey" | "bookmarkSongKey" | "legacySongKey",
+    fieldName: "songKey" | "bookmarkSongKey",
     expected: string
 ): SongIdentityIssue | null {
     return row[fieldName] !== expected ? { kind: "mismatched-key", index, fieldName, expected } : null;

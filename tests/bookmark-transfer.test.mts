@@ -72,8 +72,7 @@ test("bookmark transfer: parses and migrates import payloads", () => {
         songRows: [
             {
                 songKey: "arch1::1",
-                bookmarkSongKey: "videoA::1",
-                legacySongKey: "arch1::1::https://youtu.be/videoA"
+                bookmarkSongKey: "videoA::1"
             }
         ],
         maxBookmarkCount: 20,

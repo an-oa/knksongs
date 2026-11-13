@@ -1,6 +1,8 @@
 import { test, expect, type Page } from "@playwright/test";
 import { readFile } from "node:fs/promises";
 import { installNetworkMocks } from "./support/network-mocks.mts";
+import { createScrollableResultSongs } from "./support/song-fixtures.mts";
+import { routeSongsJsonFixture } from "./support/songs-network.mts";
 import {
     createBookmarkFromSong,
     expectBookmarkToast,
@@ -131,6 +133,54 @@ test("active bookmark persists across reload", async ({ page }) => {
     await openSidebar(page);
     await openBookmarkPanel(page);
     await expect(getBookmarkItem(page, bookmarkName)).toHaveClass(/active/);
+});
+
+test("bookmarks saved with older song references open the same songs and are rewritten to the current keys", async ({ page }) => {
+    const songs = createScrollableResultSongs(4);
+    await routeSongsJsonFixture(page, songs);
+    // 旧形式の保存内容。version 3 より前は、曲を archiveId と歌唱順で指していた。
+    await page.evaluate((payload) => {
+        localStorage.setItem("bookmarksV1", JSON.stringify(payload));
+    }, {
+        version: 1,
+        bookmarks: {
+            p_1: {
+                name: "Old Favorites",
+                songs: [
+                    // 最初期の形式。archiveId と歌唱順の後ろに、保存した当時の URL が付く。
+                    `${songs[2].songKey}::${songs[2].url}`,
+                    // 保存した後に曲データの URL が変わっていても、同じ曲を指す。
+                    `${songs[0].songKey}::https://www.youtube.com/watch?v=${songs[0].videoId}&t=999s`,
+                    // その次の形式。archiveId と歌唱順だけ。
+                    songs[1].songKey
+                ],
+                createdAt: 1
+            }
+        }
+    });
+    await page.reload();
+    await waitForInitialLoad(page);
+
+    // 読み込んだ時点で、今の保存用キー (videoId と歌唱順) へ書き換えて保存する。
+    await expect.poll(() => readStoredBookmarks(page)).toEqual({
+        version: 3,
+        bookmarks: {
+            p_1: {
+                name: "Old Favorites",
+                songs: [songs[2].bookmarkSongKey, songs[0].bookmarkSongKey, songs[1].bookmarkSongKey],
+                createdAt: 1
+            }
+        }
+    });
+
+    await openBookmarkPanel(page);
+    await getBookmarkItem(page, "Old Favorites").click();
+    await expect(page.locator("#resultCount")).toHaveText("ブックマーク: Old Favorites (3 件)");
+    await expect(page.locator("#resultList > .song-card .title")).toHaveText([
+        "Scroll Song 03",
+        "Scroll Song 01",
+        "Scroll Song 02"
+    ]);
 });
 
 test("keyboard selects and clears a bookmark while keeping focus on it", async ({ page }) => {

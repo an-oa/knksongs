@@ -19,7 +19,6 @@ export function createScrollableResultSongs(count: number): Song[] {
             videoId,
             songKey: `scroll-archive-${paddedIndex}::1`,
             bookmarkSongKey: `${videoId}::1`,
-            legacySongKey: `scroll-archive-${paddedIndex}::1::https://www.youtube.com/watch?v=${videoId}&t=${songNumber}s`,
             format: "配信",
             streamRole: "",
             videoOrientation: "",

@@ -6,7 +6,6 @@ import {
 } from "../app/lib/songs-data-quality.mts";
 import {
     buildBookmarkSongKey,
-    buildLegacySongKey,
     buildSongKey
 } from "../app/lib/song-identity.mts";
 import { createSongFixture } from "./fixtures/song.mts";
@@ -29,8 +28,7 @@ function makeSong(overrides: Partial<Record<keyof Song, unknown>> = {}) {
     return {
         ...song,
         songKey: buildSongKey(song),
-        bookmarkSongKey: buildBookmarkSongKey(song),
-        legacySongKey: buildLegacySongKey(song)
+        bookmarkSongKey: buildBookmarkSongKey(song)
     };
 }
 

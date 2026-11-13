@@ -14,7 +14,6 @@ function createSong(songKey: string): Song {
         videoId: "abc123",
         songKey,
         bookmarkSongKey: `abc123::${songKey}`,
-        legacySongKey: `${songKey}::https://www.youtube.com/watch?v=abc123&t=10s`,
         url: "https://www.youtube.com/watch?v=abc123&t=10s"
     });
 }

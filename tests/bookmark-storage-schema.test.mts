@@ -124,13 +124,11 @@ test("bookmark storage migration: rewrites legacy refs to current bookmark song 
     const songRows = [
         {
             songKey: "arch1::1",
-            bookmarkSongKey: "videoA::1",
-            legacySongKey: "arch1::1::https://youtu.be/videoA"
+            bookmarkSongKey: "videoA::1"
         },
         {
             songKey: "arch2::2",
-            bookmarkSongKey: "videoB::2",
-            legacySongKey: "arch2::2::https://youtu.be/videoB"
+            bookmarkSongKey: "videoB::2"
         }
     ];
 
@@ -151,6 +149,37 @@ test("bookmark storage migration: rewrites legacy refs to current bookmark song 
             ],
             after: ["videoA::1", "videoB::2", "missing"]
         }
+    ]);
+});
+
+test("bookmark storage migration: the oldest refs with a URL are resolved by archive and order alone", () => {
+    const bookmarks = {
+        p_1: {
+            name: "Oldest refs",
+            songs: [
+                // 保存した当時の URL が付いた、最初期の形式。
+                "arch1::1::https://www.youtube.com/watch?v=videoA&t=10s",
+                // 保存した後に曲データの URL (開始位置など) が直されていても、同じ曲を指す。
+                "arch2::2::https://www.youtube.com/watch?v=videoB&t=999s",
+                // 同じ archiveId でも、歌唱順が違えば別の曲。曲データにないので、そのまま残す。
+                "arch2::3::https://www.youtube.com/watch?v=videoB&t=20s"
+            ],
+            createdAt: 1
+        }
+    };
+    // 曲データは URL を含むキーを持たない。URL そのものも、曲の特定には渡さない。
+    const songRows = [
+        { songKey: "arch1::1", bookmarkSongKey: "videoA::1" },
+        { songKey: "arch2::2", bookmarkSongKey: "videoB::2" }
+    ];
+
+    const result = migrateLegacyBookmarkSongRefsToCurrent({ bookmarks, songRows });
+
+    assert.equal(result.updated, true);
+    assert.deepEqual(bookmarks.p_1.songs, [
+        "videoA::1",
+        "videoB::2",
+        "arch2::3::https://www.youtube.com/watch?v=videoB&t=20s"
     ]);
 });
 
