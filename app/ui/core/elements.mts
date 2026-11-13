@@ -1,4 +1,4 @@
-import type { AppUiElements } from "../../state.types";
+import type { AppUiElements } from "../../state.types.mjs";
 import { getStoredSettingText, setStoredSettingText } from "../../lib/storage/settings-storage.mjs";
 
 // index.html の埋め込みスクリプトも、初回描画前のテーマ適用で同じキーを直接読む。
@@ -25,7 +25,7 @@ function getButtonElementById(id: string): HTMLButtonElement | null {
 
 /**
  * 初期化時に利用する DOM 要素参照をまとめて取得する。
- * @returns {import("../../state.types").AppUiElements}
+ * @returns ui.el に保持する DOM 要素参照。ページにない要素は null
  */
 export function collectUiElements(): AppUiElements {
     const sidebar = document.getElementById("sidebar");

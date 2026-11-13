@@ -8,7 +8,7 @@ import { isHtmlElement } from "../../lib/dom-utils.mjs";
 import { getBookmarkText } from "./text.mjs";
 import type { LocalizedText } from "./text.mjs";
 import type { SiteLanguage } from "../../lib/site-language.mjs";
-import type { AppDataState, AppUiState } from "../../state.types";
+import type { AppDataState, AppUiState } from "../../state.types.mjs";
 import type { StorageActionResult } from "../../controllers/storage.mjs";
 
 /** 一覧項目内で、再描画後もフォーカスを戻す対象にする操作ボタン。 */

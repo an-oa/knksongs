@@ -23,7 +23,7 @@ import type {
 } from "./transfer-dialog.mjs";
 import { MAX_BOOKMARK_IMPORT_BYTES } from "../../lib/storage/bookmark-transfer.mjs";
 import type { SiteLanguage } from "../../lib/site-language.mjs";
-import type { AppDataState, AppUiElements, SiteLanguageUiRuntimeState } from "../../state.types";
+import type { AppDataState, AppUiElements, SiteLanguageUiRuntimeState } from "../../state.types.mjs";
 import { getBookmarkText } from "./text.mjs";
 import type { LocalizedText } from "./text.mjs";
 import type { BookmarkImportPreview, StorageActionResult } from "../../controllers/storage.mjs";

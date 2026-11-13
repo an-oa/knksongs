@@ -10,7 +10,7 @@ import type {
     SearchConditionsState,
     SearchUiRuntimeState,
     SiteLanguageUiRuntimeState
-} from "../../state.types";
+} from "../../state.types.mjs";
 
 type SearchFiltersSearchState = Pick<SearchUiRuntimeState, "selectedFormats"> & {
     /** 検索条件のうち真偽値フィルター。既定へ戻すときに書き換える。 */

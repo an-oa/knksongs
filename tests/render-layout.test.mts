@@ -30,7 +30,7 @@ function readCardName(parent: Element | null | undefined, selector: ".title" | "
 }
 
 /** 描画と検索の共有データに、省略した初期値を補う。 */
-function createRenderDataState(input: Partial<import("../app/state.types").AppDataState>): import("../app/state.types").AppDataState {
+function createRenderDataState(input: Partial<import("../app/state.types.mts").AppDataState>): import("../app/state.types.mts").AppDataState {
     return { allSongsRaw: [], currentResults: [], displayLimit: 48, activeBookmark: null, bookmarks: {}, ...input };
 }
 
@@ -54,7 +54,7 @@ function createRenderUiState<Elements extends {
     selectedFormats?: Set<string>;
     dataReady?: boolean;
     activeThumb?: HTMLElement | null;
-    cardEntriesBySongKey?: Map<string, import("../app/state.types").RenderCardEntry>;
+    cardEntriesBySongKey?: Map<string, import("../app/state.types.mts").RenderCardEntry>;
     language?: import("../app/lib/site-language.mts").SiteLanguage;
 }) {
     return {
@@ -73,7 +73,7 @@ function createRenderUiState<Elements extends {
             activeThumb: input.activeThumb ?? null
         },
         render: {
-            cardEntriesBySongKey: input.cardEntriesBySongKey ?? new Map<string, import("../app/state.types").RenderCardEntry>()
+            cardEntriesBySongKey: input.cardEntriesBySongKey ?? new Map<string, import("../app/state.types.mts").RenderCardEntry>()
         },
         language: {
             current: input.language ?? "ja"
@@ -125,7 +125,7 @@ function placeCardsInOneColumn(list: HTMLElement) {
  * 移動元のハンドルを押して、並べ替えのドラッグを始める。
  * @param source 移動元のカード
  */
-function pressDragHandle(source: import("../app/state.types").RenderCardEntry) {
+function pressDragHandle(source: import("../app/state.types.mts").RenderCardEntry) {
     invokeListener(source.dragHandle, "pointerdown", {
         currentTarget: source.dragHandle,
         target: source.dragHandle,
@@ -147,8 +147,8 @@ function pressDragHandle(source: import("../app/state.types").RenderCardEntry) {
  */
 function dragCardOnto(
     list: HTMLElement,
-    source: import("../app/state.types").RenderCardEntry,
-    target: import("../app/state.types").RenderCardEntry
+    source: import("../app/state.types.mts").RenderCardEntry,
+    target: import("../app/state.types.mts").RenderCardEntry
 ) {
     placeCardsInOneColumn(list);
     getFakeElement(list)._rect = { top: 0, bottom: 1000, left: 0, right: 300, width: 300, height: 1000 };

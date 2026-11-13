@@ -5,7 +5,7 @@ import { createStorageController } from "../app/controllers/storage.mts";
 import { createSearchFiltersController } from "../app/ui/search-filters/controller.mts";
 import { createFakeLocalStorage, readStoredText } from "./fixtures/local-storage.mts";
 import { createInitialSearchConditions } from "../app/state.mts";
-import type { BookmarkRecord } from "../app/state.types";
+import type { BookmarkRecord } from "../app/state.types.mts";
 import type { SiteLanguage } from "../app/lib/site-language.mts";
 import { installFakeDom } from "./test-helpers.mts";
 

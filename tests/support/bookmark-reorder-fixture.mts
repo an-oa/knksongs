@@ -1,6 +1,6 @@
 import { createStorageController } from "../../app/controllers/storage.mts";
 import { createInitialSearchConditions } from "../../app/state.mts";
-import type { AppDataState } from "../../app/state.types";
+import type { AppDataState } from "../../app/state.types.mts";
 import type { BookmarkSaveResult } from "../../app/controllers/bookmark-persistence.mts";
 
 /** 並べ替えの保存成功を描画へ接続し、検索による表示範囲のリセットを検出する。 */

@@ -3,7 +3,7 @@ import { getBookmarkText } from "./text.mjs";
 import type { LocalizedText } from "./text.mjs";
 import type { SiteLanguage } from "../../lib/site-language.mjs";
 import { resolveSongRef } from "../../lib/song-lookup.mjs";
-import type { AppDataState, AppUiState } from "../../state.types";
+import type { AppDataState, AppUiState } from "../../state.types.mjs";
 
 export const BOOKMARK_NOTIFICATION_TIMEOUT_MS = 4000;
 /** 失敗の通知は、理由と次にすることを読む時間が要るので長く出す。 */

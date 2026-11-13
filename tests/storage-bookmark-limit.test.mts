@@ -6,7 +6,7 @@ import { createSearchFiltersController } from "../app/ui/search-filters/controll
 import { createFakeLocalStorage, readStoredText } from "./fixtures/local-storage.mts";
 import { createInitialSearchConditions } from "../app/state.mts";
 import { createSongFixture } from "./fixtures/song.mts";
-import type { BookmarkRecord } from "../app/state.types";
+import type { BookmarkRecord } from "../app/state.types.mts";
 import { installFakeDom } from "./test-helpers.mts";
 import type { SiteLanguage } from "../app/lib/site-language.mts";
 

@@ -24,7 +24,7 @@ import type {
     SearchUiRuntimeState,
     LookupUiRuntimeState,
     SiteLanguageUiRuntimeState
-} from "../state.types";
+} from "../state.types.mjs";
 
 type SearchControllerInput = {
     data: AppDataState;

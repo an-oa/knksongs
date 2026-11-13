@@ -1,4 +1,4 @@
-import type { SearchConditionsState, SiteLanguageUiRuntimeState } from "../../state.types";
+import type { SearchConditionsState, SiteLanguageUiRuntimeState } from "../../state.types.mjs";
 import { hasCoarsePrimaryPointer, isHtmlElement } from "../../lib/dom-utils.mjs";
 import {
     SEARCH_BOOLEAN_FILTER_KEYS,

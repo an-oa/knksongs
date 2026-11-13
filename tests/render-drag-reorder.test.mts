@@ -80,7 +80,7 @@ function createDragHarness(options: {
     saveResult?: import("../app/controllers/bookmark-persistence.mts").BookmarkSaveResult;
     heights?: Record<string, number>;
 } = {}) {
-    const data: import("../app/state.types").AppDataState = {
+    const data: import("../app/state.types.mts").AppDataState = {
         allSongsRaw: [],
         displayLimit: 48,
         activeBookmark: "bookmark-1",
@@ -100,7 +100,7 @@ function createDragHarness(options: {
     const calls = {
         save: 0,
         render: 0,
-        savedBookmarks: [] as import("../app/state.types").AppDataState["bookmarks"][],
+        savedBookmarks: [] as import("../app/state.types.mts").AppDataState["bookmarks"][],
         saveFailures: [] as import("../app/controllers/storage.mts").StorageActionFailure[],
         keyboardMoves: [] as { songKey: string; toIndex: number }[],
         shownIndexes: [] as number[]

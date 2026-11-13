@@ -1,4 +1,4 @@
-import type { BookmarkRecord } from "../../state.types";
+import type { BookmarkRecord } from "../../state.types.mjs";
 import type { SiteLanguage } from "../../lib/site-language.mjs";
 import type { LocalizedText } from "./text.mjs";
 

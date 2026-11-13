@@ -2,7 +2,7 @@
  * アプリ全体で共有する状態 appState の初期値と、動作の定数。
  *
  * appState は data・ui・youtube の 3 区分で、生成するのはここだけ。
- * 区分ごとに取り出して各 controller と UI へ渡すのは bootstrap.mts が行う。型は ./state.types に置く。
+ * 区分ごとに取り出して各 controller と UI へ渡すのは bootstrap.mts が行う。型は ./state.types.mts に置く。
  * 定数は表示件数、形式の既定値、localStorage の key と上限、検索 debounce、YouTube IFrame API の設定など。
  * 曲データの取得 URL とキャッシュ key は ./config.mts にある。
  *
@@ -10,7 +10,7 @@
  */
 import { INITIAL_PLAYBACK_SETTING_VALUES } from "./lib/playback-settings/definitions.mjs";
 import { createDefaultSearchBooleanFilters } from "./lib/search-boolean-filters.mjs";
-import type { AppState, PlaybackUiRuntimeState, SearchConditionsState } from "./state.types";
+import type { AppState, PlaybackUiRuntimeState, SearchConditionsState } from "./state.types.mjs";
 
 export const RANDOM_DISPLAY_COUNT = 48;
 export const MIN_PERFORMANCE_FOR_RANDOM = 3;

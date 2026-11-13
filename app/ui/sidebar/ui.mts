@@ -1,6 +1,6 @@
 import { createSidebarPopoverController } from "./popover.mjs";
 import { createSidebarSubpanelController } from "./subpanel.mjs";
-import type { AppUiState } from "../../state.types";
+import type { AppUiState } from "../../state.types.mjs";
 
 type SidebarBookmarkUiController = {
     closeBookmarkModal: (options?: { restoreFocus?: boolean }) => void;

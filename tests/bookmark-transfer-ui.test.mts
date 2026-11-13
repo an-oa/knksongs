@@ -6,7 +6,7 @@ import { refreshBookmarkPanelError } from "../app/ui/bookmark/panel.mts";
 import type { BookmarkTransferCallbacks } from "../app/ui/bookmark/transfer.mts";
 import type { BookmarkTransferDialogRequest } from "../app/ui/bookmark/transfer-dialog.mts";
 import type { BookmarkPromptDialogRequest } from "../app/ui/bookmark/prompt-dialog.mts";
-import type { AppDataState } from "../app/state.types";
+import type { AppDataState } from "../app/state.types.mts";
 import type { SiteLanguage } from "../app/lib/site-language.mts";
 import { installFakeDom, invokeListener } from "./test-helpers.mts";
 

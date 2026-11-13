@@ -1,4 +1,4 @@
-import type { PlaybackSettingsUiSlice } from "../../state.types";
+import type { PlaybackSettingsUiSlice } from "../../state.types.mjs";
 
 export const THUMBNAIL_STORAGE_KEY = "showThumbnails";
 export const USE_YOUTUBE_NOCOOKIE_STORAGE_KEY = "useYoutubeNoCookie";

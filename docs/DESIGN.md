@@ -28,6 +28,8 @@
 - 対象: 検索ロジック、日付フィルタ、ブックマーク検索、描画/再生/保存/サイドバーまわりの回帰
 - 重点ケース: ブックマーク表示時のみ有効なドラッグ並び替えと、並び順の永続化、YouTube 継続再生の失敗復旧
 - 型検査: Node単体テスト・E2Eと共通helperはすべて `.mts` で記述する。アプリは `tsconfig.json`、Node単体テストは `tests/tsconfig.json` でstrictな型チェックを行う。
+  アプリの型だけの module（`app/state.types.mts` など）も `.mts` で書く。`.d.ts` にすると、`skipLibCheck: true` のアプリの型検査では中身が検査されない。
+  ambient 宣言の `types/*.d.ts` は、`skipLibCheck: false` の `tests/tsconfig.json` に含めて検査する。
   Node scriptsは `.mts` sourceを直接参照し、scriptsと単体テストの型設定は `allowJs: false` とする。
   scripts本体は `scripts/tsconfig.json` の `noEmit: true`・`strict: true` で、共通helperを含む `scripts/**/*.mts` 全体を検査する。
   `erasableSyntaxOnly`・`verbatimModuleSyntax` でNode標準の型除去機能に対応し、Node 24.22.1でscriptsを直接実行する。

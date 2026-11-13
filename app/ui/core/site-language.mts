@@ -1,4 +1,4 @@
-import type { AppUiState } from "../../state.types";
+import type { AppUiState } from "../../state.types.mjs";
 import { getStoredSettingText, setStoredSettingText } from "../../lib/storage/settings-storage.mjs";
 import {
     parseSiteLanguageQuery,

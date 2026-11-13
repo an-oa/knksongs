@@ -6,7 +6,7 @@ import {
 } from "../app/state.mts";
 import { INITIAL_PLAYBACK_SETTING_VALUES } from "../app/lib/playback-settings/definitions.mts";
 
-import type { PlaybackUiRuntimeState, PlaybackSettingsUiSlice } from "../app/state.types";
+import type { PlaybackUiRuntimeState, PlaybackSettingsUiSlice } from "../app/state.types.mts";
 
 /**
  * 再生設定値だけを playback runtime state から抜き出す。

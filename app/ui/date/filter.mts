@@ -12,7 +12,7 @@ import type {
     DateUiRuntimeState,
     SearchConditionsState,
     SiteLanguageUiRuntimeState
-} from "../../state.types";
+} from "../../state.types.mjs";
 import { getUiText } from "../../lib/ui-text.mjs";
 
 /** 日付範囲の開始側と終了側。日付の入力・保存・条件表示で共通に使う。 */

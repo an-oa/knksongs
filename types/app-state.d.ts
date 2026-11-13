@@ -6,7 +6,7 @@ interface Window {
   /** 自動再生開始判定の fallback を検証時だけ有効化するフラグ。 */
   __KNK_AUTOPLAY_START_FALLBACK__?: boolean;
   /** YouTube IFrame API が window に公開する namespace。 */
-  YT: import("../app/lib/youtube/iframe-api.types").YoutubeIframeApiGlobal;
+  YT: import("../app/lib/youtube/iframe-api.types.mjs").YoutubeIframeApiGlobal;
   /** YouTube IFrame API の読み込み完了 callback。 */
   onYouTubeIframeAPIReady?: () => void;
 }

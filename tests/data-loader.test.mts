@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createDataLoader } from "../app/ui/core/data.mts";
 import type { SongsSnapshot } from "../app/lib/songs-data-source.mts";
-import type { AppUiState } from "../app/state.types";
+import type { AppUiState } from "../app/state.types.mts";
 import type { ResultCountState } from "../app/ui/result-summary/count.mts";
 import { createSongFixture } from "./fixtures/song.mts";
 import { installFakeDom } from "./test-helpers.mts";

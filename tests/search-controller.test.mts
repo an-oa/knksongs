@@ -6,7 +6,7 @@ import type {
     SearchUiRuntimeState,
     DateUiRuntimeState,
     LookupUiRuntimeState
-} from "../app/state.types";
+} from "../app/state.types.mts";
 import assert from "node:assert/strict";
 import { createSearchFiltersController } from "../app/ui/search-filters/controller.mts";
 import { createSearchSongFixtureFactory } from "./fixtures/search-song.mts";

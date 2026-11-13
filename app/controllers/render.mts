@@ -38,7 +38,7 @@ import type {
     RenderUiRuntimeState,
     SearchUiRuntimeState,
     SiteLanguageUiRuntimeState
-} from "../state.types";
+} from "../state.types.mjs";
 
 const DEFAULT_RESULT_DISPLAY_BATCH_SIZE = 48;
 

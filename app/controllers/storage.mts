@@ -32,7 +32,7 @@ import type {
     AppDataState,
     AppUiState,
     BookmarkRecord
-} from "../state.types";
+} from "../state.types.mjs";
 
 type StorageDataState = Pick<AppDataState, "allSongsRaw" | "bookmarks" | "activeBookmark" | "currentResults">;
 

@@ -1,5 +1,5 @@
 import test from "node:test";
-import type { DateUiRuntimeState } from "../app/state.types";
+import type { DateUiRuntimeState } from "../app/state.types.mts";
 import assert from "node:assert/strict";
 import { createDateFilterController } from "../app/ui/date/filter.mts";
 import { createSearchSongFixtureFactory } from "./fixtures/search-song.mts";

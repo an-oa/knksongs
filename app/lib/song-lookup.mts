@@ -1,4 +1,4 @@
-import type { LookupUiRuntimeState } from "../state.types";
+import type { LookupUiRuntimeState } from "../state.types.mjs";
 import { buildSongByKeyMap } from "./song-identity.mjs";
 
 /**

@@ -75,8 +75,8 @@ import { createYoutubePostPlaybackAdRestoreManager } from "../lib/youtube/post-p
 import type {
     AppUiState,
     AppYoutubeRuntimeState
-} from "../state.types";
-import type { YoutubePlayerEvent, YoutubePlayerLike } from "../lib/youtube/iframe-api.types";
+} from "../state.types.mjs";
+import type { YoutubePlayerEvent, YoutubePlayerLike } from "../lib/youtube/iframe-api.types.mjs";
 
 export { extractYoutubeInfo } from "../lib/youtube-url.mjs";
 

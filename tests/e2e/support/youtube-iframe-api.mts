@@ -1,7 +1,7 @@
 import type {
     YoutubeIframeApiGlobal,
     YoutubePlayerLike
-} from "../../../app/lib/youtube/iframe-api.types";
+} from "../../../app/lib/youtube/iframe-api.types.mts";
 
 export type MockVideoBehavior = "manual" | "auto-playing" | "auto-error" | "auto-ended";
 

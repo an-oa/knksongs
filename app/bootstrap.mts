@@ -74,7 +74,7 @@ import type {
     AppDataState,
     AppUiState,
     AppYoutubeRuntimeState
-} from "./state.types";
+} from "./state.types.mjs";
 
 type SearchCallbacksInput = {
     getRenderController: () => ReturnType<typeof createRenderController>;

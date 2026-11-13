@@ -1,3 +1,10 @@
+/**
+ * アプリの状態の型を置く module。値は ./state.mts が所有し、ここには型だけを置く。
+ *
+ * 各 controller と UI は、受け取る区分の型をここから import type で参照する。
+ * 型だけなので、生成される .mjs は空になり、ブラウザ用の bundle には含まれない。
+ * 曲 (Song) のように複数の領域で共有する型は types/*.d.ts の ambient 宣言を使い、ここには置かない。
+ */
 import type { YoutubeSharedPlaybackState } from "./lib/youtube/shared-playback.mjs";
 import type { RecommendedSearchCache } from "./lib/search-recommendation.mjs";
 import type { SearchBooleanFilterKey } from "./lib/search-boolean-filters.mjs";

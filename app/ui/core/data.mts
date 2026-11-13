@@ -1,4 +1,4 @@
-import type { AppDataState, AppUiState } from "../../state.types";
+import type { AppDataState, AppUiState } from "../../state.types.mjs";
 import type { SongsSnapshot } from "../../lib/songs-data-source.mjs";
 import type { ResultCountState } from "../result-summary/count.mjs";
 
