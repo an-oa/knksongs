@@ -35,6 +35,7 @@ import {
     clearYoutubeThumbnailPlaybackTarget,
     createYoutubeThumbnailPlayButton,
     getSongKeyFromYoutubeThumb,
+    getYoutubeThumbnailIdleRenderKey,
     getYoutubeThumbnailPlayButton,
     getYoutubeThumbnailPlayLabel,
     getYoutubeThumbnailPlaybackEndSeconds,
@@ -42,6 +43,7 @@ import {
     getYoutubeThumbnailPlaybackSessionId,
     revealYoutubePlaybackCardIfNeeded,
     setYoutubeThumbnailExpandedCardState,
+    setYoutubeThumbnailIdleRenderKey,
     setYoutubeThumbnailOrientation,
     setYoutubeThumbnailPlaybackMode,
     setYoutubeThumbnailPlaybackSessionId,
@@ -844,6 +846,8 @@ export function createYoutubeController({ ui, youtube, constants }: YoutubeContr
         setYoutubeThumbnailOrientation(thumbDiv, "landscape");
         setYoutubeThumbnailPlaybackState(thumbDiv, "stopped");
         setYoutubeThumbnailExpandedCardState(thumbDiv, false);
+        // 次に曲情報を反映するときは、再生前と同じ内容でも描き直す。
+        setYoutubeThumbnailIdleRenderKey(thumbDiv, "");
         if (videoId) {
             applyYoutubeThumbnailImage(thumbDiv, videoId);
             if (hadFocus) getYoutubeThumbnailPlayButton(thumbDiv)?.focus({ preventScroll: true });
@@ -887,6 +891,7 @@ export function createYoutubeController({ ui, youtube, constants }: YoutubeContr
             playbackMode
         });
         setActiveThumb(thumbDiv, { preserveTransitionGeneration: true });
+        setYoutubeThumbnailIdleRenderKey(thumbDiv, "");
         setYoutubeThumbnailPlaybackTarget(thumbDiv, buildPlaybackTargetMetadata(yt));
         setYoutubeThumbnailPlaybackSessionId(thumbDiv, playbackSessionId);
         setYoutubeThumbnailPlaybackMode(thumbDiv, playbackMode);
@@ -945,7 +950,27 @@ export function createYoutubeController({ ui, youtube, constants }: YoutubeContr
     }
 
     /**
+     * 再生していない状態のサムネイルに描く内容を表す値を作る。
+     * 画像を出すかどうかと、押したときに再生する対象が同じなら、同じ値になる。
+     * @param yt 曲の再生対象
+     * @param playbackTarget サムネイルへ保存する再生対象
+     * @returns 描く内容を表す値
+     */
+    function buildIdleThumbnailRenderKey(yt: YoutubeTarget, playbackTarget: YoutubePlaybackTargetMetadata): string {
+        return [
+            playbackUi.showThumbnails ? "shown" : "hidden",
+            yt.videoId,
+            yt.startSeconds,
+            yt.endSeconds ?? "",
+            yt.isVertical ? "vertical" : "landscape",
+            playbackTarget.playbackKey
+        ].join("|");
+    }
+
+    /**
      * 曲情報に合わせてサムネイル表示内容を更新する。
+     * 結果一覧を描き直すたびに表示中の全カードについて呼ばれるので、再生していないサムネイルに
+     * 同じ内容を描いてあるときは何もしない。画像や再生ボタンを作り直すと、件数に比例して描画が重くなる。
      * 押したときの処理はサムネイルの枠で受け、キーボードでは中の再生ボタンから同じ処理へ届く。
      */
     function updateThumbnail(thumbDiv: HTMLElement, yt: YoutubeTarget) {
@@ -955,8 +980,11 @@ export function createYoutubeController({ ui, youtube, constants }: YoutubeContr
             setYoutubeThumbnailOrientation(thumbDiv, yt && yt.isVertical ? "vertical" : "landscape");
             return;
         }
+        const renderKey = buildIdleThumbnailRenderKey(yt, playbackTarget);
+        if (getYoutubeThumbnailIdleRenderKey(thumbDiv) === renderKey) return;
         resetThumbnailContainer(thumbDiv, playbackTarget);
         setYoutubeThumbnailOrientation(thumbDiv, "landscape");
+        setYoutubeThumbnailIdleRenderKey(thumbDiv, renderKey);
 
         if (!playbackUi.showThumbnails) return;
         if (!yt.videoId) return;

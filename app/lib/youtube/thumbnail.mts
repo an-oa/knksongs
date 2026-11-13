@@ -124,6 +124,29 @@ export function getYoutubeThumbnailPlayButton(thumbDiv: HTMLElement): HTMLElemen
 }
 
 /**
+ * 再生していない状態のサムネイルに描いた内容を表す値を返す。
+ * @param thumbDiv 値を読むサムネイル要素
+ * @returns 描いた内容を表す値。描いていないか、再生を始めた後なら空文字
+ */
+export function getYoutubeThumbnailIdleRenderKey(thumbDiv: HTMLElement): string {
+    return thumbDiv.dataset.thumbnailRenderKey || "";
+}
+
+/**
+ * 再生していない状態のサムネイルに描いた内容を表す値を保存する。空文字を渡すと保存を解除する。
+ * 同じ値のまま描き直しを求められたときに、画像を作り直さないために使う。
+ * @param thumbDiv 値を保存するサムネイル要素
+ * @param renderKey 描いた内容を表す値
+ */
+export function setYoutubeThumbnailIdleRenderKey(thumbDiv: HTMLElement, renderKey: string): void {
+    if (renderKey) {
+        thumbDiv.dataset.thumbnailRenderKey = renderKey;
+        return;
+    }
+    delete thumbDiv.dataset.thumbnailRenderKey;
+}
+
+/**
  * サムネイル要素の再生状態クラスを更新する。
  * @param {HTMLElement} thumbDiv
  * @param {string} state

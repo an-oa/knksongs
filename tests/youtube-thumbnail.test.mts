@@ -6,6 +6,7 @@ import {
     createYoutubeThumbnailImage,
     createYoutubeThumbnailPlayButton,
     getSongKeyFromYoutubeThumb,
+    getYoutubeThumbnailIdleRenderKey,
     getYoutubeThumbnailPlayButton,
     getYoutubeThumbnailPlayLabel,
     getYoutubeThumbnailPlaybackEndSeconds,
@@ -13,6 +14,7 @@ import {
     getYoutubeThumbnailPlaybackSessionId,
     preventYoutubeThumbnailDefaultAction,
     setYoutubeThumbnailExpandedCardState,
+    setYoutubeThumbnailIdleRenderKey,
     setYoutubeThumbnailOrientation,
     setYoutubeThumbnailPlayLabel,
     setYoutubeThumbnailPlaybackMode,
@@ -83,6 +85,21 @@ test("youtube thumbnail: the play label is kept on the thumbnail and reused when
         assert.ok(rebuilt);
         assert.notEqual(rebuilt, first);
         assert.equal(rebuilt.getAttribute("aria-label"), "Play “Song A”");
+    } finally {
+        cleanup();
+    }
+});
+
+test("youtube thumbnail: the idle render key can be stored and cleared", () => {
+    const cleanup = installFakeDom();
+    try {
+        const thumb = document.createElement("div");
+        assert.equal(getYoutubeThumbnailIdleRenderKey(thumb), "");
+        setYoutubeThumbnailIdleRenderKey(thumb, "shown|video1");
+        assert.equal(getYoutubeThumbnailIdleRenderKey(thumb), "shown|video1");
+        setYoutubeThumbnailIdleRenderKey(thumb, "");
+        assert.equal(getYoutubeThumbnailIdleRenderKey(thumb), "");
+        assert.equal("thumbnailRenderKey" in thumb.dataset, false);
     } finally {
         cleanup();
     }

@@ -1253,6 +1253,92 @@ test("render: active playback card can move back left without jumping to the end
     }
 });
 
+test("render: showing more results does not rewrite the cards that are already shown", () => {
+    const cleanup = installFakeDom();
+    try {
+        const rowA = makeRenderRow({ songKey: "a::1", title: "A" });
+        const rowB = makeRenderRow({ songKey: "b::2", title: "B" });
+        const data = createRenderDataState({ currentResults: [rowA, rowB], displayLimit: 1 });
+        const ui = createRenderUiState({
+            el: {
+                resultList: document.createElement("ol"),
+                resultTailSentinel: document.createElement("div")
+            }
+        });
+        const thumbnailUpdates: HTMLElement[] = [];
+        const controller = createRenderController({
+            data,
+            ui,
+            isAllFormatsSelected: () => true,
+            callbacks: createRenderCallbacks({ updateThumbnail: (thumbDiv) => { thumbnailUpdates.push(thumbDiv); } })
+        });
+
+        controller.updateDisplay();
+        const entryA = ui.render.cardEntriesBySongKey.get(rowA.songKey);
+        assert.ok(entryA);
+        const tagA = entryA.tagsEl.children[0];
+        const actionHandlerA = entryA.actionBtn.onclick;
+        assert.ok(tagA);
+
+        data.displayLimit = 2;
+        controller.updateDisplay();
+
+        assert.equal(ui.el.resultList.children.length, 2);
+        assert.equal(entryA.tagsEl.children[0], tagA, "the tags of the first card are not rebuilt");
+        assert.equal(entryA.actionBtn.onclick, actionHandlerA, "the button handler is not set up again");
+        // サムネイルは表示設定でも変わるので、変わっていないカードでも毎回再生側へ渡す。
+        assert.equal(thumbnailUpdates.filter((thumbDiv) => thumbDiv === entryA.thumbDiv).length, 2);
+    } finally {
+        cleanup();
+    }
+});
+
+test("render: a shown card is rewritten when its position or the bookmark mode changes", () => {
+    const cleanup = installFakeDom();
+    try {
+        const rowA = makeRenderRow({ songKey: "a::1", title: "A" });
+        const rowB = makeRenderRow({ songKey: "b::2", title: "B" });
+        const data = createRenderDataState({
+            currentResults: [rowA, rowB],
+            bookmarks: { bm1: { name: "test", songs: [rowA.songKey, rowB.songKey] } }
+        });
+        const ui = createRenderUiState({
+            el: {
+                resultList: document.createElement("ol"),
+                resultTailSentinel: document.createElement("div")
+            }
+        });
+        const controller = createRenderController({
+            data,
+            ui,
+            isAllFormatsSelected: () => true,
+            callbacks: createRenderCallbacks()
+        });
+
+        controller.updateDisplay();
+        const entryA = ui.render.cardEntriesBySongKey.get(rowA.songKey);
+        assert.ok(entryA);
+        assert.equal(entryA.titleHeading.getAttribute("id"), "result-title-1");
+        assert.equal(entryA.actionBtn.className, "add-to-bookmark-btn");
+        assert.equal(entryA.dragHandle.hidden, true);
+
+        // 並びが変わると、見出しの id を新しい位置に合わせる。
+        data.currentResults = [rowB, rowA];
+        controller.updateDisplay();
+        assert.equal(entryA.titleHeading.getAttribute("id"), "result-title-2");
+        assert.equal(entryA.content.getAttribute("aria-labelledby"), "result-title-2");
+
+        // ブックマーク表示へ切り替わると、ボタンとハンドルを切り替える。
+        data.activeBookmark = "bm1";
+        controller.updateDisplay();
+        assert.equal(entryA.actionBtn.className, "remove-from-bookmark-btn");
+        assert.equal(entryA.actionBtn.getAttribute("aria-label"), "ブックマークから削除");
+        assert.equal(entryA.dragHandle.hidden, false);
+    } finally {
+        cleanup();
+    }
+});
+
 test("render: the play button and the reorder handle are labelled in the current language", () => {
     const cleanup = installFakeDom();
     try {

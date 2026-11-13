@@ -143,6 +143,82 @@ test("youtube: vertical videos stay landscape in thumbnail mode and switch on if
     }
 });
 
+test("youtube: an idle thumbnail is not rebuilt until its target or the thumbnail setting changes", () => {
+    const cleanup = installFakeDom();
+    try {
+        const ui = createYoutubeUiState({});
+        const { controller } = createYoutubeControllerHarness({ ui });
+        const thumb = document.createElement("div");
+        document.body.appendChild(thumb);
+        const target = { isVertical: false, videoId: "video1", startSeconds: 5, endSeconds: 25 };
+
+        controller.updateThumbnail(thumb, target);
+        const playButton = thumb.querySelector(".thumb-play-btn");
+        const clickHandler = thumb.onclick;
+        assert.ok(playButton);
+        assert.ok(playButton.querySelector("img"));
+
+        // 結果一覧の描き直しで同じ内容を渡されても、画像とボタンを作り直さない。
+        controller.updateThumbnail(thumb, { ...target });
+        assert.equal(thumb.querySelector(".thumb-play-btn"), playButton);
+        assert.equal(thumb.onclick, clickHandler);
+
+        // 再生する範囲が変わる設定では、同じ曲でも描き直す。
+        ui.playback.playArchiveToEnd = true;
+        controller.updateThumbnail(thumb, { ...target });
+        const rebuiltButton = thumb.querySelector(".thumb-play-btn");
+        assert.ok(rebuiltButton);
+        assert.notEqual(rebuiltButton, playButton);
+
+        // サムネイルを非表示にすると画像を外し、同じ設定のままなら外した状態を保つ。
+        ui.playback.showThumbnails = false;
+        controller.updateThumbnail(thumb, { ...target });
+        assert.equal(thumb.querySelector(".thumb-play-btn"), null);
+        controller.updateThumbnail(thumb, { ...target });
+        assert.equal(thumb.querySelector(".thumb-play-btn"), null);
+
+        ui.playback.showThumbnails = true;
+        controller.updateThumbnail(thumb, { ...target });
+        assert.ok(thumb.querySelector(".thumb-play-btn"));
+    } finally {
+        cleanup();
+    }
+});
+
+test("youtube: a thumbnail is rebuilt after playback was closed, and can be played again", () => {
+    const cleanup = installFakeDom();
+    try {
+        const ui = createYoutubeUiState({});
+        const { controller } = createYoutubeControllerHarness({ ui });
+        const thumb = document.createElement("div");
+        document.body.appendChild(thumb);
+        const target = { isVertical: false, videoId: "video1", startSeconds: 5 };
+
+        controller.updateThumbnail(thumb, target);
+        clickThumbnail(thumb);
+        requireIframe(thumb);
+
+        // 再生中に同じ内容を渡されても、再生を止めない。
+        controller.updateThumbnail(thumb, { ...target });
+        requireIframe(thumb);
+
+        controller.restoreActivePlayback();
+        const restoredButton = thumb.querySelector(".thumb-play-btn");
+        assert.ok(restoredButton);
+
+        // 閉じた後の最初の反映では、再生前と同じ内容でも描き直す。
+        controller.updateThumbnail(thumb, { ...target });
+        const rebuiltButton = thumb.querySelector(".thumb-play-btn");
+        assert.ok(rebuiltButton);
+        assert.notEqual(rebuiltButton, restoredButton);
+
+        clickThumbnail(thumb);
+        requireIframe(thumb);
+    } finally {
+        cleanup();
+    }
+});
+
 test("youtube: keyboard focus follows the play button into the player and back", () => {
     const cleanup = installFakeDom();
     try {
