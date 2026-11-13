@@ -4,13 +4,17 @@ import {
     applyYoutubeThumbnailImage,
     clearYoutubeThumbnailPlaybackTarget,
     createYoutubeThumbnailImage,
+    createYoutubeThumbnailPlayButton,
     getSongKeyFromYoutubeThumb,
+    getYoutubeThumbnailPlayButton,
+    getYoutubeThumbnailPlayLabel,
     getYoutubeThumbnailPlaybackEndSeconds,
     getYoutubeThumbnailPlaybackMode,
     getYoutubeThumbnailPlaybackSessionId,
     preventYoutubeThumbnailDefaultAction,
     setYoutubeThumbnailExpandedCardState,
     setYoutubeThumbnailOrientation,
+    setYoutubeThumbnailPlayLabel,
     setYoutubeThumbnailPlaybackMode,
     setYoutubeThumbnailPlaybackSessionId,
     setYoutubeThumbnailPlaybackState,
@@ -33,6 +37,52 @@ test("youtube thumbnail: create/apply image sets the mqdefault source with nativ
         assert.ok(img);
         assert.equal(img.loading, "lazy");
         assert.equal(img.src, "https://i.ytimg.com/vi/video1/mqdefault.jpg");
+    } finally {
+        cleanup();
+    }
+});
+
+test("youtube thumbnail: the image sits inside a labelled play button", () => {
+    const cleanup = installFakeDom();
+    try {
+        const button = createYoutubeThumbnailPlayButton("video1", "「Song A」を再生");
+        assert.ok(button);
+        assert.equal(button.tagName, "BUTTON");
+        assert.equal(button.type, "button");
+        assert.equal(button.classList.contains("thumb-play-btn"), true);
+        assert.equal(button.getAttribute("aria-label"), "「Song A」を再生");
+        const img = button.querySelector("img");
+        assert.ok(img);
+        assert.equal(img.alt, "", "the button label names the song, so the image is decorative");
+    } finally {
+        cleanup();
+    }
+});
+
+test("youtube thumbnail: the play label is kept on the thumbnail and reused when the button is rebuilt", () => {
+    const cleanup = installFakeDom();
+    try {
+        const thumb = document.createElement("div");
+        assert.equal(getYoutubeThumbnailPlayLabel(thumb), "");
+        assert.equal(getYoutubeThumbnailPlayButton(thumb), null);
+
+        // ボタンを置く前に保存した説明は、後から置くボタンに付く。
+        setYoutubeThumbnailPlayLabel(thumb, "「Song A」を再生");
+        applyYoutubeThumbnailImage(thumb, "video1");
+        const first = getYoutubeThumbnailPlayButton(thumb);
+        assert.ok(first);
+        assert.equal(first.getAttribute("aria-label"), "「Song A」を再生");
+
+        // 表示中のボタンは、説明を変えるとその場で書き換わる。
+        setYoutubeThumbnailPlayLabel(thumb, "Play “Song A”");
+        assert.equal(first.getAttribute("aria-label"), "Play “Song A”");
+
+        // 再生を閉じて作り直したボタンにも、保存してある説明が付く。
+        applyYoutubeThumbnailImage(thumb, "video1");
+        const rebuilt = getYoutubeThumbnailPlayButton(thumb);
+        assert.ok(rebuilt);
+        assert.notEqual(rebuilt, first);
+        assert.equal(rebuilt.getAttribute("aria-label"), "Play “Song A”");
     } finally {
         cleanup();
     }

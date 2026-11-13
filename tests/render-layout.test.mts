@@ -1253,6 +1253,109 @@ test("render: active playback card can move back left without jumping to the end
     }
 });
 
+test("render: the play button and the reorder handle are labelled in the current language", () => {
+    const cleanup = installFakeDom();
+    try {
+        const data = createRenderDataState({
+            currentResults: [
+                makeRenderRow({ songKey: "song:label", title: "アイネクライネ", titleEn: "Eine Kleine" }),
+                makeRenderRow({ songKey: "song:untitled", title: " " })
+            ]
+        });
+        const ui = createRenderUiState({
+            el: {
+                resultList: document.createElement("ol"),
+                resultTailSentinel: document.createElement("div")
+            }
+        });
+        const controller = createRenderController({
+            data,
+            ui,
+            isAllFormatsSelected: () => true,
+            callbacks: createRenderCallbacks()
+        });
+
+        controller.updateDisplay();
+        const entry = ui.render.cardEntriesBySongKey.get("song:label");
+        assert.ok(entry);
+        assert.equal(entry.dragHandle.tagName, "BUTTON", "the handle can take keyboard focus");
+        assert.equal(entry.thumbDiv.dataset.playLabel, "「アイネクライネ」を再生");
+        assert.equal(entry.dragHandle.getAttribute("aria-label"), "並べ替え（矢印キーで前後へ移動）");
+
+        ui.language.current = "en";
+        controller.refreshText();
+        assert.equal(entry.thumbDiv.dataset.playLabel, "Play “Eine Kleine”");
+        assert.equal(entry.dragHandle.getAttribute("aria-label"), "Reorder (use the arrow keys to move)");
+    } finally {
+        cleanup();
+    }
+});
+
+test("render: a keyboard reorder keeps focus on the moved card's handle and announces the new position", () => {
+    const cleanup = installFakeDom();
+    try {
+        const rowA = makeRenderRow({ songKey: "a::1", title: "A" });
+        const rowB = makeRenderRow({ songKey: "b::2", title: "B" });
+        const rowC = makeRenderRow({ songKey: "c::3", title: "C" });
+        const data = createRenderDataState({
+            currentResults: [rowA, rowB, rowC],
+            // 2 件だけ表示し、3 件目は追加表示の範囲の外に置く。
+            displayLimit: 2,
+            activeBookmark: "bm1",
+            bookmarks: { bm1: { name: "test", songs: [rowA.songKey, rowB.songKey, rowC.songKey] } }
+        });
+        const ui = createRenderUiState({
+            el: {
+                resultList: document.createElement("ol"),
+                resultTailSentinel: document.createElement("div"),
+                resultAnnouncement: document.createElement("p")
+            }
+        });
+        document.body.appendChild(ui.el.resultList);
+        const storageController = createBookmarkReorderFixture({
+            data,
+            saveBookmarks: () => ({ ok: true }),
+            updateDisplay: () => controller.updateDisplay()
+        });
+        const controller = createRenderController({
+            data,
+            ui,
+            isAllFormatsSelected: () => true,
+            resultDisplayBatchSize: 2,
+            callbacks: createRenderCallbacks({
+                moveSongInActiveBookmark: storageController.moveSongInActiveBookmark
+            })
+        });
+
+        controller.updateDisplay();
+        const entryB = ui.render.cardEntriesBySongKey.get(rowB.songKey);
+        assert.ok(entryB);
+        /** ハンドルにフォーカスしてキーを押す。 */
+        const pressKey = (key: string) => invokeListener(entryB.dragHandle, "keydown", {
+            key,
+            currentTarget: entryB.dragHandle,
+            preventDefault() {}
+        });
+
+        entryB.dragHandle.focus();
+        pressKey("ArrowUp");
+        assert.deepEqual(data.bookmarks.bm1.songs, [rowB.songKey, rowA.songKey, rowC.songKey]);
+        assert.equal(document.activeElement, entryB.dragHandle);
+        assert.equal(ui.el.resultAnnouncement.textContent, "「B」を 3 件中 1 番目へ移動しました");
+
+        // 表示している範囲の外へ動かしても、動かしたカードを表示に残してフォーカスを保つ。
+        pressKey("ArrowDown");
+        pressKey("ArrowDown");
+        assert.deepEqual(data.bookmarks.bm1.songs, [rowA.songKey, rowC.songKey, rowB.songKey]);
+        assert.equal(ui.el.resultList.children.length, 3);
+        assert.equal(ui.el.resultList.children[2], entryB.card);
+        assert.equal(document.activeElement, entryB.dragHandle);
+        assert.equal(ui.el.resultAnnouncement.textContent, "「B」を 3 件中 3 番目へ移動しました");
+    } finally {
+        cleanup();
+    }
+});
+
 test("render: a load failure shows an explanation and a reload button in the current language", () => {
     const cleanup = installFakeDom();
     try {

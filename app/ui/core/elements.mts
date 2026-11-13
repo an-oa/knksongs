@@ -44,6 +44,7 @@ export function collectUiElements(): AppUiElements {
         resultConditions: document.getElementById("resultConditions"),
         resultClearAll: getButtonElementById("resultClearAll"),
         resultTailSentinel: document.getElementById("resultTailSentinel"),
+        resultAnnouncement: document.getElementById("resultAnnouncement"),
         searchBox: getInputElementById("searchBox"),
         searchBoxError: document.getElementById("searchBoxError"),
         clearBtn: getButtonElementById("clearBtn"),

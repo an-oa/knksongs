@@ -4,7 +4,8 @@
  * IFrame API を読み込み、結果カードのサムネイルの位置へ埋め込みプレーヤーを差し込んで再生する。
  * プレーヤーは同時に 1 つだけで、別のカードで再生するときは作り直す。
  * 再生セッション ID で古いイベントを除外し、開始の成否と未確定の判定、再生後の広告の監視、
- * 閉じるボタン、サムネイル画像の表示も受け持つ。
+ * 閉じるボタン、サムネイル画像を入れた再生ボタンの表示も受け持つ。
+ * サムネイルの中身を入れ替えるときは、キーボードのフォーカスを入れ替えた後の要素へ引き継ぐ。
  * 個別の処理は ../lib/youtube/* に分け、ここで ui.playback と youtube 状態につなぐ。
  *
  * 次の曲の選択は ./playback-session.mts、カードの配置は ./render.mts が担当し、
@@ -32,8 +33,10 @@ import {
 import {
     applyYoutubeThumbnailImage,
     clearYoutubeThumbnailPlaybackTarget,
-    createYoutubeThumbnailImage,
+    createYoutubeThumbnailPlayButton,
     getSongKeyFromYoutubeThumb,
+    getYoutubeThumbnailPlayButton,
+    getYoutubeThumbnailPlayLabel,
     getYoutubeThumbnailPlaybackEndSeconds,
     getYoutubeThumbnailPlaybackMode,
     getYoutubeThumbnailPlaybackSessionId,
@@ -658,7 +661,20 @@ export function createYoutubeController({ ui, youtube, constants }: YoutubeContr
     }
 
     /**
+     * サムネイルの中にフォーカスがあるかを返す。
+     * 中の要素を入れ替えるとフォーカスが外れてページの先頭へ戻るので、入れ替える前に調べ、
+     * 入れ替えた後の要素 (閉じるボタンや再生ボタン) へ移すために使う。
+     * @param thumbDiv 調べるサムネイル要素
+     * @returns サムネイルの中の要素にフォーカスがあれば true
+     */
+    function hasFocusInsideThumb(thumbDiv: HTMLElement): boolean {
+        const active = canUseDom() ? document.activeElement : null;
+        return isHtmlElement(active) && thumbDiv.contains(active);
+    }
+
+    /**
      * 指定サムネイルへ共有プレーヤーを差し込み、iframe src から再生開始する。
+     * 再生ボタンにフォーカスがあったときは、入れ替わりで消えないよう閉じるボタンへ移す。
      */
     function mountSharedPlayback(
         thumbDiv: HTMLElement,
@@ -681,8 +697,10 @@ export function createYoutubeController({ ui, youtube, constants }: YoutubeContr
         if (!isHtmlElement(iframe) || !isHtmlElement(sharedPlayback.closeButton)) {
             return Promise.resolve(false);
         }
+        const hadFocus = hasFocusInsideThumb(thumbDiv);
         iframe.src = youtubeApi.buildEmbedUrl(yt, playbackMode);
         thumbDiv.replaceChildren(iframe, sharedPlayback.closeButton);
+        if (hadFocus) sharedPlayback.closeButton.focus({ preventScroll: true });
         sharedPlayback.hostThumb = thumbDiv;
         setSharedPlaybackSessionId(playbackSessionId);
         debugPlayback("youtube", "mountSharedPlayback using iframe src", {
@@ -798,6 +816,7 @@ export function createYoutubeController({ ui, youtube, constants }: YoutubeContr
 
     /**
      * 埋め込み再生を解除して通常サムネイル表示へ戻す。
+     * 動画や閉じるボタンにフォーカスがあったときは、作り直した再生ボタンへ移す。
      */
     function restoreThumbnail(
         thumbDiv: HTMLElement,
@@ -810,6 +829,7 @@ export function createYoutubeController({ ui, youtube, constants }: YoutubeContr
             playbackMode: getYoutubeThumbnailPlaybackMode(thumbDiv),
             sessionId: getYoutubeThumbnailPlaybackSessionId(thumbDiv)
         });
+        const hadFocus = hasFocusInsideThumb(thumbDiv);
         applyPlaybackStateEvent({
             type: "RESTORE_PLAYBACK",
             sessionId: getYoutubeThumbnailPlaybackSessionId(thumbDiv),
@@ -826,6 +846,7 @@ export function createYoutubeController({ ui, youtube, constants }: YoutubeContr
         setYoutubeThumbnailExpandedCardState(thumbDiv, false);
         if (videoId) {
             applyYoutubeThumbnailImage(thumbDiv, videoId);
+            if (hadFocus) getYoutubeThumbnailPlayButton(thumbDiv)?.focus({ preventScroll: true });
         } else {
             thumbDiv.replaceChildren();
         }
@@ -925,6 +946,7 @@ export function createYoutubeController({ ui, youtube, constants }: YoutubeContr
 
     /**
      * 曲情報に合わせてサムネイル表示内容を更新する。
+     * 押したときの処理はサムネイルの枠で受け、キーボードでは中の再生ボタンから同じ処理へ届く。
      */
     function updateThumbnail(thumbDiv: HTMLElement, yt: YoutubeTarget) {
         const playbackTarget = buildPlaybackTargetMetadata(yt);
@@ -939,8 +961,8 @@ export function createYoutubeController({ ui, youtube, constants }: YoutubeContr
         if (!playbackUi.showThumbnails) return;
         if (!yt.videoId) return;
 
-        const img = createYoutubeThumbnailImage(yt.videoId);
-        if (!img) return;
+        const playButton = createYoutubeThumbnailPlayButton(yt.videoId, getYoutubeThumbnailPlayLabel(thumbDiv));
+        if (!playButton) return;
         thumbDiv.onclick = () => {
             if (thumbDiv.classList.contains("playing")) return;
             startEmbeddedPlayback(thumbDiv, yt, {
@@ -948,7 +970,7 @@ export function createYoutubeController({ ui, youtube, constants }: YoutubeContr
                 playbackMode: "manual"
             });
         };
-        thumbDiv.appendChild(img);
+        thumbDiv.appendChild(playButton);
     }
 
     return {

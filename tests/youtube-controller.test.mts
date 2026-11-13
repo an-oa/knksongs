@@ -143,6 +143,55 @@ test("youtube: vertical videos stay landscape in thumbnail mode and switch on if
     }
 });
 
+test("youtube: keyboard focus follows the play button into the player and back", () => {
+    const cleanup = installFakeDom();
+    try {
+        const ui = createYoutubeUiState({});
+        const { controller } = createYoutubeControllerHarness({ ui });
+        const thumb = document.createElement("div");
+        document.body.appendChild(thumb);
+        controller.updateThumbnail(thumb, { isVertical: false, videoId: "video1", startSeconds: 5 });
+
+        const playButton = thumb.querySelector(".thumb-play-btn");
+        assert.ok(playButton instanceof HTMLElement);
+        playButton.focus();
+        clickThumbnail(thumb);
+
+        // 再生ボタンは動画と入れ替わって消えるので、フォーカスを閉じるボタンへ移す。
+        const closeButton = thumb.querySelector(".thumb-close-btn");
+        assert.ok(closeButton);
+        assert.equal(document.activeElement, closeButton);
+
+        invokeListener(closeButton, "click", { stopPropagation() {} });
+        const restoredButton = thumb.querySelector(".thumb-play-btn");
+        assert.ok(restoredButton);
+        assert.equal(document.activeElement, restoredButton, "focus returns to the rebuilt play button");
+    } finally {
+        cleanup();
+    }
+});
+
+test("youtube: starting playback with the pointer does not move focus into the thumbnail", () => {
+    const cleanup = installFakeDom();
+    try {
+        const ui = createYoutubeUiState({});
+        const { controller } = createYoutubeControllerHarness({ ui });
+        const thumb = document.createElement("div");
+        const outside = document.createElement("button");
+        document.body.append(thumb, outside);
+        controller.updateThumbnail(thumb, { isVertical: false, videoId: "video1", startSeconds: 5 });
+
+        outside.focus();
+        clickThumbnail(thumb);
+        assert.equal(document.activeElement, outside);
+
+        controller.restoreActivePlayback();
+        assert.equal(document.activeElement, outside);
+    } finally {
+        cleanup();
+    }
+});
+
 test("youtube: player init uses prebuilt iframe src and binds YT.Player to it", async () => {
     const cleanup = installFakeDom();
     try {

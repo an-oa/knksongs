@@ -2,6 +2,9 @@ import { canUseDom, getHeaderHeight, isHtmlElement } from "../dom-utils.mjs";
 import { scheduleScrollElementIntoView } from "../results-scroll.mjs";
 import type { YoutubePlaybackMode } from "./playback-start-attempt.mjs";
 
+/** サムネイルの中に置く再生ボタンのクラス名。 */
+const YOUTUBE_THUMBNAIL_PLAY_BUTTON_CLASS = "thumb-play-btn";
+
 /** 埋め込み再生の対象として、サムネイルの dataset へ保存する値。 */
 export type YoutubePlaybackTargetMetadata = {
     videoId: string;
@@ -44,6 +47,7 @@ export function suppressYoutubeThumbnailImageSaveActions(img: Element | null | u
 /**
  * サムネイル画像要素を生成する。
  * 読み込みはブラウザ標準の遅延読み込みに任せ、画面に近づいてから取得させる。
+ * 画像は再生ボタンの中に置き、何を再生するかはボタンの説明で伝えるので、代替文字は空にする。
  * @param videoId サムネイルを表示する YouTube 動画 ID
  * @returns サムネイル画像。DOM を使えない環境では null
  */
@@ -52,20 +56,71 @@ export function createYoutubeThumbnailImage(videoId: string) {
     const img = document.createElement("img");
     // src より先に指定し、生成した時点で読み込みが始まらないようにする。
     img.loading = "lazy";
+    img.alt = "";
     img.src = `https://i.ytimg.com/vi/${videoId}/mqdefault.jpg`;
     suppressYoutubeThumbnailImageSaveActions(img);
     return img;
 }
 
 /**
- * サムネイル画像をコンテナへ適用する。
- * @param thumbDiv 画像を置くサムネイル要素
+ * サムネイル画像を入れた再生ボタンを生成する。
+ * サムネイルの枠は再生中に動画と閉じるボタンを入れるので、枠ではなく中のボタンをキーボードの操作先にする。
+ * 押したときの処理は枠の click で受けるため、ここでは付けない。
+ * @param videoId サムネイルを表示する YouTube 動画 ID
+ * @param label ボタンの説明。どの曲を再生するかを伝える
+ * @returns 再生ボタン。DOM を使えない環境では null
+ */
+export function createYoutubeThumbnailPlayButton(videoId: string, label: string) {
+    const img = createYoutubeThumbnailImage(videoId);
+    if (!img) return null;
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = YOUTUBE_THUMBNAIL_PLAY_BUTTON_CLASS;
+    if (label) button.setAttribute("aria-label", label);
+    button.append(img);
+    return button;
+}
+
+/**
+ * サムネイルの再生ボタンをコンテナへ適用する。説明は枠に保存してある値を使う。
+ * @param thumbDiv 再生ボタンを置くサムネイル要素
  * @param videoId サムネイルを表示する YouTube 動画 ID
  */
 export function applyYoutubeThumbnailImage(thumbDiv: HTMLElement, videoId: string) {
-    const img = createYoutubeThumbnailImage(videoId);
-    if (!isHtmlElement(img)) return;
-    thumbDiv.replaceChildren(img);
+    const button = createYoutubeThumbnailPlayButton(videoId, getYoutubeThumbnailPlayLabel(thumbDiv));
+    if (!isHtmlElement(button)) return;
+    thumbDiv.replaceChildren(button);
+}
+
+/**
+ * サムネイルに保存した再生ボタンの説明を返す。
+ * @param thumbDiv 説明を読むサムネイル要素
+ * @returns 再生ボタンの説明。保存がなければ空文字
+ */
+export function getYoutubeThumbnailPlayLabel(thumbDiv: HTMLElement): string {
+    return thumbDiv.dataset.playLabel || "";
+}
+
+/**
+ * 再生ボタンの説明をサムネイルへ保存し、表示中の再生ボタンにも反映する。
+ * 再生を閉じるとボタンを作り直すので、枠に保存しておき、作り直したボタンにも同じ説明を付ける。
+ * @param thumbDiv 説明を保存するサムネイル要素
+ * @param label 再生ボタンの説明
+ */
+export function setYoutubeThumbnailPlayLabel(thumbDiv: HTMLElement, label: string): void {
+    if (thumbDiv.dataset.playLabel !== label) thumbDiv.dataset.playLabel = label;
+    const button = getYoutubeThumbnailPlayButton(thumbDiv);
+    if (button && button.getAttribute("aria-label") !== label) button.setAttribute("aria-label", label);
+}
+
+/**
+ * サムネイルに表示中の再生ボタンを返す。
+ * @param thumbDiv 再生ボタンを探すサムネイル要素
+ * @returns 再生ボタン。再生中やサムネイル非表示で置いていなければ null
+ */
+export function getYoutubeThumbnailPlayButton(thumbDiv: HTMLElement): HTMLElement | null {
+    const button = thumbDiv.querySelector(`.${YOUTUBE_THUMBNAIL_PLAY_BUTTON_CLASS}`);
+    return isHtmlElement(button) ? button : null;
 }
 
 /**

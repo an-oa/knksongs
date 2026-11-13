@@ -101,7 +101,9 @@ function createDragHarness(options: {
         save: 0,
         render: 0,
         savedBookmarks: [] as import("../app/state.types").AppDataState["bookmarks"][],
-        saveFailures: [] as import("../app/controllers/storage.mts").StorageActionFailure[]
+        saveFailures: [] as import("../app/controllers/storage.mts").StorageActionFailure[],
+        keyboardMoves: [] as { songKey: string; toIndex: number }[],
+        shownIndexes: [] as number[]
     };
     const list = document.createElement("div");
     document.body.appendChild(list);
@@ -138,7 +140,9 @@ function createDragHarness(options: {
         moveSongInActiveBookmark: storageController.moveSongInActiveBookmark,
         onSaveFailure: (result) => calls.saveFailures.push(result),
         refreshDisplay: render,
-        getResultList: () => list
+        getResultList: () => list,
+        showResultAt: (index) => calls.shownIndexes.push(index),
+        onKeyboardMove: (songKey, toIndex) => calls.keyboardMoves.push({ songKey, toIndex })
     });
     render();
     calls.render = 0;
@@ -178,6 +182,22 @@ function startDragFrom(controller: ReturnType<typeof createDragHarness>["control
     const event = createHandlePointerDown(card);
     controller.onHandlePointerDown(event);
     return event;
+}
+
+/**
+ * カードのハンドルにフォーカスしてキーを押し、既定の動作が止められたかを返す。
+ * @param controller 並べ替えの controller
+ * @param card ハンドルを持つカード
+ * @param key 押したキー
+ * @returns 既定の動作を止めたら true
+ */
+function pressHandleKey(controller: ReturnType<typeof createDragHarness>["controller"], card: HTMLElement | undefined, key: string) {
+    assert.ok(card);
+    const handle = document.createElement("button");
+    card.appendChild(handle);
+    const event = { key, currentTarget: handle, prevented: false, preventDefault() { event.prevented = true; } };
+    controller.onHandleKeyDown(event);
+    return event.prevented;
 }
 
 /**
@@ -679,5 +699,95 @@ test("render drag reorder: finds the card under the pointer by its laid-out box"
         assert.equal(findCardAtPoint(list, { x: 150, y: 319 }), cards.get("c"));
     } finally {
         cleanup();
+    }
+});
+
+test("render drag reorder: arrow keys on the handle move the card one slot at a time and save each move", () => {
+    const dom = installFakeDom();
+    try {
+        const { data, calls, controller, list, cards } = createDragHarness();
+
+        assert.equal(pressHandleKey(controller, cards.get("a"), "ArrowDown"), true, "the page must not scroll");
+        assert.deepEqual(readListOrder(list), ["b", "a", "c"]);
+        assert.deepEqual(data.bookmarks["bookmark-1"].songs, ["b", "a", "c"]);
+        assert.equal(calls.save, 1);
+        assert.deepEqual(calls.shownIndexes, [1], "the destination is shown before the move is saved");
+        assert.deepEqual(calls.keyboardMoves, [{ songKey: "a", toIndex: 1 }]);
+
+        pressHandleKey(controller, cards.get("a"), "ArrowRight");
+        assert.deepEqual(readListOrder(list), ["b", "c", "a"]);
+        pressHandleKey(controller, cards.get("a"), "ArrowUp");
+        assert.deepEqual(readListOrder(list), ["b", "a", "c"]);
+        pressHandleKey(controller, cards.get("a"), "ArrowLeft");
+        assert.deepEqual(readListOrder(list), ["a", "b", "c"]);
+        assert.deepEqual(data.bookmarks["bookmark-1"].songs, ["a", "b", "c"]);
+        assert.equal(calls.save, 4);
+        assert.deepEqual(calls.keyboardMoves.map((move) => move.toIndex), [1, 2, 1, 0]);
+    } finally {
+        dom();
+    }
+});
+
+test("render drag reorder: arrow keys at either end keep the order and still stop the page from scrolling", () => {
+    const dom = installFakeDom();
+    try {
+        const { calls, controller, list, cards } = createDragHarness();
+
+        assert.equal(pressHandleKey(controller, cards.get("a"), "ArrowUp"), true);
+        assert.equal(pressHandleKey(controller, cards.get("c"), "ArrowDown"), true);
+        assert.deepEqual(readListOrder(list), ["a", "b", "c"]);
+        assert.equal(calls.save, 0);
+        assert.deepEqual(calls.keyboardMoves, []);
+    } finally {
+        dom();
+    }
+});
+
+test("render drag reorder: keys other than the arrows, and arrows outside bookmark mode, are left to the browser", () => {
+    const dom = installFakeDom();
+    try {
+        const { data, calls, controller, list, cards } = createDragHarness();
+
+        for (const key of ["Enter", " ", "Tab", "Escape", "constructor"]) {
+            assert.equal(pressHandleKey(controller, cards.get("a"), key), false, `${key} must keep its default action`);
+        }
+        data.activeBookmark = null;
+        assert.equal(pressHandleKey(controller, cards.get("a"), "ArrowDown"), false);
+        assert.deepEqual(readListOrder(list), ["a", "b", "c"]);
+        assert.equal(calls.save, 0);
+    } finally {
+        dom();
+    }
+});
+
+test("render drag reorder: a failed keyboard move is reported and leaves the saved order", () => {
+    const dom = installFakeDom();
+    try {
+        const { data, calls, controller, list, cards } = createDragHarness({
+            saveResult: { ok: false, reason: "storage_write_failed" }
+        });
+
+        pressHandleKey(controller, cards.get("a"), "ArrowDown");
+        assert.deepEqual(readListOrder(list), ["a", "b", "c"]);
+        assert.deepEqual(data.bookmarks["bookmark-1"].songs, ["a", "b", "c"]);
+        assert.deepEqual(calls.saveFailures, [{ ok: false, reason: "storage_write_failed" }]);
+        assert.deepEqual(calls.keyboardMoves, []);
+    } finally {
+        dom();
+    }
+});
+
+test("render drag reorder: arrow keys are ignored while a pointer drag is in progress", () => {
+    const dom = installFakeDom();
+    try {
+        const { calls, controller, list, cards } = createDragHarness();
+
+        startDragFrom(controller, cards.get("a"));
+        assert.equal(pressHandleKey(controller, cards.get("c"), "ArrowUp"), false);
+        assert.deepEqual(readListOrder(list), ["a", "b", "c"]);
+        assert.equal(calls.save, 0);
+        pressKey(dom, "Escape");
+    } finally {
+        dom();
     }
 });

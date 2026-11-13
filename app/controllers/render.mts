@@ -29,7 +29,7 @@ import {
 } from "../lib/youtube/playback-start-attempt.mjs";
 import type { YoutubePlaybackMode, YoutubePlaybackStartResult } from "../lib/youtube/playback-start-attempt.mjs";
 import type { YoutubeTarget } from "../lib/youtube/embed.mjs";
-import { suppressYoutubeThumbnailContextMenu } from "../lib/youtube/thumbnail.mjs";
+import { setYoutubeThumbnailPlayLabel, suppressYoutubeThumbnailContextMenu } from "../lib/youtube/thumbnail.mjs";
 import type {
     AppDataState,
     PlaybackUiRuntimeState,
@@ -44,6 +44,8 @@ const DEFAULT_RESULT_DISPLAY_BATCH_SIZE = 48;
 type RenderUiElements = {
     resultList?: HTMLElement | null;
     resultTailSentinel?: HTMLElement | null;
+    /** 画面には出さず、読み上げだけで伝える内容を書く要素。 */
+    resultAnnouncement?: HTMLElement | null;
 };
 
 type RenderUiState = {
@@ -126,7 +128,9 @@ export function createRenderController({
         moveSongInActiveBookmark,
         onSaveFailure: notifyBookmarkSaveError,
         refreshDisplay: () => updateDisplay(),
-        getResultList: () => ui.el.resultList ?? null
+        getResultList: () => ui.el.resultList ?? null,
+        showResultAt: (index) => ensureResultVisible(index),
+        onKeyboardMove: (songKey, toIndex) => handleKeyboardReorder(songKey, toIndex)
     });
     /** 並べ替えのドラッグを受けるように設定した一覧。描き直すたびに設定し直さないよう覚えておく。 */
     let reorderListenerTarget: HTMLElement | null = null;
@@ -186,12 +190,15 @@ export function createRenderController({
         const actionBtn = document.createElement("button");
         actionBtn.type = "button";
 
-        const dragHandle = document.createElement("div");
+        // キーボードでもフォーカスして矢印キーで並べ替えられるよう、button にする。
+        const dragHandle = document.createElement("button");
+        dragHandle.type = "button";
         dragHandle.className = "drag-handle";
-        dragHandle.innerHTML = "⠿";
+        dragHandle.textContent = "⠿";
         dragHandle.hidden = true;
 
         dragHandle.addEventListener("pointerdown", dragReorderController.onHandlePointerDown);
+        dragHandle.addEventListener("keydown", dragReorderController.onHandleKeyDown);
         bindCardTextMarquee(card, [{ box: title, text: titleText }, { box: artist, text: artistText }]);
 
         rightGroup.append(tags, actionBtn);
@@ -257,12 +264,15 @@ export function createRenderController({
     function updateCardText(entry: RenderCardEntry, row: Song) {
         const language = ui.language.current;
         const text = getUiText(language);
+        const title = getSongDisplayTitle(row, language);
         applyDisplayName(
             { box: entry.titleEl, text: entry.titleTextEl },
-            getSongDisplayTitle(row, language),
+            title,
             text.card.untitled,
             language
         );
+        setYoutubeThumbnailPlayLabel(entry.thumbDiv, text.card.play(title.text || text.card.untitled));
+        entry.dragHandle.setAttribute("aria-label", text.card.reorderHandle);
         applyDisplayName(
             { box: entry.artistEl, text: entry.artistTextEl },
             getSongDisplayArtist(row, language),
@@ -763,6 +773,39 @@ export function createRenderController({
         hasLoadError = true;
         const container = ui.el.resultList;
         if (container) renderEmptyResults(container);
+    }
+
+    /**
+     * 画面には出さず、読み上げだけで伝える内容を書く。
+     * @param message 読み上げる文言
+     */
+    function announce(message: string): void {
+        const region = ui.el.resultAnnouncement;
+        if (region) region.textContent = message;
+    }
+
+    /**
+     * キーボードで並べ替えた後に、動かしたカードのハンドルへフォーカスを戻し、移動先を読み上げで伝える。
+     * 並べ替えでカードの要素を移すとフォーカスが外れるので、続けて矢印キーで動かせるよう戻す。
+     * @param songKey 動かした曲のキー
+     * @param toIndex 保存した後の表示順での位置
+     */
+    function handleKeyboardReorder(songKey: string, toIndex: number): void {
+        const entry = getCardEntryBySongKey(songKey);
+        const row = data.currentResults[toIndex];
+        if (!entry || !row) return;
+        entry.dragHandle.focus({ preventScroll: true });
+        scheduleScrollElementIntoView(entry.card, {
+            topOffset: getHeaderHeight(),
+            behavior: "smooth"
+        });
+        const language = ui.language.current;
+        const text = getUiText(language);
+        announce(text.card.reordered(
+            getSongDisplayTitle(row, language).text || text.card.untitled,
+            toIndex + 1,
+            data.currentResults.length
+        ));
     }
 
     return {

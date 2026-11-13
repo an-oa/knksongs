@@ -342,11 +342,13 @@
     <section class="container" aria-labelledby="result-list-title">
       <h2 id="result-list-title" class="visually-hidden" data-i18n="searchResults">検索結果</h2>
       <div class="result-summary">
-        <p id="resultCount" class="result-summary-count">接続中...</p>
+        <p id="resultCount" class="result-summary-count" role="status">接続中...</p>
         <ul id="resultConditions" class="result-conditions" aria-label="適用中の条件" data-i18n-aria-label="activeFilters"></ul>
         <button id="resultClearAll" class="result-clear-all" type="button" data-i18n="clearAll" hidden>すべてクリア</button>
       </div>
       <p id="searchBoxError" class="search-query-error" aria-live="polite" hidden></p>
+      <!-- キーボードでの並べ替えの結果など、画面には出さず読み上げだけで伝える内容を書く。 -->
+      <p id="resultAnnouncement" class="visually-hidden" role="status"></p>
       <ol id="resultList" class="result-list"></ol>
       <div id="resultTailSentinel" class="result-tail-sentinel" aria-hidden="true" hidden></div>
     </section>

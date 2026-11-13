@@ -84,6 +84,12 @@ export type UiText = {
         addToBookmark: string;
         removeFromBookmark: string;
         backToThumbnail: string;
+        /** サムネイルの再生ボタンの説明。どの曲を再生するかを伝える。 */
+        play: (title: string) => string;
+        /** ブックマーク表示中の並べ替えハンドルの説明。キーボードでの動かし方も伝える。 */
+        reorderHandle: string;
+        /** キーボードで並べ替えた後に読み上げる、移動先の位置。 */
+        reordered: (title: string, position: number, total: number) => string;
         /** カードの日付。日本語は CSV の表記のまま、英語は「Oct 8, 2026」の形にする。 */
         date: (song: Pick<Song, "date" | "dateKey">) => string;
     };
@@ -249,6 +255,9 @@ const JAPANESE_TEXT: UiText = {
         addToBookmark: "ブックマークに追加",
         removeFromBookmark: "ブックマークから削除",
         backToThumbnail: "サムネイルに戻す",
+        play: (title) => `「${title}」を再生`,
+        reorderHandle: "並べ替え（矢印キーで前後へ移動）",
+        reordered: (title, position, total) => `「${title}」を ${total} 件中 ${position} 番目へ移動しました`,
         date: (song) => song.date
     },
     results: {
@@ -356,6 +365,9 @@ const ENGLISH_TEXT: UiText = {
         addToBookmark: "Add to bookmark",
         removeFromBookmark: "Remove from bookmark",
         backToThumbnail: "Back to thumbnail",
+        play: (title) => `Play “${title}”`,
+        reorderHandle: "Reorder (use the arrow keys to move)",
+        reordered: (title, position, total) => `Moved “${title}” to position ${position} of ${total}`,
         date: formatEnglishSongDate
     },
     results: {

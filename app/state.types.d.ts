@@ -51,6 +51,7 @@ export type AppUiElements = Partial<{
   resultConditions: HTMLElement | null;
   resultClearAll: HTMLButtonElement | null;
   resultTailSentinel: HTMLElement | null;
+  resultAnnouncement: HTMLElement | null;
   searchBox: HTMLInputElement | null;
   searchBoxError: HTMLElement | null;
   clearBtn: HTMLButtonElement | null;
@@ -183,7 +184,7 @@ export type RenderCardEntry = {
   dateEl: HTMLSpanElement;
   tagsEl: HTMLDivElement;
   actionBtn: HTMLButtonElement;
-  dragHandle: HTMLDivElement;
+  dragHandle: HTMLButtonElement;
 };
 
 /** 検索結果描画で再利用する DOM キャッシュ。 */
