@@ -157,11 +157,9 @@ export type PlaybackSettingsUiSlice = Pick<
   "loopPlayback"
 >;
 
-/** ブックマーク参照や曲キー検索に使う派生マップ。 */
+/** ブックマークの曲参照を曲へ解決するための派生マップ。 */
 export type LookupUiRuntimeState = {
-  /** ブックマーク保存用キーから曲を引くマップ。 */
-  songMapByBookmarkKey: Map<string, Song>;
-  /** 現在の songKey から曲を引くマップ。 */
+  /** songKey から曲を引くマップ。ブックマークは songKey で曲を指す。 */
   songMapByKey: Map<string, Song>;
   /** ルックアップマップの元になった曲配列参照。 */
   songLookupSourceRef: Song[] | null;

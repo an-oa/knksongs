@@ -18,7 +18,6 @@ function createNotificationUiState(language: SiteLanguage = "ja") {
             bookmarkNotificationRegion
         },
         lookup: {
-            songMapByBookmarkKey: new Map<string, Song>(),
             songMapByKey: new Map<string, Song>(),
             songLookupSourceRef: null
         },
@@ -36,8 +35,7 @@ function createNotificationDataState() {
     return {
         allSongsRaw: [
             createSongFixture({
-                songKey: "song-z",
-                bookmarkSongKey: "bookmark-song-z",
+                songKey: "bookmark-song-z",
                 title: "透明な朝",
                 titleEn: "Clear Morning"
             })

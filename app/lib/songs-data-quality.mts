@@ -117,10 +117,11 @@ function formatSongIdentityIssue(
         return `${location}: archiveOrder must be an integer`;
     }
     if (issue.kind === "mismatched-key") {
-        return `${location}: ${issue.fieldName} must equal ${JSON.stringify(issue.expected)}`;
+        return `${location}: songKey must equal ${JSON.stringify(issue.expected)}`;
     }
     const firstLocation = formatSongLocation(candidates[issue.firstIndex], issue.firstIndex);
-    return `${location}: ${issue.fieldName} ${JSON.stringify(issue.value)} duplicates ${firstLocation}`;
+    const subject = issue.kind === "duplicate-archive-order" ? "archiveId and archiveOrder" : "songKey";
+    return `${location}: ${subject} ${JSON.stringify(issue.value)} duplicates ${firstLocation}`;
 }
 
 /**

@@ -23,34 +23,28 @@ function createValidCsv() {
 }
 
 /**
- * data sourceテスト用のJSON文字列を返す。
- * @param {string} songKey 曲識別子
- * @param {string} contentHash 内容hash
- * @param {string} generatedAt 生成日時
- * @returns {string}
+ * data sourceテスト用のJSON文字列を返す。曲は 1 つで、どの取得元の曲かを archiveId で見分ける。
+ * @param archiveId 曲の archiveId
+ * @param contentHash 内容hash
+ * @param generatedAt 生成日時
+ * @returns 曲データJSONの文字列
  */
 function createSongsJson(
-    songKey: string,
-    contentHash = `sha256:${songKey}`,
+    archiveId: string,
+    contentHash = `sha256:${archiveId}`,
     generatedAt = GENERATED_AT
 ) {
-    const archiveId = songKey.split("::")[0] || "json-archive";
-    return JSON.stringify(buildSongsJsonPayload([
-        createSongFixture({
-            archiveId,
-            songKey
-        })
-    ], contentHash, generatedAt));
+    return JSON.stringify(buildSongsJsonPayload([createSongFixture({ archiveId })], contentHash, generatedAt));
 }
 
 /**
  * 直前schemaのキャッシュ確認用JSON文字列を返す。
- * @param {string} songKey 曲識別子
- * @param {string} contentHash 内容hash
- * @returns {string}
+ * @param archiveId 曲の archiveId
+ * @param contentHash 内容hash
+ * @returns 直前schemaの曲データJSONの文字列
  */
-function createPreviousSchemaSongsJson(songKey: string, contentHash: string) {
-    const payload: SongsJsonPayload = JSON.parse(createSongsJson(songKey, contentHash));
+function createPreviousSchemaSongsJson(archiveId: string, contentHash: string) {
+    const payload: SongsJsonPayload = JSON.parse(createSongsJson(archiveId, contentHash));
     payload.schemaVersion -= 1;
     payload.songs = payload.songs.map((song, sourceIndex) => ({ ...song, sourceIndex }));
     return JSON.stringify(payload);
@@ -137,11 +131,11 @@ test("songs data source: network csv is used without creating a runtime csv cach
         ["https://example.test/songs.csv", { cache: "no-store" }]
     ]);
     assert.equal(snapshot.source, "network");
-    assert.equal(snapshot.songs[0].songKey, "archive-1::1");
+    assert.equal(snapshot.songs[0].archiveId, "archive-1");
 });
 
 test("songs data source: network json success stores json and skips csv", async (t) => {
-    const songsJson = createSongsJson("json-archive::1");
+    const songsJson = createSongsJson("json-archive");
     const songsJsonCache = createFakeTextCacheStore();
     const fetchMock = mockFetch(t, async () => {
         return createResponse(songsJson);
@@ -158,12 +152,12 @@ test("songs data source: network json success stores json and skips csv", async 
     assertFetchCalls(fetchMock, [["data/songs.json", { cache: "no-cache" }]]);
     assert.equal(songsJsonCache.peek(), songsJson);
     assert.equal(snapshot.source, "network");
-    assert.equal(snapshot.songs[0].songKey, "json-archive::1");
+    assert.equal(snapshot.songs[0].archiveId, "json-archive");
 });
 
 for (const saveResult of ["success", "false", "reject"]) {
     test(`songs data source: initial snapshot does not wait for cache save (${saveResult})`, async (t) => {
-        const jsonText = createSongsJson("public::1", "sha256:public");
+        const jsonText = createSongsJson("public", "sha256:public");
         const cache = createFakeTextCacheStore();
         let savedText: string | undefined;
         const { promise: save, resolve: resolveSave, reject: rejectSave } = Promise.withResolvers<boolean>();
@@ -183,7 +177,7 @@ for (const saveResult of ["success", "false", "reject"]) {
             await new Promise((resolve) => setImmediate(resolve));
             assert.equal(savedText, jsonText, "saves the received text without serializing songs again");
             assert.equal(snapshot?.source, "network", "storage may still be pending when data is ready");
-            assert.equal(snapshot.songs[0].songKey, "public::1");
+            assert.equal(snapshot.songs[0].archiveId, "public");
         } finally {
             if (saveResult === "reject") rejectSave(new Error("storage failed"));
             else resolveSave(saveResult === "success");
@@ -196,7 +190,7 @@ for (const saveResult of ["success", "false", "reject"]) {
 }
 
 test("songs data source: structurally invalid network json is not cached and falls back to csv", async (t) => {
-    const invalidPayload: { songs: Partial<Song>[] } = JSON.parse(createSongsJson("invalid-archive::1"));
+    const invalidPayload: { songs: Partial<Song>[] } = JSON.parse(createSongsJson("invalid-archive"));
     delete invalidPayload.songs[0].title;
     const songsJsonCache = createFakeTextCacheStore();
     const fetchMock = mockFetch(t, async (url) => {
@@ -217,11 +211,11 @@ test("songs data source: structurally invalid network json is not cached and fal
         ["https://example.test/songs.csv", { cache: "no-store" }]
     ]);
     assert.equal(songsJsonCache.peek(), null);
-    assert.equal(snapshot.songs[0].songKey, "archive-1::1");
+    assert.equal(snapshot.songs[0].archiveId, "archive-1");
 });
 
 test("songs data source: unsafe links in network and cached JSON fall back to validated CSV", async (t) => {
-    const payload: SongsJsonPayload = JSON.parse(createSongsJson("unsafe-archive::1", "sha256:unsafe"));
+    const payload: SongsJsonPayload = JSON.parse(createSongsJson("unsafe-archive", "sha256:unsafe"));
     payload.songs[0].url = "javascript:alert(1)";
     const unsafeJson = JSON.stringify(payload);
     const songsJsonCache = createFakeTextCacheStore(unsafeJson);
@@ -250,7 +244,7 @@ test("songs data source: unsafe links in network and cached JSON fall back to va
 });
 
 test("songs data source: matching meta hash uses cached json without fetching the body", async (t) => {
-    const cachedJson = createSongsJson("cached-archive::1", "sha256:cached");
+    const cachedJson = createSongsJson("cached-archive", "sha256:cached");
     const songsJsonCache = createFakeTextCacheStore(cachedJson);
     const fetchMock = mockFetch(t, async () => {
         return createResponse(createSongsMetaJson("sha256:cached", "2026-08-15T00:00:00.000Z"));
@@ -270,17 +264,17 @@ test("songs data source: matching meta hash uses cached json without fetching th
         { cache: "no-cache" }
     ]]);
     assert.equal(snapshot.source, "cache");
-    assert.equal(snapshot.songs[0].songKey, "cached-archive::1");
+    assert.equal(snapshot.songs[0].archiveId, "cached-archive");
 });
 
 test("songs data source: newer public json is used for the initial snapshot", async (t) => {
     const cachedJson = createSongsJson(
-        "cached-archive::1",
+        "cached-archive",
         "sha256:cached",
         "2026-08-13T00:00:00.000Z"
     );
     const freshJson = createSongsJson(
-        "fresh-archive::1",
+        "fresh-archive",
         "sha256:fresh",
         "2026-08-14T00:00:00.000Z"
     );
@@ -307,12 +301,12 @@ test("songs data source: newer public json is used for the initial snapshot", as
     ]);
     assert.equal(songsJsonCache.peek(), freshJson);
     assert.equal(snapshot.source, "network");
-    assert.equal(snapshot.songs[0].songKey, "fresh-archive::1");
+    assert.equal(snapshot.songs[0].archiveId, "fresh-archive");
 });
 
 test("songs data source: older public json replaces a newer cache when hashes differ", async (t) => {
-    const cachedJson = createSongsJson("cached-archive::1", "sha256:newer-cache", "2026-08-15T00:00:00.000Z");
-    const publicJson = createSongsJson("public-archive::1", "sha256:public");
+    const cachedJson = createSongsJson("cached-archive", "sha256:newer-cache", "2026-08-15T00:00:00.000Z");
+    const publicJson = createSongsJson("public-archive", "sha256:public");
     const songsJsonCache = createFakeTextCacheStore(cachedJson);
     const fetchMock = mockFetch(t, async (url) => {
         return createResponse(url === "data/songs-meta.json"
@@ -334,19 +328,19 @@ test("songs data source: older public json replaces a newer cache when hashes di
         ["data/songs.json", { cache: "no-cache" }]
     ]);
     assert.equal(snapshot.source, "network");
-    assert.equal(snapshot.songs[0].songKey, "public-archive::1");
+    assert.equal(snapshot.songs[0].archiveId, "public-archive");
     assert.equal(songsJsonCache.peek(), publicJson);
 });
 
 test("songs data source: meta fetch failure still tries network json", async (t) => {
     const { response: failedResponse, readText } = createFailedResponse(t);
     const cachedJson = createSongsJson(
-        "cached-archive::1",
+        "cached-archive",
         "sha256:cached",
         "2026-08-13T00:00:00.000Z"
     );
     const freshJson = createSongsJson(
-        "fresh-archive::1",
+        "fresh-archive",
         "sha256:fresh",
         "2026-08-14T00:00:00.000Z"
     );
@@ -373,19 +367,19 @@ test("songs data source: meta fetch failure still tries network json", async (t)
     ]);
     assert.equal(songsJsonCache.peek(), freshJson);
     assert.equal(snapshot.source, "network");
-    assert.equal(snapshot.songs[0].songKey, "fresh-archive::1");
+    assert.equal(snapshot.songs[0].archiveId, "fresh-archive");
     assert.match(String(warnings.mock.calls[0]?.arguments[0]), /曲データJSONメタ情報の確認に失敗しました/);
 });
 
 test("songs data source: meta fetch failure still allows older public json to replace a newer cache", async (t) => {
     const { response: failedResponse, readText } = createFailedResponse(t);
     const cachedJson = createSongsJson(
-        "cached-archive::1",
+        "cached-archive",
         "sha256:newer-cache",
         "2026-08-15T00:00:00.000Z"
     );
     const olderJson = createSongsJson(
-        "older-network::1",
+        "older-network",
         "sha256:older-network",
         "2026-08-14T00:00:00.000Z"
     );
@@ -412,13 +406,13 @@ test("songs data source: meta fetch failure still allows older public json to re
     ]);
     assert.equal(songsJsonCache.peek(), olderJson);
     assert.equal(snapshot.source, "network");
-    assert.equal(snapshot.songs[0].songKey, "older-network::1");
+    assert.equal(snapshot.songs[0].archiveId, "older-network");
 });
 
 test("songs data source: json failure uses valid json cache before network csv", async (t) => {
     const { response: failedResponse, readText } = createFailedResponse(t);
     const cachedJson = createSongsJson(
-        "cached-archive::1",
+        "cached-archive",
         "sha256:cached",
         "2026-08-13T00:00:00.000Z"
     );
@@ -446,12 +440,12 @@ test("songs data source: json failure uses valid json cache before network csv",
     ]);
     assert.equal(songsJsonCache.peek(), cachedJson);
     assert.equal(snapshot.source, "cache");
-    assert.equal(snapshot.songs[0].songKey, "cached-archive::1");
+    assert.equal(snapshot.songs[0].archiveId, "cached-archive");
 });
 
 test("songs data source: json newer than stale meta is accepted and cached", async (t) => {
     const newerJson = createSongsJson(
-        "newer-archive::1",
+        "newer-archive",
         "sha256:newer",
         "2026-08-15T00:00:00.000Z"
     );
@@ -480,12 +474,12 @@ test("songs data source: json newer than stale meta is accepted and cached", asy
         ["data/songs.json", { cache: "no-cache" }]
     ]);
     assert.equal(songsJsonCache.peek(), newerJson);
-    assert.equal(snapshot.songs[0].songKey, "newer-archive::1");
+    assert.equal(snapshot.songs[0].archiveId, "newer-archive");
 });
 
 test("songs data source: json older than meta is not cached and falls back to csv", async (t) => {
     const olderJson = createSongsJson(
-        "older-archive::1",
+        "older-archive",
         "sha256:older",
         "2026-08-13T00:00:00.000Z"
     );
@@ -516,11 +510,11 @@ test("songs data source: json older than meta is not cached and falls back to cs
         ["https://example.test/songs.csv", { cache: "no-store" }]
     ]);
     assert.equal(songsJsonCache.peek(), null);
-    assert.equal(snapshot.songs[0].songKey, "archive-1::1");
+    assert.equal(snapshot.songs[0].archiveId, "archive-1");
 });
 
 test("songs data source: equal timestamps with mismatched hashes are rejected", async (t) => {
-    const inconsistentJson = createSongsJson("inconsistent::1", "sha256:json");
+    const inconsistentJson = createSongsJson("inconsistent", "sha256:json");
     const songsJsonCache = createFakeTextCacheStore();
     mockFetch(t, async (url) => {
         if (url === "data/songs-meta.json") {
@@ -540,12 +534,12 @@ test("songs data source: equal timestamps with mismatched hashes are rejected", 
     assert.ok(snapshot);
 
     assert.equal(songsJsonCache.peek(), null);
-    assert.equal(snapshot.songs[0].songKey, "archive-1::1");
+    assert.equal(snapshot.songs[0].archiveId, "archive-1");
 });
 
 test("songs data source: older schema cache is replaced without a competing delete", async (t) => {
-    const legacyJson = createPreviousSchemaSongsJson("legacy-archive::1", "sha256:legacy");
-    const freshJson = createSongsJson("fresh-archive::1", "sha256:fresh");
+    const legacyJson = createPreviousSchemaSongsJson("legacy-archive", "sha256:legacy");
+    const freshJson = createSongsJson("fresh-archive", "sha256:fresh");
     const songsJsonCache = createFakeTextCacheStore(legacyJson);
     t.mock.method(console, "warn", () => {});
     const fetchMock = mockFetch(t, async (url) => {
@@ -571,11 +565,11 @@ test("songs data source: older schema cache is replaced without a competing dele
     assert.equal(songsJsonCache.peek(), freshJson);
     assert.equal(songsJsonCache.getRemoveCount(), 0);
     assert.equal(snapshot.source, "network");
-    assert.equal(snapshot.songs[0].songKey, "fresh-archive::1");
+    assert.equal(snapshot.songs[0].archiveId, "fresh-archive");
 });
 
 test("songs data source: older schema network json is not cached and falls back to csv", async (t) => {
-    const legacyJson = createPreviousSchemaSongsJson("legacy-network::1", "sha256:legacy");
+    const legacyJson = createPreviousSchemaSongsJson("legacy-network", "sha256:legacy");
     const songsJsonCache = createFakeTextCacheStore();
     mockFetch(t, async (url) => {
         if (url === "data/songs.json") return createResponse(legacyJson);
@@ -591,7 +585,7 @@ test("songs data source: older schema network json is not cached and falls back 
     assert.ok(snapshot);
 
     assert.equal(songsJsonCache.peek(), null);
-    assert.equal(snapshot.songs[0].songKey, "archive-1::1");
+    assert.equal(snapshot.songs[0].archiveId, "archive-1");
 });
 
 test("songs data source: invalid cached json is removed after public JSON fails", async (t) => {
@@ -613,12 +607,12 @@ test("songs data source: invalid cached json is removed after public JSON fails"
     assert.ok(snapshot);
 
     assert.equal(songsJsonCache.getRemoveCount(), 1);
-    assert.equal(snapshot.songs[0].songKey, "archive-1::1");
+    assert.equal(snapshot.songs[0].archiveId, "archive-1");
 });
 
 test("songs data source: legacy localStorage json is migrated into the json cache", async (t) => {
     const storage = createFakeLocalStorage();
-    const cachedJson = createSongsJson("legacy-archive::1", "sha256:legacy");
+    const cachedJson = createSongsJson("legacy-archive", "sha256:legacy");
     const primarySongsJsonCache = createFakeTextCacheStore();
     const songsJsonCache = createLegacyLocalStorageSongsJsonCacheAdapter({
         cache: primarySongsJsonCache,
@@ -665,7 +659,7 @@ test("songs data source: failed json without cache falls back to network csv", a
         ["data/songs.json", { cache: "no-cache" }],
         ["https://example.test/songs.csv", { cache: "no-store" }]
     ]);
-    assert.equal(snapshot.songs[0].songKey, "archive-1::1");
+    assert.equal(snapshot.songs[0].archiveId, "archive-1");
 });
 
 test("songs data source: all network failures without json cache return null", async (t) => {
@@ -683,7 +677,7 @@ test("songs data source: all network failures without json cache return null", a
 });
 
 test("songs data source: initial cache display waits for public meta confirmation", async (t) => {
-    const cachedJson = createSongsJson("cached-archive::1", "sha256:cached");
+    const cachedJson = createSongsJson("cached-archive", "sha256:cached");
     const { promise: meta, resolve: resolveMeta } = Promise.withResolvers<Response>();
     const fetchMock = mockFetch(t, () => meta);
     const dataSource = createSongsDataSource({
@@ -704,7 +698,7 @@ test("songs data source: initial cache display waits for public meta confirmatio
     const snapshot = await initialPromise;
     assert.ok(snapshot);
     assert.equal(snapshot.source, "cache");
-    assert.equal(snapshot.songs[0].songKey, "cached-archive::1");
+    assert.equal(snapshot.songs[0].archiveId, "cached-archive");
 });
 
 test("songs data source: stalled json request times out before falling back to network csv", async (t) => {
@@ -728,11 +722,11 @@ test("songs data source: stalled json request times out before falling back to n
         ["data/songs.json", { cache: "no-cache" }],
         ["https://example.test/songs.csv", { cache: "no-store" }]
     ]);
-    assert.equal(snapshot.songs[0].songKey, "archive-1::1");
+    assert.equal(snapshot.songs[0].archiveId, "archive-1");
 });
 
 test("songs data source: slow json body may finish after the response timeout", async (t) => {
-    const songsJson = createSongsJson("slow-json::1");
+    const songsJson = createSongsJson("slow-json");
     const songsJsonCache = createFakeTextCacheStore();
     mockFetch(t, async (_url, options) => {
         const signal = options?.signal;
@@ -758,7 +752,7 @@ test("songs data source: slow json body may finish after the response timeout", 
     const snapshot = await dataSource.loadInitialSnapshot();
     assert.ok(snapshot);
 
-    assert.equal(snapshot.songs[0].songKey, "slow-json::1");
+    assert.equal(snapshot.songs[0].archiveId, "slow-json");
     assert.equal(songsJsonCache.peek(), songsJson);
 });
 
@@ -782,15 +776,15 @@ test("songs data source: stalled json body times out before falling back to netw
     const snapshot = await dataSource.loadInitialSnapshot();
     assert.ok(snapshot);
 
-    assert.equal(snapshot.songs[0].songKey, "archive-1::1");
+    assert.equal(snapshot.songs[0].archiveId, "archive-1");
 });
 
 for (const invalidKind of ["malformed", "older-than-meta", "same-time-different-hash"]) {
     test(`songs data source: ${invalidKind} public json preserves valid cache`, async (t) => {
-        const cachedJson = createSongsJson("cached::1", "sha256:cached");
+        const cachedJson = createSongsJson("cached", "sha256:cached");
         const songsJsonCache = createFakeTextCacheStore(cachedJson);
         const publicJson = invalidKind === "malformed" ? "not json" : createSongsJson(
-            "public::1", "sha256:public",
+            "public", "sha256:public",
             invalidKind === "older-than-meta" ? "2026-08-13T00:00:00.000Z" : GENERATED_AT
         );
         const urls: Parameters<typeof fetch>[0][] = [];
@@ -807,7 +801,7 @@ for (const invalidKind of ["malformed", "older-than-meta", "same-time-different-
         }).loadInitialSnapshot();
         assert.ok(snapshot);
         assert.equal(snapshot.source, "cache");
-        assert.equal(snapshot.songs[0].songKey, "cached::1");
+        assert.equal(snapshot.songs[0].archiveId, "cached");
         assert.equal(songsJsonCache.peek(), cachedJson);
         assert.deepEqual(urls, ["data/songs-meta.json", "data/songs.json"]);
     });
@@ -827,7 +821,7 @@ function createNetworkClock(t: TestContext) {
 
 test("songs data source: meta and json response/body share the default five second deadline", async (t) => {
     const tick = createNetworkClock(t);
-    const cachedJson = createSongsJson("cached::1", "sha256:cached");
+    const cachedJson = createSongsJson("cached", "sha256:cached");
     const songsJsonCache = createFakeTextCacheStore(cachedJson);
     const urls: Parameters<typeof fetch>[0][] = [];
     let jsonSignal: AbortSignal | undefined;
@@ -872,8 +866,8 @@ test("songs data source: meta and json response/body share the default five seco
     assert.ok(snapshot);
     assert.equal(jsonSignal.aborted, true);
     assert.equal(snapshot.source, "cache");
-    assert.equal(snapshot.songs[0].songKey, "cached::1");
-    releaseBody(createSongsJson("public::1", "sha256:public"));
+    assert.equal(snapshot.songs[0].archiveId, "cached");
+    releaseBody(createSongsJson("public", "sha256:public"));
     await tick(30_000);
     assert.equal(songsJsonCache.peek(), cachedJson);
     assert.deepEqual(urls, ["data/songs-meta.json", "data/songs.json"]);
@@ -883,7 +877,7 @@ for (const phase of ["response", "body"]) {
     test(`songs data source: meta ${phase} exhausting the deadline prevents a json request`, async (t) => {
         const tick = createNetworkClock(t);
         t.mock.method(console, "warn", () => {});
-        const cachedJson = createSongsJson("cached::1", "sha256:cached");
+        const cachedJson = createSongsJson("cached", "sha256:cached");
         const urls: Parameters<typeof fetch>[0][] = [];
         let signal: AbortSignal | null | undefined;
         mockFetch(t, (url, options) => {
@@ -913,14 +907,14 @@ for (const phase of ["response", "body"]) {
 test("songs data source: late successful body is rejected even before the timeout callback runs", async (t) => {
     let now = 0;
     t.mock.method(performance, "now", () => now);
-    const cachedJson = createSongsJson("cached::1", "sha256:cached");
+    const cachedJson = createSongsJson("cached", "sha256:cached");
     const songsJsonCache = createFakeTextCacheStore(cachedJson);
     let signal: AbortSignal | null | undefined;
     mockFetch(t, async (_url, options) => {
         signal = options?.signal;
         return createResponse(async () => {
             now = 5001;
-            return createSongsJson("public::1", "sha256:public");
+            return createSongsJson("public", "sha256:public");
         });
     });
     const snapshot = await createSongsDataSource({
@@ -939,7 +933,7 @@ test("songs data source: no cache keeps parallel requests and allows a body beyo
     const tick = createNetworkClock(t);
     const urls: Parameters<typeof fetch>[0][] = [];
     const { promise: metaBody, resolve: releaseMeta } = Promise.withResolvers<string>();
-    const publicJson = createSongsJson("public::1", "sha256:public");
+    const publicJson = createSongsJson("public", "sha256:public");
     mockFetch(t, async (url) => {
         urls.push(url);
         return createResponse(() => url === "data/songs-meta.json"
@@ -960,13 +954,13 @@ test("songs data source: no cache keeps parallel requests and allows a body beyo
     const snapshot = await loading;
     assert.ok(snapshot);
     assert.equal(snapshot.source, "network");
-    assert.equal(snapshot.songs[0].songKey, "public::1");
+    assert.equal(snapshot.songs[0].archiveId, "public");
 });
 
 for (const updated of [false, true]) {
     test(`songs data source: legacy read starts meta before saving and only persists the accepted JSON (updated=${updated})`, async (t) => {
-        const legacy = createSongsJson("legacy::1", "sha256:legacy");
-        const current = createSongsJson("current::1", "sha256:current");
+        const legacy = createSongsJson("legacy", "sha256:legacy");
+        const current = createSongsJson("current", "sha256:current");
         const storage = createFakeLocalStorage();
         storage.setItem("legacy", legacy);
         const primary = createFakeTextCacheStore();
@@ -1012,7 +1006,7 @@ for (const networkSucceeds of [false, true]) {
         const cache = createFakeTextCacheStore("invalid JSON");
         const { promise: deleted, resolve: releaseDelete } = Promise.withResolvers<void>();
         const deletion = t.mock.method(cache, "removeText", () => deleted);
-        const current = createSongsJson("current::1");
+        const current = createSongsJson("current");
         const deleteCountsAtJsonFetch: number[] = [];
         mockFetch(t, async (url) => {
             if (url === "json") deleteCountsAtJsonFetch.push(deletion.mock.callCount());

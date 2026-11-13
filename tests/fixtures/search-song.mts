@@ -32,7 +32,6 @@ export function createSearchSongFixtureFactory() {
             archiveId: songInput.archiveId ?? "",
             archiveOrder: songInput.archiveOrder ?? 1,
             songKey,
-            bookmarkSongKey: songInput.bookmarkSongKey ?? songKey,
             dateKey: songInput.dateKey ?? null,
             format: songInput.format ?? "配信",
             streamRole: songInput.streamRole ?? "",

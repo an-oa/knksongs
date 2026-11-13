@@ -23,7 +23,6 @@ import {
 } from "../lib/storage/search-state-schema.mjs";
 import type { SearchBooleanFilterElements } from "../lib/search-boolean-filters.mjs";
 import { collectSearchBooleanFilterState } from "../lib/search-boolean-filters.mjs";
-import { getBookmarkSongRef } from "../lib/song-identity.mjs";
 import type { DateSelectKind } from "../ui/date/filter.mjs";
 import type {
     BookmarkLoadResult,
@@ -450,7 +449,7 @@ export function createStorageController({
         const nextResults = data.currentResults.slice();
         const [movedItem] = nextResults.splice(fromIndex, 1);
         nextResults.splice(toIndex, 0, movedItem);
-        const orderedKeys = nextResults.map((row) => getBookmarkSongRef(row)).filter(Boolean);
+        const orderedKeys = nextResults.map((row) => row.songKey);
         const reorderSet = new Set(orderedKeys);
         let visibleIndex = 0;
         const nextSongs = bookmark.songs.map((songKey) => (

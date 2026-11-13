@@ -61,7 +61,7 @@ test("pickRecommendedSongs: keeps the upper CSV row when archive order is duplic
     const upperRow = makeRow({
         archiveId: "a1",
         archiveOrder: 2,
-        bookmarkSongKey: "upper::2",
+        songKey: "upper::2",
         title: "群青",
         artist: "A"
     });
@@ -70,7 +70,7 @@ test("pickRecommendedSongs: keeps the upper CSV row when archive order is duplic
         makeRow({
             archiveId: "a1",
             archiveOrder: 2,
-            bookmarkSongKey: "lower::2",
+            songKey: "lower::2",
             title: "群青",
             artist: "A"
         }),

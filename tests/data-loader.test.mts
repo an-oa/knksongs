@@ -13,7 +13,6 @@ function createSong(songKey: string): Song {
         archiveId: songKey.split("::")[0] || "json-archive",
         videoId: "abc123",
         songKey,
-        bookmarkSongKey: `abc123::${songKey}`,
         url: "https://www.youtube.com/watch?v=abc123&t=10s"
     });
 }

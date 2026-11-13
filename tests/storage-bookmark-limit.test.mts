@@ -727,7 +727,7 @@ test("migrateLegacyBookmarkSongRefs: preserves __proto__ bookmark IDs during mig
     globalThis.localStorage = createFakeLocalStorage();
     try {
         const { controller, bookmarkPersistenceController, data } = setupStorageController({ bookmarks: {} });
-        data.allSongsRaw = [createSongFixture({ songKey: "arch1::1", bookmarkSongKey: "videoA::1" })];
+        data.allSongsRaw = [createSongFixture({ archiveId: "arch1", archiveOrder: 1, songKey: "videoA::1" })];
         globalThis.localStorage.setItem("bookmarksTest", `{
             "version": 2,
             "bookmarks": {
@@ -751,7 +751,7 @@ test("migrateLegacyBookmarkSongRefs: preserves __proto__ bookmark IDs during mig
     }
 });
 
-test("migrateLegacyBookmarkSongRefs: rewrites old songKey refs to bookmarkSongKey and saves versioned payload", () => {
+test("migrateLegacyBookmarkSongRefs: rewrites old archive-based refs to songKey and saves versioned payload", () => {
     const restoreDom = installFakeDom();
     const prevLocalStorage = globalThis.localStorage;
     globalThis.localStorage = createFakeLocalStorage();
@@ -770,12 +770,14 @@ test("migrateLegacyBookmarkSongRefs: rewrites old songKey refs to bookmarkSongKe
         });
         data.allSongsRaw = [
             createSongFixture({
-                songKey: "arch1::1",
-                bookmarkSongKey: "videoA::1"
+                archiveId: "arch1",
+                archiveOrder: 1,
+                songKey: "videoA::1"
             }),
             createSongFixture({
-                songKey: "arch2::2",
-                bookmarkSongKey: "videoB::2"
+                archiveId: "arch2",
+                archiveOrder: 2,
+                songKey: "videoB::2"
             })
         ];
         globalThis.localStorage.setItem("bookmarksTest", JSON.stringify(storedBookmarks));
@@ -803,7 +805,7 @@ test("migrateLegacyBookmarkSongRefs: rewrites old songKey refs to bookmarkSongKe
     }
 });
 
-test("migrateLegacyBookmarkSongRefs: preserves current bookmarkSongKey refs and upgrades payload version", () => {
+test("migrateLegacyBookmarkSongRefs: preserves current songKey refs and upgrades payload version", () => {
     const restoreDom = installFakeDom();
     const prevLocalStorage = globalThis.localStorage;
     globalThis.localStorage = createFakeLocalStorage();
@@ -822,8 +824,9 @@ test("migrateLegacyBookmarkSongRefs: preserves current bookmarkSongKey refs and 
         });
         data.allSongsRaw = [
             createSongFixture({
-                songKey: "arch1::1",
-                bookmarkSongKey: "videoA::1"
+                archiveId: "arch1",
+                archiveOrder: 1,
+                songKey: "videoA::1"
             })
         ];
         globalThis.localStorage.setItem("bookmarksTest", JSON.stringify(storedBookmarks));
@@ -838,6 +841,46 @@ test("migrateLegacyBookmarkSongRefs: preserves current bookmarkSongKey refs and 
                 bookmarks: data.bookmarks
             }
         );
+    } finally {
+        globalThis.localStorage = prevLocalStorage;
+        restoreDom();
+    }
+});
+
+test("migrateLegacyBookmarkSongRefs: uses the migrated refs on this page even when the save is blocked", () => {
+    const restoreDom = installFakeDom();
+    const prevLocalStorage = globalThis.localStorage;
+    globalThis.localStorage = createFakeLocalStorage();
+    try {
+        const { controller, bookmarkPersistenceController, data } = setupStorageController({
+            bookmarks: {},
+            maxBookmarkCount: 20,
+            maxSongsPerBookmark: 120
+        });
+        globalThis.localStorage.setItem("bookmarksTest", JSON.stringify({
+            version: 2,
+            bookmarks: { p_1: { name: "old refs", songs: ["arch1::1"], createdAt: 1710000000000 } }
+        }));
+        controller.restorePersistedState();
+        // 読み込んだ後に、別のタブがブックマークを書き換えた。保存の直前の検査で見つかるので、保存はしない。
+        const otherTabPayloadText = JSON.stringify({
+            version: 3,
+            bookmarks: { p_2: { name: "other tab", songs: [], createdAt: 1710000000001 } }
+        });
+        globalThis.localStorage.setItem("bookmarksTest", otherTabPayloadText);
+        data.allSongsRaw = [
+            createSongFixture({
+                archiveId: "arch1",
+                archiveOrder: 1,
+                songKey: "videoA::1"
+            })
+        ];
+
+        bookmarkPersistenceController.migrateLegacyBookmarkSongRefs();
+
+        // 旧形式の参照のままでは曲を引けないので、保存できなくても、この画面では移行後の参照を使う。
+        assert.deepEqual(data.bookmarks.p_1.songs, ["videoA::1"]);
+        assert.equal(readStoredText(globalThis.localStorage, "bookmarksTest"), otherTabPayloadText);
     } finally {
         globalThis.localStorage = prevLocalStorage;
         restoreDom();
@@ -877,8 +920,9 @@ test("migrateLegacyBookmarkSongRefs: retries unresolved legacy refs after songs 
 
         data.allSongsRaw = [
             createSongFixture({
-                songKey: "arch1::1",
-                bookmarkSongKey: "videoA::1"
+                archiveId: "arch1",
+                archiveOrder: 1,
+                songKey: "videoA::1"
             })
         ];
         bookmarkPersistenceController.migrateLegacyBookmarkSongRefs();
@@ -914,8 +958,9 @@ test("replaceAllBookmarksFromJsonText: replaces current bookmarks and clears mis
         });
         data.allSongsRaw = [
             createSongFixture({
-                songKey: "arch1::1",
-                bookmarkSongKey: "videoA::1"
+                archiveId: "arch1",
+                archiveOrder: 1,
+                songKey: "videoA::1"
             })
         ];
 
@@ -1018,8 +1063,9 @@ test("migrateLegacyBookmarkSongRefs: emits opt-in debug logs when migration runs
         });
         data.allSongsRaw = [
             createSongFixture({
-                songKey: "arch1::1",
-                bookmarkSongKey: "videoA::1"
+                archiveId: "arch1",
+                archiveOrder: 1,
+                songKey: "videoA::1"
             })
         ];
         globalThis.localStorage.setItem("debugBookmarkMigration", "true");

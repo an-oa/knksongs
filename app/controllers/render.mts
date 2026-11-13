@@ -19,7 +19,6 @@ import { bindCardTextMarquee, stopCardTextMarquee, type CardTextMarqueeTarget } 
 import type { StorageActionFailure, StorageActionResult } from "./storage.mjs";
 import { applyMasonryLayout } from "../lib/render/masonry-layout.mjs";
 import { createResultTailObserver } from "../lib/render/result-tail-observer.mjs";
-import { getBookmarkSongRef } from "../lib/song-identity.mjs";
 import { getSongDisplayArtist, getSongDisplayTitle, type SongDisplayName } from "../lib/song-display-name.mjs";
 import type { SiteLanguage } from "../lib/site-language.mjs";
 import { getUiText, type UiText } from "../lib/ui-text.mjs";
@@ -220,7 +219,6 @@ export function createRenderController({
      * @param resultIndex 結果一覧での位置
      */
     function updateCardFromRow(entry: RenderCardEntry, row: Song, resultIndex: number) {
-        const bookmarkSongRef = getBookmarkSongRef(row);
         const yt = buildYoutubeTarget(row);
         const titleId = `result-title-${resultIndex + 1}`;
         entry.titleHeading.setAttribute("id", titleId);
@@ -233,13 +231,13 @@ export function createRenderController({
             btn.textContent = "×";
             btn.className = "remove-from-bookmark-btn";
             btn.onclick = () => {
-                removeSongFromActiveBookmark(bookmarkSongRef);
+                removeSongFromActiveBookmark(row.songKey);
             };
         } else {
             btn.textContent = "+";
             btn.className = "add-to-bookmark-btn";
             btn.onclick = () => {
-                openBookmarkModal(bookmarkSongRef);
+                openBookmarkModal(row.songKey);
             };
         }
         updateCardText(entry, row);

@@ -1,7 +1,7 @@
 import {
-    buildSongReferenceIndex,
-    getBookmarkSongRef,
-    normalizeLegacySongRefToCurrent,
+    buildSongByKeyMap,
+    buildSongKeyByArchiveKeyMap,
+    normalizeLegacySongRefToArchiveKey,
     type SongIdentityRow
 } from "../song-identity.mjs";
 
@@ -115,9 +115,11 @@ export function buildStoredBookmarksPayload(bookmarks: unknown, version: number)
 }
 
 /**
- * 旧文字列形式のブックマーク曲IDを現行の bookmarkSongKey へ移行する。
- * 旧形式は、songKey（archiveId::archiveOrder）と、その後ろに URL を付けた最初期の形式の 2 つ。
+ * 旧形式で保存されたブックマークの曲参照を、今の songKey（videoId::archiveOrder）へ移行する。
+ * 旧形式は、archiveId::archiveOrder と、その後ろに URL を付けた最初期の形式の 2 つ。
  * どちらも archiveId と archiveOrder で曲を特定し、URL は見ない。
+ * 実行時は songKey だけで曲を引くので、保存済みのブックマークを読み込んだ後と、ファイルから取り込むときに、ここを通す。
+ * 曲データにない参照は、曲が一時的に外れているだけの場合があるので、そのまま残す。
  * 安定して復元できない旧数値参照は実行時モデルへ持ち込まず除外する。
  * @param input 移行するブックマークと、参照の解決に使う曲行
  * @returns 変更の有無、変更したブックマークの ID、変更前後の曲参照
@@ -128,7 +130,8 @@ export function migrateLegacyBookmarkSongRefsToCurrent(input: BookmarkMigrationI
             ? input.bookmarks
             : {};
     const songRows = Array.isArray(input?.songRows) ? input.songRows : [];
-    const referenceIndex = buildSongReferenceIndex(songRows);
+    const songByKey = buildSongByKeyMap(songRows);
+    const songKeyByArchiveKey = buildSongKeyByArchiveKeyMap(songRows);
     const changedBookmarkIds: string[] = [];
     const changes: BookmarkMigrationChange[] = [];
 
@@ -142,16 +145,11 @@ export function migrateLegacyBookmarkSongRefsToCurrent(input: BookmarkMigrationI
             let normalized: string | null = null;
             if (typeof ref === "string") {
                 const trimmedRef = ref.trim();
-                if (referenceIndex.bookmarkSongKeys.has(trimmedRef)) normalized = trimmedRef;
-                else if (referenceIndex.songByKey.has(trimmedRef)) {
-                    const row = referenceIndex.songByKey.get(trimmedRef);
-                    normalized = getBookmarkSongRef(row) || null;
-                } else {
-                    const converted = normalizeLegacySongRefToCurrent(trimmedRef);
-                    if (converted && referenceIndex.songByKey.has(converted)) {
-                        const row = referenceIndex.songByKey.get(converted);
-                        normalized = getBookmarkSongRef(row) || null;
-                    } else normalized = trimmedRef;
+                if (songByKey.has(trimmedRef)) normalized = trimmedRef;
+                else {
+                    const archiveKey = normalizeLegacySongRefToArchiveKey(trimmedRef);
+                    const migrated = archiveKey === null ? undefined : songKeyByArchiveKey.get(archiveKey);
+                    normalized = migrated ?? trimmedRef;
                 }
             }
             if (normalized === null) return;

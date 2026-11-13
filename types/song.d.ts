@@ -7,7 +7,6 @@ type Song = {
   archiveOrder: number;
   videoId: string;
   songKey: string;
-  bookmarkSongKey: string;
   format: string;
   streamRole: string;
   videoOrientation: VideoOrientation;

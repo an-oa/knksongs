@@ -278,12 +278,13 @@ export function createBookmarkPersistenceController({
             });
             return;
         }
+        // 旧形式の参照は移行を通さないと曲へ解決できない。保存できなかったときも、この画面では移行後の参照で曲を引く。
+        data.bookmarks = nextBookmarks;
         const saveResult = saveBookmarks(nextBookmarks);
         if (!saveResult.ok) {
             debugBookmarkMigration("failed to save migrated bookmarks payload", saveResult);
             return;
         }
-        data.bookmarks = nextBookmarks;
         debugBookmarkMigration("saved migrated bookmarks payload", {
             changedBookmarkIds: migration.changedBookmarkIds,
             upgradedVersion: storageVersion

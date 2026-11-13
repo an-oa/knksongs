@@ -4,10 +4,7 @@ import {
     validateSongsDataQuality,
     validateSongYoutubeFields
 } from "../app/lib/songs-data-quality.mts";
-import {
-    buildBookmarkSongKey,
-    buildSongKey
-} from "../app/lib/song-identity.mts";
+import { buildSongKey } from "../app/lib/song-identity.mts";
 import { createSongFixture } from "./fixtures/song.mts";
 
 /**
@@ -27,8 +24,7 @@ function makeSong(overrides: Partial<Record<keyof Song, unknown>> = {}) {
     };
     return {
         ...song,
-        songKey: buildSongKey(song),
-        bookmarkSongKey: buildBookmarkSongKey(song)
+        songKey: buildSongKey(song)
     };
 }
 
@@ -124,6 +120,23 @@ test("songs data quality: reports both CSV rows for duplicate song identities", 
         makeCandidate({ title: "Retake" }, 27)
     ]);
 
-    assert.match(issues.join("\n"), /CSV 27行目「Retake」: songKey .* duplicates CSV 12行目「Song」/);
-    assert.match(issues.join("\n"), /CSV 27行目「Retake」: bookmarkSongKey .* duplicates CSV 12行目「Song」/);
+    assert.match(issues.join("\n"), /CSV 27行目「Retake」: archiveId and archiveOrder "archive-1::1" duplicates CSV 12行目「Song」/);
+    assert.match(issues.join("\n"), /CSV 27行目「Retake」: songKey "7fOw-4QeB7M::1" duplicates CSV 12行目「Song」/);
+});
+
+test("songs data quality: reports an archive and order that two videos share", () => {
+    // 「#」の打ち間違いで、別の配信の曲が同じアーカイブの同じ歌唱順になった場合。曲キーは動画ごとなので重ならない。
+    const issues = validateSongsDataQuality([
+        makeCandidate({}, 12),
+        makeCandidate({
+            title: "Other stream",
+            videoId: "abc123def45",
+            url: "https://www.youtube.com/watch?v=abc123def45&t=10s",
+            endSeconds: null
+        }, 40)
+    ]);
+
+    assert.deepEqual(issues, [
+        'CSV 40行目「Other stream」: archiveId and archiveOrder "archive-1::1" duplicates CSV 12行目「Song」'
+    ]);
 });

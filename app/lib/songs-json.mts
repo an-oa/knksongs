@@ -1,7 +1,7 @@
 import { findFirstSongIdentityIssue, type SongIdentityIssue } from "./song-identity.mjs";
 import { validateYoutubeUrl } from "./youtube-url.mjs";
 
-export const SONGS_JSON_SCHEMA_VERSION = 6;
+export const SONGS_JSON_SCHEMA_VERSION = 7;
 
 export type SongsJsonArtifactMetadata = {
     schemaVersion: typeof SONGS_JSON_SCHEMA_VERSION;
@@ -28,7 +28,6 @@ const SONG_FIELD_KINDS = {
     archiveOrder: "integer",
     videoId: "string",
     songKey: "string",
-    bookmarkSongKey: "string",
     format: "string",
     streamRole: "string",
     videoOrientation: "video-orientation",
@@ -192,10 +191,13 @@ function formatSongIdentityIssue(issue: SongIdentityIssue): string {
         return `${location}.archiveOrder must be an integer`;
     }
     if (issue.kind === "mismatched-key") {
-        return `${location}.${issue.fieldName} must equal ${JSON.stringify(issue.expected)}`;
+        return `${location}.songKey must equal ${JSON.stringify(issue.expected)}`;
     }
-    return `${location}.${issue.fieldName} ${JSON.stringify(issue.value)} duplicates ` +
-        `songs json payload songs[${issue.firstIndex}].${issue.fieldName}`;
+    const firstLocation = `songs json payload songs[${issue.firstIndex}]`;
+    if (issue.kind === "duplicate-archive-order") {
+        return `${location} archiveId and archiveOrder ${JSON.stringify(issue.value)} duplicate ${firstLocation}`;
+    }
+    return `${location}.songKey ${JSON.stringify(issue.value)} duplicates ${firstLocation}.songKey`;
 }
 
 /**

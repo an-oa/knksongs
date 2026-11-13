@@ -66,7 +66,6 @@ function createBookmarkUiState() {
             bookmarkNotificationRegion
         },
         lookup: {
-            songMapByBookmarkKey: new Map<string, Song>(),
             songMapByKey: new Map<string, Song>(),
             songLookupSourceRef: null
         },
@@ -108,7 +107,6 @@ function createBookmarkHarness(options: {
         allSongsRaw: options.allSongsRaw || [
             createSongFixture({
                 songKey: "song-z",
-                bookmarkSongKey: "song-z",
                 title: "透明な朝"
             })
         ],

@@ -88,13 +88,13 @@ function createDragHarness(options: {
             "bookmark-1": {
                 name: "Bookmark",
                 createdAt: 1,
-                songs: ["song-a", "song-b", "song-c"]
+                songs: ["a", "b", "c"]
             }
         },
         currentResults: [
-            makeRenderRow({ songKey: "a", bookmarkSongKey: "song-a"}),
-            makeRenderRow({ songKey: "b", bookmarkSongKey: "song-b"}),
-            makeRenderRow({ songKey: "c", bookmarkSongKey: "song-c"})
+            makeRenderRow({ songKey: "a" }),
+            makeRenderRow({ songKey: "b" }),
+            makeRenderRow({ songKey: "c" })
         ]
     };
     const calls = {
@@ -263,7 +263,7 @@ test("render drag reorder: releasing in the list saves the order shown during th
         controller.onListPointerUp(pointerAt(215));
 
         assert.deepEqual(data.currentResults.map((row) => row.songKey), ["b", "c", "a"]);
-        assert.deepEqual(data.bookmarks["bookmark-1"].songs, ["song-b", "song-c", "song-a"]);
+        assert.deepEqual(data.bookmarks["bookmark-1"].songs, ["b", "c", "a"]);
         assert.equal(calls.save, 1);
         assert.deepEqual(calls.saveFailures, []);
         assert.deepEqual(readListOrder(list), ["b", "c", "a"]);
@@ -281,16 +281,16 @@ test("bookmark reorder: moves only visible songs and keeps hidden songs in their
         const { data, storageController, calls } = createDragHarness();
         const originalResults = data.currentResults;
         data.displayLimit = 2;
-        data.bookmarks["bookmark-1"].songs = ["hidden-1", "song-a", "hidden-2", "song-b", "song-c", "hidden-3"];
+        data.bookmarks["bookmark-1"].songs = ["hidden-1", "a", "hidden-2", "b", "c", "hidden-3"];
         assert.deepEqual(storageController.moveSongInActiveBookmark("a", "c"), { ok: true, changed: true });
-        assert.deepEqual(data.bookmarks["bookmark-1"].songs, ["hidden-1", "song-b", "hidden-2", "song-c", "song-a", "hidden-3"]);
+        assert.deepEqual(data.bookmarks["bookmark-1"].songs, ["hidden-1", "b", "hidden-2", "c", "a", "hidden-3"]);
         assert.deepEqual(data.currentResults.map((row) => row.songKey), ["b", "c", "a"]);
         assert.equal(calls.save, 1);
         assert.equal(calls.render, 1);
         assert.equal(data.currentResults, originalResults);
         assert.equal(data.displayLimit, 2);
         assert.deepEqual(storageController.moveSongInActiveBookmark("a", "b"), { ok: true, changed: true });
-        assert.deepEqual(data.bookmarks["bookmark-1"].songs, ["hidden-1", "song-a", "hidden-2", "song-b", "song-c", "hidden-3"]);
+        assert.deepEqual(data.bookmarks["bookmark-1"].songs, ["hidden-1", "a", "hidden-2", "b", "c", "hidden-3"]);
     } finally {
         cleanup();
     }
@@ -393,9 +393,9 @@ test("render drag reorder: a failed save is reported and the saved order comes b
         controller.onListPointerUp(pointerAt(270));
 
         assert.deepEqual(calls.saveFailures, [{ ok: false, reason: "storage_write_failed" }]);
-        assert.deepEqual(calls.savedBookmarks[0]["bookmark-1"].songs, ["song-b", "song-c", "song-a"]);
+        assert.deepEqual(calls.savedBookmarks[0]["bookmark-1"].songs, ["b", "c", "a"]);
         assert.deepEqual(data.currentResults.map((row) => row.songKey), ["a", "b", "c"]);
-        assert.deepEqual(data.bookmarks["bookmark-1"].songs, ["song-a", "song-b", "song-c"]);
+        assert.deepEqual(data.bookmarks["bookmark-1"].songs, ["a", "b", "c"]);
         assert.deepEqual(readListOrder(list), ["a", "b", "c"]);
     } finally {
         cleanup();
@@ -575,7 +575,7 @@ test("render drag reorder: holding the pointer near the bottom edge scrolls the 
 
         // 離すと、見えている順序で保存し、端のスクロールもやめる。
         controller.onListPointerUp(pointerAt(715));
-        assert.deepEqual(data.bookmarks["bookmark-1"].songs, ["song-b", "song-c", "song-a"]);
+        assert.deepEqual(data.bookmarks["bookmark-1"].songs, ["b", "c", "a"]);
         assert.equal(frames.pendingCount, 0);
     } finally {
         frames.cleanup();
@@ -625,7 +625,7 @@ test("render drag reorder: scrolling the page without moving the pointer shows t
         assert.deepEqual(readListOrder(list), ["b", "c", "a"]);
 
         controller.onListPointerUp(pointerAt(215));
-        assert.deepEqual(data.bookmarks["bookmark-1"].songs, ["song-b", "song-c", "song-a"]);
+        assert.deepEqual(data.bookmarks["bookmark-1"].songs, ["b", "c", "a"]);
         // ドラッグが終わったら、スクロールでは並べ替えない。
         assert.equal(dom.document._events.has("scroll"), false);
     } finally {

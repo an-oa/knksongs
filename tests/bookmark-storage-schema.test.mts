@@ -6,7 +6,7 @@ import {
     parseStoredBookmarksPayload,
     sanitizeBookmarks
 } from "../app/lib/storage/bookmark-schema.mts";
-import { normalizeLegacySongRefToCurrent } from "../app/lib/song-identity.mts";
+import { normalizeLegacySongRefToArchiveKey } from "../app/lib/song-identity.mts";
 
 test("bookmark storage schema: parses legacy and versioned payloads with sanitization", () => {
     assert.deepEqual(
@@ -123,12 +123,14 @@ test("bookmark storage migration: rewrites legacy refs to current bookmark song 
     };
     const songRows = [
         {
-            songKey: "arch1::1",
-            bookmarkSongKey: "videoA::1"
+            archiveId: "arch1",
+            archiveOrder: 1,
+            songKey: "videoA::1"
         },
         {
-            songKey: "arch2::2",
-            bookmarkSongKey: "videoB::2"
+            archiveId: "arch2",
+            archiveOrder: 2,
+            songKey: "videoB::2"
         }
     ];
 
@@ -169,8 +171,8 @@ test("bookmark storage migration: the oldest refs with a URL are resolved by arc
     };
     // 曲データは URL を含むキーを持たない。URL そのものも、曲の特定には渡さない。
     const songRows = [
-        { songKey: "arch1::1", bookmarkSongKey: "videoA::1" },
-        { songKey: "arch2::2", bookmarkSongKey: "videoB::2" }
+        { archiveId: "arch1", archiveOrder: 1, songKey: "videoA::1" },
+        { archiveId: "arch2", archiveOrder: 2, songKey: "videoB::2" }
     ];
 
     const result = migrateLegacyBookmarkSongRefsToCurrent({ bookmarks, songRows });
@@ -211,8 +213,9 @@ test("bookmark storage migration: keeps current refs without marking changes", (
         bookmarks,
         songRows: [
             {
-                songKey: "arch1::1",
-                bookmarkSongKey: "videoA::1"
+                archiveId: "arch1",
+                archiveOrder: 1,
+                songKey: "videoA::1"
             }
         ]
     });
@@ -223,10 +226,10 @@ test("bookmark storage migration: keeps current refs without marking changes", (
 });
 
 test("bookmark storage schema: normalizes legacy song refs by archive and order", () => {
-    assert.equal(normalizeLegacySongRefToCurrent(" arch1 :: 001 :: https://youtu.be/videoA"), "arch1::1");
-    assert.equal(normalizeLegacySongRefToCurrent("arch1::not-number"), null);
-    assert.equal(normalizeLegacySongRefToCurrent("::1"), null);
-    assert.equal(normalizeLegacySongRefToCurrent(null), null);
+    assert.equal(normalizeLegacySongRefToArchiveKey(" arch1 :: 001 :: https://youtu.be/videoA"), "arch1::1");
+    assert.equal(normalizeLegacySongRefToArchiveKey("arch1::not-number"), null);
+    assert.equal(normalizeLegacySongRefToArchiveKey("::1"), null);
+    assert.equal(normalizeLegacySongRefToArchiveKey(null), null);
 });
 
 test("bookmark storage schema: sanitizes invalid bookmark maps to an empty object", () => {

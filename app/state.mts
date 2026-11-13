@@ -68,7 +68,6 @@ export const appState: AppState = {
         },
         playback: createInitialPlaybackUiRuntimeState(),
         lookup: {
-            songMapByBookmarkKey: new Map(),
             songMapByKey: new Map(),
             songLookupSourceRef: null
         },

@@ -21,7 +21,7 @@ type SingingInput = { title: string; artist?: string; startSeconds: number; titl
 function buildSongsJson(singings: SingingInput[]): string {
     return JSON.stringify({
         songs: singings.map((singing, index) => ({
-            bookmarkSongKey: `video000001::${index + 1}`,
+            songKey: `video000001::${index + 1}`,
             title: singing.title,
             titleNorm: singing.titleNorm ?? singing.title.toLowerCase(),
             artist: singing.artist ?? "Artist",
@@ -90,12 +90,12 @@ test("song key remaps: rows without a bookmark key are skipped and a missing son
     const rows = parseSongKeyRows(JSON.stringify({
         songs: [
             { title: "No key", url: "https://www.youtube.com/watch?v=video000001&t=5s" },
-            { bookmarkSongKey: "  video000001::1  ", title: "Keyed", artist: "Artist" },
+            { songKey: "  video000001::1  ", title: "Keyed", artist: "Artist" },
             null
         ]
     }));
     assert.deepEqual(rows, [{
-        bookmarkSongKey: "video000001::1",
+        songKey: "video000001::1",
         title: "Keyed",
         titleNorm: "Keyed",
         artist: "Artist",

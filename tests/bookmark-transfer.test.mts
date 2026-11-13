@@ -38,7 +38,7 @@ test("bookmark transfer: drops unresolved numeric refs before applying song limi
         }
     }), {
         storageVersion: 3,
-        songRows: [{ songKey: "s1", bookmarkSongKey: "s1" }],
+        songRows: [{ songKey: "s1" }],
         maxBookmarkCount: 20,
         maxSongsPerBookmark: 1
     });
@@ -71,8 +71,9 @@ test("bookmark transfer: parses and migrates import payloads", () => {
         storageVersion: 3,
         songRows: [
             {
-                songKey: "arch1::1",
-                bookmarkSongKey: "videoA::1"
+                archiveId: "arch1",
+                archiveOrder: 1,
+                songKey: "videoA::1"
             }
         ],
         maxBookmarkCount: 20,
@@ -95,8 +96,8 @@ test("bookmark transfer: rejects invalid JSON and import files over limits", () 
     const options = {
         storageVersion: 3,
         songRows: [
-            { songKey: "s1", bookmarkSongKey: "s1" },
-            { songKey: "s2", bookmarkSongKey: "s2" }
+            { songKey: "s1" },
+            { songKey: "s2" }
         ],
         maxBookmarkCount: 1,
         maxSongsPerBookmark: 1,

@@ -32,7 +32,7 @@ async function openThumbnailBookmark(page: Page) {
             version: 3,
             bookmarks: { b1: { name, songs: songKeys, createdAt: 1 } }
         }));
-    }, { name: BOOKMARK_NAME, songKeys: songs.map((song) => song.bookmarkSongKey) });
+    }, { name: BOOKMARK_NAME, songKeys: songs.map((song) => song.songKey) });
     await page.reload();
     await waitForInitialLoad(page);
     await enablePlaybackSettings(page);
