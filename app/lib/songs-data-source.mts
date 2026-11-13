@@ -9,7 +9,11 @@ import type { SongsJsonArtifactMetadata, SongsJsonPayload } from "./songs-json.m
 export const DEFAULT_CACHED_SONGS_NETWORK_TIMEOUT_MS = 5000;
 export const DEFAULT_SONGS_META_RESPONSE_TIMEOUT_MS = 2000;
 export const DEFAULT_SONGS_JSON_RESPONSE_TIMEOUT_MS = 2000;
+// キャッシュがないときは、待つのをやめても代わりに出せる曲データがないので、response を長く待つ。
+export const DEFAULT_UNCACHED_SONGS_JSON_RESPONSE_TIMEOUT_MS = 10000;
 export const DEFAULT_SONGS_JSON_BODY_TIMEOUT_MS = 30000;
+// キャッシュで表示した後も続ける、公開JSONの取得全体の上限。
+export const DEFAULT_SONGS_JSON_BACKGROUND_TIMEOUT_MS = 60000;
 export const DEFAULT_SONGS_CSV_RESPONSE_TIMEOUT_MS = 3000;
 export const DEFAULT_SONGS_CSV_BODY_TIMEOUT_MS = 30000;
 
@@ -28,7 +32,9 @@ type SongsDataSourceInput = {
     cachedSongsNetworkTimeoutMs?: number;
     songsMetaResponseTimeoutMs?: number;
     songsJsonResponseTimeoutMs?: number;
+    uncachedSongsJsonResponseTimeoutMs?: number;
     songsJsonBodyTimeoutMs?: number;
+    songsJsonBackgroundTimeoutMs?: number;
     csvResponseTimeoutMs?: number;
     csvBodyTimeoutMs?: number;
 };
@@ -49,6 +55,14 @@ type CachedSongsJsonCandidate = {
     payload: SongsJsonPayload | null;
 };
 
+/** 待つ側の期限では中断しない取得。response の受信と本文の読込を別々に待てる。 */
+type TextDownload = {
+    /** response を受信したら解決する。 */
+    responded: Promise<void>;
+    /** 本文を読み終えたら、その文字列で解決する。 */
+    text: Promise<string>;
+};
+
 /**
  * 曲データの取得元とJSONキャッシュ更新を扱う data source を作成する。
  * @param input 公開データURLとJSONキャッシュ
@@ -62,7 +76,9 @@ export function createSongsDataSource(input: SongsDataSourceInput) {
         cachedSongsNetworkTimeoutMs = DEFAULT_CACHED_SONGS_NETWORK_TIMEOUT_MS,
         songsMetaResponseTimeoutMs = DEFAULT_SONGS_META_RESPONSE_TIMEOUT_MS,
         songsJsonResponseTimeoutMs = DEFAULT_SONGS_JSON_RESPONSE_TIMEOUT_MS,
+        uncachedSongsJsonResponseTimeoutMs = DEFAULT_UNCACHED_SONGS_JSON_RESPONSE_TIMEOUT_MS,
         songsJsonBodyTimeoutMs = DEFAULT_SONGS_JSON_BODY_TIMEOUT_MS,
+        songsJsonBackgroundTimeoutMs = DEFAULT_SONGS_JSON_BACKGROUND_TIMEOUT_MS,
         csvResponseTimeoutMs = DEFAULT_SONGS_CSV_RESPONSE_TIMEOUT_MS,
         csvBodyTimeoutMs = DEFAULT_SONGS_CSV_BODY_TIMEOUT_MS
     } = input;
@@ -122,6 +138,52 @@ export function createSongsDataSource(input: SongsDataSourceInput) {
     }
 
     /**
+     * 取得全体に 1 つの上限だけを設けて取得を始める。
+     * 待つ側の期限では中断しないので、表示をキャッシュへ切り替えた後も取得を続けられる。
+     * @param url 取得URL
+     * @param cacheMode fetch cache mode
+     * @param totalTimeoutMs response受信から本文読込までの全体の上限
+     * @returns response受信と本文読込を別々に待てる取得
+     */
+    function startTextDownload(url: string, cacheMode: RequestCache, totalTimeoutMs: number): TextDownload {
+        const abortController = new AbortController();
+        const timeoutId = setTimeout(() => abortController.abort(), totalTimeoutMs);
+        const response = fetch(url, { cache: cacheMode, signal: abortController.signal }).then((received) => {
+            if (!received.ok) throw new Error(`fetch failed: ${url}`);
+            return received;
+        });
+        const text = response.then((received) => received.text()).catch((error: unknown) => {
+            abortController.abort();
+            throw error;
+        }).finally(() => clearTimeout(timeoutId));
+        const responded = response.then(() => {});
+        // 待つ側が先に待つのをやめた後で失敗しても、未処理の rejection にしない。
+        text.catch(() => {});
+        responded.catch(() => {});
+        return { responded, text };
+    }
+
+    /**
+     * 処理を中断せずに、待つ時間だけを区切る。
+     * 期限が来たら reject するが、渡した Promise の処理は続くので、後から完了した結果を別に使える。
+     * @param promise 待つ処理
+     * @param timeoutMs 待つ時間
+     * @returns 期限内に完了すればその結果
+     */
+    function waitWithin<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+        return new Promise<T>((resolve, reject) => {
+            const timeoutId = setTimeout(() => reject(new Error("songs network wait timed out")), timeoutMs);
+            promise.then((value) => {
+                clearTimeout(timeoutId);
+                resolve(value);
+            }, (error: unknown) => {
+                clearTimeout(timeoutId);
+                reject(error);
+            });
+        });
+    }
+
+    /**
      * 現行ストア、なければ旧localStorageから曲データJSONを読み取る。
      * @returns キャッシュ文字列と移行の要否
      */
@@ -170,7 +232,8 @@ export function createSongsDataSource(input: SongsDataSourceInput) {
     }
 
     /**
-     * 曲データJSONを取得する。
+     * キャッシュがないときの曲データJSONを取得する。
+     * 待つのをやめても代わりに出せる曲データがないので、response はキャッシュがあるときより長く待つ。
      * @returns JSON文字列
      */
     async function fetchSongsJsonText(deadline: number): Promise<string> {
@@ -178,7 +241,7 @@ export function createSongsDataSource(input: SongsDataSourceInput) {
         return fetchTextWithTimeout(
             publicSongsJsonUrl,
             "no-cache",
-            songsJsonResponseTimeoutMs,
+            uncachedSongsJsonResponseTimeoutMs,
             songsJsonBodyTimeoutMs,
             deadline
         );
@@ -244,7 +307,7 @@ export function createSongsDataSource(input: SongsDataSourceInput) {
     }
 
     /**
-     * 曲データJSONをネットワークから取得して構造を検証する。
+     * キャッシュがないときに、曲データJSONをネットワークから取得して構造を検証する。
      * 公開metaとの比較と保存は呼び出し側で行う。
      * @param deadline metaとJSON本体に共通する通信期限（performance.now基準）
      * @returns 検証済みネットワークJSON候補
@@ -271,6 +334,52 @@ export function createSongsDataSource(input: SongsDataSourceInput) {
         // 保存失敗はhelper内で処理する。表示データは検証済みのメモリ上の値を使う。
         void setCachedSongsJsonText(jsonText);
         return { songs: payload.songs, source: "network" };
+    }
+
+    /**
+     * 表示の期限に間に合わなかった公開JSONを、公開metaと整合する場合だけ、次回の表示用に保存する。
+     * 表示中の曲データは差し替えない。
+     */
+    function saveLateNetworkSongsJson(
+        candidate: NetworkSongsJsonCandidate,
+        meta: SongsJsonArtifactMetadata | null
+    ): void {
+        if (meta && !isCurrentJsonCandidate(candidate.payload, meta)) return;
+        void setCachedSongsJsonText(candidate.jsonText);
+    }
+
+    /**
+     * 有効なキャッシュがあるときに、キャッシュと内容が違う可能性のある公開JSONを取得する。
+     * 共通期限までに採用できなければ例外にし、呼び出し元がキャッシュで表示する。
+     * そのときも取得は中断せずに続け、後から完了すれば次回の表示用に保存する。
+     * 中断すると、期限に間に合わない低速な回線では、何度開いても古いキャッシュのまま更新されない。
+     * 期限をすでに過ぎている場合は、取得を始めない。
+     * @param meta 公開meta。取得できなかった場合は null
+     * @param deadline metaとJSON本体に共通する通信期限（performance.now基準）
+     * @returns 期限内に採用できた公開JSONのスナップショット
+     */
+    async function loadUpdatedSongsJson(
+        meta: SongsJsonArtifactMetadata | null,
+        deadline: number
+    ): Promise<SongsSnapshot> {
+        if (!publicSongsJsonUrl) throw new Error("songs json url is not configured");
+        const responseWaitMs = remainingTimeout(songsJsonResponseTimeoutMs, deadline);
+        const download = startTextDownload(publicSongsJsonUrl, "no-cache", songsJsonBackgroundTimeoutMs);
+        const candidate = download.text.then((jsonText): NetworkSongsJsonCandidate => ({
+            jsonText,
+            payload: parseSongsJsonPayload(jsonText)
+        }));
+        try {
+            await waitWithin(download.responded, responseWaitMs);
+            const received = await waitWithin(candidate, remainingTimeout(songsJsonBodyTimeoutMs, deadline));
+            // タイマー実行が遅れた場合も、期限後の応答は表示に採用しない。
+            remainingTimeout(songsJsonBodyTimeoutMs, deadline);
+            return acceptNetworkSongsJson(received, meta);
+        } catch (error) {
+            // 取得や検証そのものが失敗していれば、保存せずに終わる。
+            candidate.then((late) => saveLateNetworkSongsJson(late, meta), () => {});
+            throw error;
+        }
     }
 
     /**
@@ -312,7 +421,8 @@ export function createSongsDataSource(input: SongsDataSourceInput) {
 
     /**
      * 公開側を基準に初期データを選ぶ。キャッシュはmetaのhash一致時か取得失敗時だけ使う。
-     * キャッシュがある場合はmetaとJSON本体の通信を合計5秒以内に制限する。
+     * キャッシュがある場合はmetaとJSON本体を待つ時間を合計5秒以内に制限し、間に合わなければキャッシュで表示する。
+     * JSON本体の取得は表示後も続け、完了すれば次回の表示用に保存する。
      * キャッシュがない場合はmetaと本体を並行取得し、失敗時はCSVへ進む。
      */
     async function loadInitialSnapshot(): Promise<SongsSnapshot | null> {
@@ -328,8 +438,7 @@ export function createSongsDataSource(input: SongsDataSourceInput) {
                     if (meta?.contentHash === cachedPayload.contentHash && cachedCandidate) {
                         return acceptCachedSongsJson(cachedCandidate, cachedPayload);
                     }
-                    const candidate = await loadNetworkSongsJsonCandidate(deadline);
-                    return acceptNetworkSongsJson(candidate, meta);
+                    return await loadUpdatedSongsJson(meta, deadline);
                 }
                 const [meta, candidate] = await Promise.all([
                     loadSongsJsonMeta(deadline),
