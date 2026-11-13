@@ -8,6 +8,7 @@
  *
  * 検索・描画・再生の実処理は各 controller 側にあり、ここでは持たない。
  * 曲データの取得もここでは始めず、./startup-data.mjs が先に始めた取得の結果を受け取る。
+ * 初期化が例外で止まったときは、./startup-error.mjs で読み込みの失敗を画面に出す。
  * controller 同士の循環参照は、getXxxController のような遅延 getter や null 初期化の let 変数で解く。
  */
 import {
@@ -29,6 +30,7 @@ import {
     appState
 } from "./state.mjs";
 import { initialSongsSnapshot } from "./startup-data.mjs";
+import { showStartupLoadError } from "./startup-error.mjs";
 import { createSearchController } from "./controllers/search.mjs";
 import { createSearchCoordinator } from "./controllers/search-coordinator.mjs";
 import { createRenderController } from "./controllers/render.mjs";
@@ -41,6 +43,7 @@ import { createBookmarkUiController } from "./ui/bookmark/ui.mjs";
 import { createBookmarkTransferController } from "./ui/bookmark/transfer.mjs";
 import { isIOSWebKit } from "./lib/dom-utils.mjs";
 import { scrollResultListToTop } from "./lib/results-scroll.mjs";
+import { reloadPage } from "./lib/page-reload.mjs";
 import {
     countSongCardsScrolledPast,
     countSongCardsToKeep,
@@ -162,7 +165,8 @@ function createRenderCallbacks({
         notifyBookmarkSaveError: (result) => {
             const bookmarkUiController = getBookmarkUiController();
             if (bookmarkUiController) bookmarkUiController.notifyBookmarkSaveError(result);
-        }
+        },
+        reloadPage: () => { void reloadPage(); }
     };
 }
 
@@ -612,7 +616,10 @@ async function initUI(): Promise<void> {
         onReadingPositionRestored: () => autoHideHeaderController.resetScrollBaseline()
     });
     const initialData = await dataLoader.loadInitialData();
-    if (!initialData.loaded) return;
+    if (!initialData.loaded) {
+        renderController.showLoadError();
+        return;
+    }
     bookmarkPersistenceController.migrateLegacyBookmarkSongRefs();
     if (initialData.shouldResetConditions) {
         searchUiActions.resetSearchConditions(false);
@@ -628,10 +635,12 @@ function boot(): void {
 }
 
 /**
- * 初期化失敗時のエラーを記録する。
+ * 初期化失敗時のエラーを記録し、読み込みに失敗したことを画面に出す。
+ * どの段階で止まったか分からないので、controller を使わず要素の id だけで表示する。
  */
 function reportInitError(error: unknown): void {
     console.error("initUI failed", error);
+    showStartupLoadError();
 }
 
 // startup からの dynamic import が DOMContentLoaded 後に完了した場合も起動する。

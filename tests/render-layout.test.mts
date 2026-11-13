@@ -101,7 +101,8 @@ function createRenderCallbacks(input: Partial<Parameters<typeof createRenderCont
         openBookmarkModal: callbacks.openBookmarkModal || (() => {}),
         removeSongFromActiveBookmark: callbacks.removeSongFromActiveBookmark || (() => {}),
         moveSongInActiveBookmark: callbacks.moveSongInActiveBookmark || (() => ({ ok: true, changed: false })),
-        notifyBookmarkSaveError: callbacks.notifyBookmarkSaveError || (() => {})
+        notifyBookmarkSaveError: callbacks.notifyBookmarkSaveError || (() => {}),
+        reloadPage: callbacks.reloadPage || (() => {})
     };
 }
 
@@ -1247,6 +1248,60 @@ test("render: active playback card can move back left without jumping to the end
             false,
             "active playback card should stay mounted to preserve current position"
         );
+    } finally {
+        cleanup();
+    }
+});
+
+test("render: a load failure shows an explanation and a reload button in the current language", () => {
+    const cleanup = installFakeDom();
+    try {
+        const data = createRenderDataState({});
+        const ui = createRenderUiState({
+            dataReady: false,
+            el: {
+                resultList: document.createElement("ol"),
+                resultTailSentinel: document.createElement("div")
+            }
+        });
+        let reloadCount = 0;
+        let restoreCount = 0;
+        const controller = createRenderController({
+            data,
+            ui,
+            isAllFormatsSelected: () => true,
+            callbacks: createRenderCallbacks({
+                reloadPage: () => { reloadCount += 1; },
+                restoreActivePlayback: () => { restoreCount += 1; }
+            })
+        });
+
+        controller.showLoadError();
+        const item = ui.el.resultList.children[0];
+        assert.equal(ui.el.resultList.children.length, 1);
+        assert.equal(item.tagName, "LI");
+        assert.equal(item.classList.contains("result-load-error"), true);
+        assert.equal(
+            item.querySelector(".result-empty-state-title")?.textContent,
+            "曲データを読み込めませんでした。通信状況を確認して、ページを再読み込みしてください。"
+        );
+        const reloadButton = item.querySelector<HTMLButtonElement>(".result-reload-btn");
+        assert.ok(reloadButton);
+        assert.equal(reloadButton.textContent, "再読み込み");
+        assert.equal(restoreCount, 1);
+
+        reloadButton.click();
+        assert.equal(reloadCount, 1);
+
+        // 言語を切り替えても、読み込み中の表示に戻さず、失敗の説明を今の言語で出す。
+        ui.language.current = "en";
+        controller.refreshText();
+        const englishItem = ui.el.resultList.children[0];
+        assert.equal(
+            englishItem.querySelector(".result-empty-state-title")?.textContent,
+            "The song data could not be loaded. Check your connection and reload the page."
+        );
+        assert.equal(englishItem.querySelector(".result-reload-btn")?.textContent, "Reload");
     } finally {
         cleanup();
     }

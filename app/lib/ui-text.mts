@@ -92,6 +92,15 @@ export type UiText = {
         connecting: string;
         loadingData: string;
         loadError: string;
+        /** 曲データを取得できなかったときに、結果一覧に出す説明。 */
+        loadErrorDetail: string;
+        /**
+         * アプリのコードを読み込めなかったときに、結果一覧に出す説明。
+         * 辞書を読めない状況で出すので、表示には startup-error.mts に持つ同じ文言を使う。
+         */
+        appLoadErrorDetail: string;
+        /** 読み込みに失敗したときに出す、ページを読み込み直すボタン。 */
+        reload: string;
         loading: string;
         selectFormats: string;
         notFound: string;
@@ -251,6 +260,9 @@ const JAPANESE_TEXT: UiText = {
         connecting: "接続中...",
         loadingData: "データを読み込み中...",
         loadError: "読込エラー",
+        loadErrorDetail: "曲データを読み込めませんでした。通信状況を確認して、ページを再読み込みしてください。",
+        appLoadErrorDetail: "ページを読み込めませんでした。通信状況を確認して、ページを再読み込みしてください。",
+        reload: "再読み込み",
         loading: "読み込み中...",
         selectFormats: "動画の種類を選択してください",
         notFound: "見つかりませんでした",
@@ -355,6 +367,9 @@ const ENGLISH_TEXT: UiText = {
         connecting: "Connecting...",
         loadingData: "Loading data...",
         loadError: "Failed to load",
+        loadErrorDetail: "The song data could not be loaded. Check your connection and reload the page.",
+        appLoadErrorDetail: "The page could not be loaded. Check your connection and reload the page.",
+        reload: "Reload",
         loading: "Loading...",
         selectFormats: "Select at least one video type",
         notFound: "No songs found",

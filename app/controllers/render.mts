@@ -4,7 +4,7 @@
  * data.currentResults を、カード要素を再利用しながら一覧へ差分反映する。
  * 再生中のカードは位置を保ち、表示から外れたら再生を止める。
  * masonry レイアウト (../lib/render)、末尾到達での追加表示、ブックマーク内のドラッグ並べ替え、
- * 指したカードで収まらない曲名を流す動き、空結果の表示、言語切り替え時の文言の書き直しもここで行う。
+ * 指したカードで収まらない曲名を流す動き、空結果と読み込み失敗の表示、言語切り替え時の文言の書き直しもここで行う。
  *
  * 表示する結果の決定は ./search.mts が行い、ここは受け取って描くだけにする。
  * 再生は ./youtube.mts、並べ替えの保存は ./storage.mts、ブックマークへの追加と削除は
@@ -22,6 +22,7 @@ import { createResultTailObserver } from "../lib/render/result-tail-observer.mjs
 import { getSongDisplayArtist, getSongDisplayTitle, type SongDisplayName } from "../lib/song-display-name.mjs";
 import type { SiteLanguage } from "../lib/site-language.mjs";
 import { getUiText, type UiText } from "../lib/ui-text.mjs";
+import { createLoadErrorElement } from "../lib/load-error-view.mjs";
 import {
     createYoutubePlaybackStartResult,
     YOUTUBE_PLAYBACK_START_STATUS
@@ -61,7 +62,7 @@ type ActiveCardRenderState = {
 };
 
 type EmptyStateDescriptor = {
-    kind: "loading" | "error" | "empty";
+    kind: "loading" | "error" | "empty" | "loadError";
     message: string;
 };
 
@@ -83,6 +84,8 @@ type RenderCallbacks = {
     removeSongFromActiveBookmark: (songKey: string) => void;
     moveSongInActiveBookmark: (fromSongKey: string, toSongKey: string) => StorageActionResult<{ ok: true; changed: boolean }>;
     notifyBookmarkSaveError: (result: StorageActionFailure) => void;
+    /** ページを読み込み直す。曲データを取得できなかったときに出すボタンから呼ぶ。 */
+    reloadPage: () => void;
 };
 
 type RenderControllerInput = {
@@ -127,6 +130,8 @@ export function createRenderController({
     });
     /** 並べ替えのドラッグを受けるように設定した一覧。描き直すたびに設定し直さないよう覚えておく。 */
     let reorderListenerTarget: HTMLElement | null = null;
+    /** 曲データを取得できず、結果一覧に読み込み失敗を出しているか。読み込み直すまで変わらない。 */
+    let hasLoadError = false;
     const resultTailObservationController = createResultTailObserver({
         getSentinel: () => ui.el.resultTailSentinel,
         hasMoreResults,
@@ -369,6 +374,12 @@ export function createRenderController({
      * @returns 結果一覧に置く空結果の項目
      */
     function createEmptyStateElement(descriptor: EmptyStateDescriptor) {
+        if (descriptor.kind === "loadError") {
+            return createLoadErrorElement({
+                detail: descriptor.message,
+                reload: getUiText(ui.language.current).results.reload
+            }, callbacks.reloadPage);
+        }
         const empty = document.createElement("li");
         empty.className = "result-empty-state";
         if (descriptor.kind !== "empty") {
@@ -395,6 +406,9 @@ export function createRenderController({
      */
     function getEmptyStateDescriptor(): EmptyStateDescriptor {
         const results = getUiText(ui.language.current).results;
+        if (hasLoadError) {
+            return { kind: "loadError", message: results.loadErrorDetail };
+        }
         if (!searchUiState.dataReady) {
             return { kind: "loading", message: results.loading };
         }
@@ -741,10 +755,21 @@ export function createRenderController({
         refreshLayout();
     }
 
+    /**
+     * 曲データを取得できなかったことを結果一覧に出す。説明と、ページを読み込み直すボタンを置く。
+     * 件数表示の「読込エラー」だけでは、利用者に待つべきか読み込み直すべきかが伝わらない。
+     */
+    function showLoadError(): void {
+        hasLoadError = true;
+        const container = ui.el.resultList;
+        if (container) renderEmptyResults(container);
+    }
+
     return {
         playSongByKey,
         scrollSongIntoView,
         updateDisplay,
+        showLoadError,
         refreshText,
         refreshLayout
     };

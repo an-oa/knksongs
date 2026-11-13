@@ -1437,6 +1437,21 @@ body.hide-thumbs .song-card { border-radius: 12px; }
   font-size: 13px;
 }
 
+/* 読み込みに失敗したときに、説明の下に出す再読み込みボタン。絞り込みボタンと同じ塗りにする。 */
+.result-reload-btn {
+  min-height: 40px;
+  margin-top: 16px;
+  padding: 0 20px;
+  border: 2px solid var(--accent-fill-border);
+  border-radius: 999px;
+  background: var(--accent-fill);
+  color: var(--on-accent-fill);
+  font-size: 14px;
+  font-weight: 800;
+  cursor: pointer;
+}
+.result-reload-btn:hover { background: var(--accent-fill-hover); }
+
 .song-card-expanded {
   z-index: 5;
 }
