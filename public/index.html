@@ -6,6 +6,8 @@
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-dVbQd0MMdvnWvuB2DHfgdemsr4Cg2QL1JvqSzHdCE5c=' https://www.youtube.com/iframe_api https://www.youtube.com/s/player/; script-src-attr 'none'; style-src 'self'; img-src 'self' https://i.ytimg.com; connect-src 'self' https://docs.google.com https://*.googleusercontent.com; frame-src https://www.youtube.com/embed/ https://www.youtube-nocookie.com/embed/; object-src 'none'; base-uri 'none'; form-action 'none'">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title data-i18n="siteTitle">鐘輝かう 歌サーチ</title>
+  <!-- 検索結果に出る説明文。共有カードの説明 (og:description) と同じ文にする。 -->
+  <meta name="description" content="非公式ファンサイト。曲名・アーティスト名・読みで検索。配信/歌みた/ショート/切り抜き/収録、コラボ種別、リレー/ハモリ、日付範囲で絞り込み。" />
 
   <!-- Canonical -->
   <link rel="canonical" href="https://an-oa.github.io/knksongs/" />
@@ -282,7 +284,9 @@
     </div>
   </aside>
 
-  <main class="main-content">
+  <!-- サイドバーを開いている間、背面をまとめて inert にするための枠。
+       header と footer をページ全体のランドマーク (banner / contentinfo) にするため、main の外に置く。 -->
+  <div class="main-content">
     <header class="header">
       <h1 class="header-title">
         <img class="header-logo" src="goggles.svg" alt="" width="48" height="36">
@@ -310,11 +314,11 @@
           <path d="M20 0h120c-3 14-14 24-29 27-11 2-17 12-31 14-17 2-32-6-39-19C35 13 25 6 20 0z"/>
           <path d="M70 64c3-11 13-19 26-21 9-1 14-6 24-6 14 0 26 10 30 27z"/>
         </svg>
-        <div class="header-search">
+        <search class="header-search">
           <svg class="header-search-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5 21 21"/></svg>
           <label class="visually-hidden" for="searchBox" data-i18n="searchLabel">曲名・アーティスト名・読みで検索</label>
           <input type="text" id="searchBox" placeholder="曲名・歌手・読み..." data-i18n-placeholder="searchPlaceholder" aria-errormessage="searchBoxError" enterkeyhint="search" autocomplete="off" autocapitalize="none" spellcheck="false" disabled>
-        </div>
+        </search>
         <svg class="header-spots header-spots-wide header-spots-wide-right" viewBox="0 0 170 64" aria-hidden="true" focusable="false">
           <path d="M10 0h100c-2 12-10 22-24 25-10 2-14 12-28 13-15 1-27-7-33-18C21 12 14 6 10 0z"/>
           <path d="M136 30c6-6 19-7 24 0 5 6 1 15-8 17-10 2-20-2-21-9 0-3 2-6 5-8z"/>
@@ -342,7 +346,7 @@
       </div>
     </header>
 
-    <section class="container" aria-labelledby="result-list-title">
+    <main class="container" aria-labelledby="result-list-title">
       <h2 id="result-list-title" class="visually-hidden" data-i18n="searchResults">検索結果</h2>
       <div class="result-summary">
         <p id="resultCount" class="result-summary-count" role="status">接続中...</p>
@@ -354,7 +358,7 @@
       <p id="resultAnnouncement" class="visually-hidden" role="status"></p>
       <ol id="resultList" class="result-list"></ol>
       <div id="resultTailSentinel" class="result-tail-sentinel" aria-hidden="true" hidden></div>
-    </section>
+    </main>
 
     <footer class="site-footer">
       <p>
@@ -362,7 +366,7 @@
         <span data-i18n="footerSource">YouTube 上の公開情報を参照しており、コンテンツの再配布は行いません。</span>
       </p>
     </footer>
-  </main>
+  </div>
   <div id="bookmark-notification-region" class="bookmark-toast-region" aria-live="polite" aria-atomic="false"></div>
 </body>
 </html>

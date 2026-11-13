@@ -561,6 +561,10 @@ IndexedDB保存：
 - 縦動画はサムネイル時は横レイアウトのまま表示し、埋め込み再生時のみ縦向き表示へ切り替える
 
 ## アクセシビリティ
+- ページは、`header`（banner）・`main`・`footer`（contentinfo）のランドマークに分ける。`header` と `footer` は `main` の外に置く。
+  `main` の中に置くと、ページ全体のランドマークとして扱われず、読み上げ環境からヘッダーやフッターへ移動できない
+  - 3 つを包む `.main-content` は、サイドバーを開いている間に背面をまとめて `inert` にするための枠で、役割は持たせない
+- 検索窓は `<search>` で囲み、search のランドマークにする
 - サイドバーを `dialog` として扱う
 - フォーカストラップとフォーカス復帰
 - `aria-label` / `aria-modal` / `aria-hidden`
@@ -570,6 +574,7 @@ IndexedDB保存：
 - 検索結果の件数は `role="status"`、キーボードでの並べ替えの結果は読み上げ用の要素で伝える
 - ブックマークの名称変更・削除・置換の確認は、フォーカスを中に閉じ込めるモーダルの `<dialog>` で行う
 - 押せる要素は、行やボタンそのものに 24px 以上の高さを持たせる（WCAG 2.5.8 の目安）
+- ランドマークの構成は E2E（`tests/e2e/accessibility.spec.mts`）で確かめる
 
 ## パフォーマンス
 - 曲データJSONをIndexedDBにキャッシュし、初回表示前に `songs-meta.json` のcontent hashが一致すれば大きい `songs.json` の取得を省く

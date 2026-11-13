@@ -313,6 +313,8 @@ body.hide-thumbs .thumb {
 }
 
 .header-search {
+  /* search 要素を知らないブラウザでは inline になり、幅の指定が効かなくなるので、明示する。 */
+  display: block;
   position: relative;
   width: 100%;
   max-width: 520px;
