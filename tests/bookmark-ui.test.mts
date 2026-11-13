@@ -22,7 +22,7 @@ function settlePromptDialog() {
  * ブックマーク UI テスト用の最小状態を作る。
  */
 function createBookmarkUiState() {
-    const sidebar = document.createElement("aside");
+    const sidebar = document.createElement("div");
     const sidebarHeader = document.createElement("div");
     const sidebarScrollArea = document.createElement("div");
     const openBookmarkPanelBtn = document.createElement("button");

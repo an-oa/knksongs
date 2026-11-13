@@ -7,7 +7,7 @@ import { installFakeDom, invokeListener } from "./test-helpers.mts";
  * サイドバーUIテスト用の最小状態を作る。
  */
 function createSidebarUiState() {
-    const sidebar = document.createElement("aside");
+    const sidebar = document.createElement("div");
     sidebar.setAttribute("id", "sidebar");
     const mainContent = document.createElement("main");
     mainContent.className = "main-content";

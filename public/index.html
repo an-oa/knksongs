@@ -92,7 +92,8 @@
 
   <div id="sidebar-overlay" class="overlay"></div>
 
-  <aside id="sidebar" class="sidebar" role="dialog" aria-modal="true" aria-labelledby="sidebar-title" aria-hidden="true" popover="manual">
+  <!-- 役割は dialog。aside は dialog の役割を持てない要素なので、div にする。 -->
+  <div id="sidebar" class="sidebar" role="dialog" aria-modal="true" aria-labelledby="sidebar-title" aria-hidden="true" popover="manual">
     <div class="sidebar-sheet">
     <div class="sidebar-header">
       <div class="sidebar-title-group">
@@ -165,7 +166,7 @@
 
     <div id="settings-sidebar-panel" class="sidebar-subpanel" aria-hidden="true" hidden>
       <div class="sidebar-subpanel-header">
-        <button id="close-settings-panel" class="sidebar-subpanel-back" type="button" aria-label="検索・設定に戻る" data-i18n-aria-label="backToSidebar" data-i18n="settingsBack">← 設定</button>
+        <button id="close-settings-panel" class="sidebar-subpanel-back" type="button" aria-label="設定を閉じて、絞り込み・設定に戻る" data-i18n-aria-label="settingsBackLabel" data-i18n="settingsBack">← 設定</button>
         <button id="close-settings-sidebar" class="close-btn" aria-label="閉じる" data-i18n-aria-label="close">&times;</button>
       </div>
       <div class="sidebar-subpanel-body">
@@ -263,7 +264,7 @@
 
     <div id="bookmark-sidebar-panel" class="sidebar-subpanel" aria-hidden="true" hidden>
       <div class="sidebar-subpanel-header">
-        <button id="close-bookmark-panel" class="sidebar-subpanel-back" type="button" aria-label="検索・設定に戻る" data-i18n-aria-label="backToSidebar" data-i18n="bookmarksBack">← ブックマーク</button>
+        <button id="close-bookmark-panel" class="sidebar-subpanel-back" type="button" aria-label="ブックマークを閉じて、絞り込み・設定に戻る" data-i18n-aria-label="bookmarksBackLabel" data-i18n="bookmarksBack">← ブックマーク</button>
         <button id="close-bookmark-sidebar" class="close-btn" aria-label="閉じる" data-i18n-aria-label="close">&times;</button>
       </div>
       <div class="sidebar-subpanel-body">
@@ -282,7 +283,7 @@
       </div>
     </div>
     </div>
-  </aside>
+  </div>
 
   <!-- サイドバーを開いている間、背面をまとめて inert にするための枠。
        header と footer をページ全体のランドマーク (banner / contentinfo) にするため、main の外に置く。 -->

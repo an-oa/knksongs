@@ -302,6 +302,8 @@ test("youtube: player init uses prebuilt iframe src and binds YT.Player to it", 
         assert.equal(iframe.allow, "autoplay; encrypted-media");
         assert.equal(iframe.referrerPolicy, "strict-origin-when-cross-origin");
         assert.equal(iframe.allowFullscreen, true);
+        // 動画の情報が届く前から、読み上げ環境が枠の中身を伝えられる。
+        assert.equal(iframe.title, "YouTube 動画プレーヤー");
     } finally {
         cleanup();
     }

@@ -473,10 +473,13 @@ export function createYoutubeController({ ui, youtube, constants }: YoutubeContr
 
     /**
      * 共有再生に使う iframe 要素を生成する。
+     * 読み上げ環境が枠の中身を伝えられるよう、名前 (title) を付けておく。
+     * 動画の情報が届くと YouTube の IFrame API が動画の題名へ書き換えるので、言語の切り替えでは書き直さない。
      */
     function createSharedPlaybackFrame() {
         if (!canUseDom()) return null;
         const iframe = document.createElement("iframe");
+        iframe.title = getUiText(ui.language.current).card.videoPlayer;
         applyYoutubePlayerIframeAttributes(iframe);
         return iframe;
     }

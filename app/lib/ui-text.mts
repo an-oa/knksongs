@@ -29,6 +29,8 @@ type StaticText = {
     collabGuestOnly: string;
     bookmarks: string;
     bookmarksBack: string;
+    /** 戻るボタンの読み上げ名。見えている文字 (bookmarksBack) を含め、声で操作する人が見たままの名前で押せるようにする。 */
+    bookmarksBackLabel: string;
     newBookmarkName: string;
     newBookmarkPlaceholder: string;
     createBookmark: string;
@@ -36,8 +38,9 @@ type StaticText = {
     importBookmarks: string;
     exportBookmarks: string;
     settings: string;
-    backToSidebar: string;
     settingsBack: string;
+    /** 戻るボタンの読み上げ名。見えている文字 (settingsBack) を含める。理由は bookmarksBackLabel と同じ。 */
+    settingsBackLabel: string;
     displayGroup: string;
     thumbnails: string;
     darkMode: string;
@@ -84,6 +87,8 @@ export type UiText = {
         addToBookmark: string;
         removeFromBookmark: string;
         backToThumbnail: string;
+        /** 埋め込んだ動画の枠 (iframe) の名前。動画の情報が届くと、YouTube が動画の題名へ書き換える。 */
+        videoPlayer: string;
         /** サムネイルの再生ボタンの説明。どの曲を再生するかを伝える。 */
         play: (title: string) => string;
         /** ブックマーク表示中の並べ替えハンドルの説明。キーボードでの動かし方も伝える。 */
@@ -209,6 +214,7 @@ const JAPANESE_TEXT: UiText = {
         collabGuestOnly: "コラボ(ゲスト)",
         bookmarks: "ブックマーク",
         bookmarksBack: "← ブックマーク",
+        bookmarksBackLabel: "ブックマークを閉じて、絞り込み・設定に戻る",
         newBookmarkName: "新規ブックマーク名",
         newBookmarkPlaceholder: "新規ブックマーク名",
         createBookmark: "作成",
@@ -216,8 +222,8 @@ const JAPANESE_TEXT: UiText = {
         importBookmarks: "インポート",
         exportBookmarks: "エクスポート",
         settings: "設定",
-        backToSidebar: "検索・設定に戻る",
         settingsBack: "← 設定",
+        settingsBackLabel: "設定を閉じて、絞り込み・設定に戻る",
         displayGroup: "表示",
         thumbnails: "サムネイル表示",
         darkMode: "ダークモード",
@@ -255,6 +261,7 @@ const JAPANESE_TEXT: UiText = {
         addToBookmark: "ブックマークに追加",
         removeFromBookmark: "ブックマークから削除",
         backToThumbnail: "サムネイルに戻す",
+        videoPlayer: "YouTube 動画プレーヤー",
         play: (title) => `「${title}」を再生`,
         reorderHandle: "並べ替え（矢印キーで前後へ移動）",
         reordered: (title, position, total) => `「${title}」を ${total} 件中 ${position} 番目へ移動しました`,
@@ -318,6 +325,7 @@ const ENGLISH_TEXT: UiText = {
         collabGuestOnly: "Collab (guest)",
         bookmarks: "Bookmarks",
         bookmarksBack: "← Bookmarks",
+        bookmarksBackLabel: "Close Bookmarks and go back to filters & settings",
         newBookmarkName: "New bookmark name",
         // 入力欄の幅に収まるよう、プレースホルダーは読み上げ用のラベルより短くする
         newBookmarkPlaceholder: "New bookmark",
@@ -326,8 +334,8 @@ const ENGLISH_TEXT: UiText = {
         importBookmarks: "Import",
         exportBookmarks: "Export",
         settings: "Settings",
-        backToSidebar: "Back to filters & settings",
         settingsBack: "← Settings",
+        settingsBackLabel: "Close Settings and go back to filters & settings",
         displayGroup: "Display",
         thumbnails: "Thumbnails",
         darkMode: "Dark mode",
@@ -365,6 +373,7 @@ const ENGLISH_TEXT: UiText = {
         addToBookmark: "Add to bookmark",
         removeFromBookmark: "Remove from bookmark",
         backToThumbnail: "Back to thumbnail",
+        videoPlayer: "YouTube video player",
         play: (title) => `Play “${title}”`,
         reorderHandle: "Reorder (use the arrow keys to move)",
         reordered: (title, position, total) => `Moved “${title}” to position ${position} of ${total}`,
