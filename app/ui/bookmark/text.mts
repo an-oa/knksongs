@@ -17,8 +17,13 @@ export type BookmarkText = {
     rename: string;
     renameLabel: string;
     deleteLabel: string;
+    /** 名前の変更と削除の確認のダイアログ */
+    renameTitle: string;
     renamePrompt: string;
+    renameSubmit: string;
+    deleteTitle: string;
     deleteConfirm: (name: string) => string;
+    deleteSubmit: string;
     nameRequired: string;
     nameTooLong: string;
     maxNameLength: (limit: number) => string;
@@ -88,6 +93,7 @@ export type BookmarkText = {
     importMaxBookmarkCount: (limit: number | null) => string;
     importMaxNameLength: (limit: number | null) => string;
     importMaxSongs: (bookmarkName: string | null, limit: number | null) => string;
+    replaceConfirmTitle: string;
     replaceConfirm: (currentBookmarkCount: number, bookmarkCount: number, songCount: number) => string;
     replaceMessage: (currentBookmarkCount: number, bookmarkCount: number) => string;
     replaceResult: (bookmarkCount: number) => string;
@@ -101,8 +107,12 @@ const JAPANESE_BOOKMARK_TEXT: BookmarkText = {
     rename: "変更",
     renameLabel: "ブックマーク名を変更",
     deleteLabel: "ブックマークを削除",
-    renamePrompt: "新しいブックマーク名を入力してください:",
+    renameTitle: "ブックマーク名の変更",
+    renamePrompt: "新しいブックマーク名を入力してください。",
+    renameSubmit: "変更",
+    deleteTitle: "ブックマークの削除",
     deleteConfirm: (name) => `ブックマーク「${name}」を削除しますか？`,
+    deleteSubmit: "削除",
     nameRequired: "ブックマーク名を入力してください。",
     nameTooLong: "ブックマーク名の文字数上限を超えています。",
     maxNameLength: (limit) => `ブックマーク名は最大${limit}文字までです。`,
@@ -186,6 +196,7 @@ const JAPANESE_BOOKMARK_TEXT: BookmarkText = {
         const name = bookmarkName ? `「${bookmarkName}」は` : "1つのブックマークに";
         return limit === null ? `${name}登録できる曲数の上限を超えています。` : `${name}最大${limit}曲までです。`;
     },
+    replaceConfirmTitle: "ブックマーク全体の置換",
     replaceConfirm: (currentBookmarkCount, bookmarkCount, songCount) => [
         "現在のブックマークをすべて削除し、ファイルの内容で置換します。",
         ...(currentBookmarkCount > 0 ? [`削除するブックマーク：${currentBookmarkCount}件`] : []),
@@ -217,8 +228,12 @@ const ENGLISH_BOOKMARK_TEXT: BookmarkText = {
     rename: "Edit",
     renameLabel: "Edit bookmark name",
     deleteLabel: "Delete bookmark",
-    renamePrompt: "Enter a new bookmark name:",
+    renameTitle: "Edit bookmark name",
+    renamePrompt: "Enter a new bookmark name.",
+    renameSubmit: "Save",
+    deleteTitle: "Delete bookmark",
     deleteConfirm: (name) => `Delete the bookmark “${name}”?`,
+    deleteSubmit: "Delete",
     nameRequired: "Enter a bookmark name.",
     nameTooLong: "The bookmark name is too long.",
     maxNameLength: (limit) => `Bookmark names can be up to ${limit} characters.`,
@@ -306,6 +321,7 @@ const ENGLISH_BOOKMARK_TEXT: BookmarkText = {
             ? `${name} has more songs than a bookmark can hold.`
             : `${name} can hold up to ${countNoun(limit, "song", "songs")}.`;
     },
+    replaceConfirmTitle: "Replace all bookmarks",
     replaceConfirm: (currentBookmarkCount, bookmarkCount, songCount) => [
         "This deletes all your current bookmarks and replaces them with the file's contents.",
         ...(currentBookmarkCount > 0 ? [`Bookmarks to delete: ${currentBookmarkCount}`] : []),

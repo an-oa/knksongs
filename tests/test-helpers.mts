@@ -7,6 +7,10 @@ type FakeEvent = {
     currentTarget?: FakeElement | EventTarget | null;
     relatedTarget?: FakeElement | EventTarget | null;
     key?: string;
+    /** かな漢字変換の途中のキー操作かどうか。 */
+    isComposing?: boolean;
+    /** かな漢字変換の途中のキー操作に付く 229 を渡すために使う。 */
+    keyCode?: number;
     shiftKey?: boolean;
     clientX?: number;
     clientY?: number;
@@ -127,6 +131,8 @@ class FakeElement extends FakeEventTarget {
     _innerHTML = "";
     hidden = false;
     type = "";
+    /** dialog 要素が開いているか。モーダルとしての挙動は扱わず、開閉だけを記録する。 */
+    open = false;
     _scrollHeight?: number;
     _clientHeight?: number;
     _clientWidth?: number;
@@ -383,6 +389,21 @@ class FakeElement extends FakeEventTarget {
             document.activeElement = this;
         }
     }
+
+    /** dialog 要素を開いたことを記録する。背面を操作できなくする挙動は扱わない。 */
+    showModal(): void {
+        this.open = true;
+    }
+
+    /** 開いている dialog 要素を閉じ、ブラウザと同じく close を通知する。 */
+    close(): void {
+        if (!this.open) return;
+        this.open = false;
+        void this.dispatchListeners("close", { target: this, currentTarget: this });
+    }
+
+    /** 入力欄の文字の全選択。選択範囲は扱わない。 */
+    select(): void {}
 
     /** 自身がフォーカスされている場合だけ解除する。 */
     blur(): void {

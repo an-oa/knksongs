@@ -166,3 +166,45 @@ test("bookmark notifications: the shown toast is rewritten in the new language, 
         restoreDom();
     }
 });
+
+test("bookmark notifications: an error toast is announced as an alert and stays longer than a success toast", () => {
+    const restoreDom = installFakeDom();
+    const fakeTimeouts = installFakeTimeouts();
+    const timers = fakeTimeouts.timeoutCalls;
+
+    try {
+        const ui = createNotificationUiState();
+        const controller = createBookmarkNotificationController({
+            data: createNotificationDataState(),
+            ui,
+            timeoutMs: 1200,
+            errorTimeoutMs: 9000
+        });
+
+        controller.notifyError((language) => (language === "en" ? "Couldn't save bookmarks." : "ブックマークを保存できませんでした。"));
+        const errorToast = ui.el.bookmarkNotificationRegion.querySelector(".bookmark-toast");
+        assert.ok(errorToast);
+        assert.equal(errorToast.classList.contains("bookmark-toast-error"), true);
+        assert.equal(errorToast.getAttribute("role"), "alert");
+        assert.equal(errorToast.querySelector(".bookmark-toast-message")?.textContent, "ブックマークを保存できませんでした。");
+        assert.equal(timers[0].delay, 9000);
+
+        // 開いたまま言語が変わると、失敗の理由も新しい言語で書き直す。
+        ui.language.current = "en";
+        controller.refreshText();
+        assert.equal(errorToast.querySelector(".bookmark-toast-message")?.textContent, "Couldn't save bookmarks.");
+
+        // 続く成功の通知は、失敗の見た目と読み上げ方を引き継がない。
+        controller.notifyMessage(() => "Added 1 bookmark.");
+        const successToast = ui.el.bookmarkNotificationRegion.querySelector(".bookmark-toast");
+        assert.ok(successToast);
+        assert.equal(errorToast.parentElement, null);
+        assert.equal(successToast.classList.contains("bookmark-toast-error"), false);
+        assert.equal(successToast.getAttribute("role"), null);
+        assert.equal(successToast.querySelector(".bookmark-toast-message")?.textContent, "Added 1 bookmark.");
+        assert.equal(timers[1].delay, 1200);
+    } finally {
+        fakeTimeouts.cleanup();
+        restoreDom();
+    }
+});

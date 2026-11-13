@@ -41,6 +41,7 @@ import { createBookmarkPersistenceController } from "./controllers/bookmark-pers
 import { createStorageController } from "./controllers/storage.mjs";
 import { createBookmarkUiController } from "./ui/bookmark/ui.mjs";
 import { createBookmarkTransferController } from "./ui/bookmark/transfer.mjs";
+import { createBookmarkPromptDialogController } from "./ui/bookmark/prompt-dialog.mjs";
 import { isIOSWebKit } from "./lib/dom-utils.mjs";
 import { scrollResultListToTop } from "./lib/results-scroll.mjs";
 import { reloadPage } from "./lib/page-reload.mjs";
@@ -99,6 +100,7 @@ type StorageCallbacksInput = {
 type BookmarkUiCallbacksInput = {
     storageController: ReturnType<typeof createStorageController>;
     getSidebarController: () => ReturnType<typeof createSidebarController>;
+    promptDialog: ReturnType<typeof createBookmarkPromptDialogController>;
 };
 
 type YoutubePlaybackHooksInput = {
@@ -197,7 +199,8 @@ function createStorageCallbacks({
  */
 function createBookmarkUiCallbacks({
     storageController,
-    getSidebarController
+    getSidebarController,
+    promptDialog
 }: BookmarkUiCallbacksInput): Parameters<typeof createBookmarkUiController>[0]["callbacks"] {
     return {
         onSelectActiveBookmark: (bookmarkId) => storageController.selectActiveBookmark(bookmarkId),
@@ -208,7 +211,8 @@ function createBookmarkUiCallbacks({
         onDeleteBookmark: (bookmarkId) => storageController.deleteBookmark(bookmarkId),
         onRenameBookmark: (bookmarkId, newName) => storageController.renameBookmark(bookmarkId, newName),
         onRemoveSongFromBookmark: (bookmarkId, songKey) => storageController.removeSongFromBookmark(bookmarkId, songKey),
-        onRequestCloseSidebar: () => getSidebarController().closeSidebarMenu()
+        onRequestCloseSidebar: () => getSidebarController().closeSidebarMenu(),
+        promptDialog
     };
 }
 
@@ -410,17 +414,25 @@ function createAppControllers() {
     });
 
     /**
+     * ブックマークの名前の変更・削除・全体の置換を確かめるダイアログ。
+     * 一覧と入出力の controller で 1 つを共有し、開いている間の言語の切り替えは一覧の controller が書き直す。
+     */
+    const bookmarkPromptDialog = createBookmarkPromptDialogController();
+
+    /**
      * ブックマークパネルの表示、一覧の選択・作成・名前の変更・削除などのユーザー操作を扱う controller。
      * 永続化の実処理は storageController へ委譲する。
      */
-    bookmarkUiController = createBookmarkUiController({
+    const createdBookmarkUiController = createBookmarkUiController({
         data: appDataState,
         ui: appUiState,
         callbacks: createBookmarkUiCallbacks({
             storageController,
-            getSidebarController: () => sidebarController
+            getSidebarController: () => sidebarController,
+            promptDialog: bookmarkPromptDialog
         })
     });
+    bookmarkUiController = createdBookmarkUiController;
 
     /**
      * ブックマークパネルのエクスポート・インポートを扱う controller。
@@ -434,7 +446,9 @@ function createAppControllers() {
             onPreviewBookmarkImport: (text) => storageController.previewBookmarkImport(text),
             onImportSelectedBookmarks: (text, bookmarkIds) =>
                 storageController.importSelectedBookmarksFromJsonText(text, bookmarkIds),
-            onReplaceAllBookmarks: (text) => storageController.replaceAllBookmarksFromJsonText(text)
+            onReplaceAllBookmarks: (text) => storageController.replaceAllBookmarksFromJsonText(text),
+            promptDialog: bookmarkPromptDialog,
+            onNotify: (message) => createdBookmarkUiController.notifyMessage(message)
         }
     });
 
@@ -463,7 +477,7 @@ function createAppControllers() {
      */
     const sidebarController: ReturnType<typeof createSidebarController> = createSidebarController({
         ui: appUiState,
-        bookmarkUiController,
+        bookmarkUiController: createdBookmarkUiController,
         callbacks: {
             onOpenChange: autoHideHeaderController.handleSidebarOpenChange
         }

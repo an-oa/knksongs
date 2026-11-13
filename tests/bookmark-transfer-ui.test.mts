@@ -5,6 +5,7 @@ import { getBookmarkImportErrorMessage } from "../app/ui/bookmark/import-export.
 import { refreshBookmarkPanelError } from "../app/ui/bookmark/panel.mts";
 import type { BookmarkTransferCallbacks } from "../app/ui/bookmark/transfer.mts";
 import type { BookmarkTransferDialogRequest } from "../app/ui/bookmark/transfer-dialog.mts";
+import type { BookmarkPromptDialogRequest } from "../app/ui/bookmark/prompt-dialog.mts";
 import type { AppDataState } from "../app/state.types";
 import type { SiteLanguage } from "../app/lib/site-language.mts";
 import { installFakeDom, invokeListener } from "./test-helpers.mts";
@@ -47,6 +48,8 @@ function createTransferHarness(options: {
     transferDialogChoice?: TransferDialogChoice;
     /** サイトの言語。省略時は日本語。 */
     language?: SiteLanguage;
+    /** 偽の確認ダイアログで決定するかどうか。省略時は決定する。 */
+    confirmAccepted?: boolean;
 } = {}) {
     const bookmarkPanelExportBtn = document.createElement("button");
     const bookmarkPanelImportBtn = document.createElement("button");
@@ -75,6 +78,10 @@ function createTransferHarness(options: {
         transferDialogBuilders: ((language: SiteLanguage) => BookmarkTransferDialogRequest<unknown>)[];
         transferDialogRefreshLanguages: SiteLanguage[];
         transferDialogErrors: string[];
+        /** 偽の確認ダイアログが受け取った表示内容。 */
+        confirmRequests: BookmarkPromptDialogRequest[];
+        /** 利用者へ通知した文言。通知した時点のサイトの言語で読む。 */
+        notifications: string[];
     } = {
         exportBookmarkArgs: [],
         previewImportArgs: [],
@@ -84,7 +91,9 @@ function createTransferHarness(options: {
         transferDialogRequests: [],
         transferDialogBuilders: [],
         transferDialogRefreshLanguages: [],
-        transferDialogErrors: []
+        transferDialogErrors: [],
+        confirmRequests: [],
+        notifications: []
     };
     const callbacks: BookmarkTransferCallbacks = {
         onExportBookmarks(bookmarkIds) {
@@ -124,7 +133,7 @@ function createTransferHarness(options: {
                 const choice = options.transferDialogChoice ?? { action: "submit" };
                 if (choice.action === "cancel") return null;
                 const result = choice.action === "allItems"
-                    ? request.allItemsAction?.run()
+                    ? await request.allItemsAction?.run()
                     : request.onSubmit(choice.selectedIds ?? request.options
                         .filter((option) => option.checked && !option.disabled)
                         .map((option) => option.id));
@@ -140,6 +149,17 @@ function createTransferHarness(options: {
             refreshText(language) {
                 calls.transferDialogRefreshLanguages.push(language);
             }
+        },
+        promptDialog: {
+            async open(buildRequest, language) {
+                const request = buildRequest(language);
+                calls.confirmRequests.push(request);
+                if (options.confirmAccepted === false) return false;
+                return request.onSubmit("").ok;
+            }
+        },
+        onNotify(message) {
+            calls.notifications.push(message(ui.language.current));
         }
     };
 
@@ -157,32 +177,6 @@ function selectImportFile(input: HTMLInputElement, text: string) {
         value: [new File([text], "bookmarks.json", { type: "application/json" })],
         configurable: true
     });
-}
-
-/**
- * confirm と alert を差し替え、表示された文言を記録する。戻り値で元に戻す。
- * @param confirmResult confirm で返す値
- */
-function captureNativeDialogs(confirmResult = true) {
-    const previousConfirm = globalThis.confirm;
-    const previousAlert = globalThis.alert;
-    const confirms: string[] = [];
-    const alerts: string[] = [];
-    globalThis.confirm = (message) => {
-        confirms.push(String(message));
-        return confirmResult;
-    };
-    globalThis.alert = (message) => {
-        alerts.push(String(message));
-    };
-    return {
-        confirms,
-        alerts,
-        restore() {
-            globalThis.confirm = previousConfirm;
-            globalThis.alert = previousAlert;
-        }
-    };
 }
 
 test("bookmark transfer ui: export dialog lists bookmarks in creation order and saves the chosen ones", async () => {
@@ -244,7 +238,6 @@ test("bookmark transfer ui: English export dialog uses English labels and counts
 
 test("bookmark transfer ui: English import dialog uses English labels, badges, and results", async () => {
     const restoreDom = installFakeDom();
-    const dialogs = captureNativeDialogs();
     try {
         const { ui, calls, controller } = createTransferHarness({ language: "en" });
         controller.setupTransferHandlers();
@@ -261,9 +254,8 @@ test("bookmark transfer ui: English import dialog uses English labels, badges, a
         assert.equal(request.allItemsAction?.allItemsItem.label, "Replace all bookmarks");
         assert.equal(request.allItemsAction?.message, "Deletes your 2 current bookmarks and replaces them with the 1 in the file.");
         assert.equal(request.describeSelection(["imported-1"]).message, "Add 1");
-        assert.deepEqual(dialogs.alerts, ["Added 1 bookmark."]);
+        assert.deepEqual(calls.notifications, ["Added 1 bookmark."]);
     } finally {
-        dialogs.restore();
         restoreDom();
     }
 });
@@ -304,7 +296,6 @@ test("bookmark transfer ui: export without bookmarks shows an error instead of t
 
 test("bookmark transfer ui: import dialog lists file bookmarks and imports the chosen ones", async () => {
     const restoreDom = installFakeDom();
-    const nativeDialogs = captureNativeDialogs();
     try {
         const { ui, calls, controller } = createTransferHarness();
         controller.setupTransferHandlers();
@@ -351,12 +342,11 @@ test("bookmark transfer ui: import dialog lists file bookmarks and imports the c
         });
         assert.deepEqual(calls.importSelectedArgs, [[importText, ["imported-1"]]]);
         assert.deepEqual(calls.replaceAllArgs, []);
-        assert.deepEqual(nativeDialogs.confirms, []);
-        assert.deepEqual(nativeDialogs.alerts, ["ブックマークを1件追加しました。"]);
+        assert.deepEqual(calls.confirmRequests, []);
+        assert.deepEqual(calls.notifications, ["ブックマークを1件追加しました。"]);
         assert.equal(ui.el.bookmarkPanelImportInput.value, "");
         assert.equal(ui.el.bookmarkPanelError.hidden, true);
     } finally {
-        nativeDialogs.restore();
         restoreDom();
     }
 });
@@ -364,30 +354,35 @@ test("bookmark transfer ui: import dialog lists file bookmarks and imports the c
 for (const accepted of [true, false]) {
     test(`bookmark transfer ui: replacing every bookmark from the import dialog waits for confirmation (${accepted ? "accepted" : "declined"})`, async () => {
         const restoreDom = installFakeDom();
-        const nativeDialogs = captureNativeDialogs(accepted);
         try {
-            const { ui, calls, controller } = createTransferHarness({ transferDialogChoice: { action: "allItems" } });
+            const { ui, calls, controller } = createTransferHarness({
+                transferDialogChoice: { action: "allItems" },
+                confirmAccepted: accepted
+            });
             controller.setupTransferHandlers();
             const importText = "{\"version\":3,\"bookmarks\":{}}";
             selectImportFile(ui.el.bookmarkPanelImportInput, importText);
 
             await invokeListener(ui.el.bookmarkPanelImportInput, "change", {});
 
-            assert.deepEqual(nativeDialogs.confirms, [
-                [
-                    "現在のブックマークをすべて削除し、ファイルの内容で置換します。",
-                    "削除するブックマーク：2件",
-                    "置換後のブックマーク：1件（2曲）",
-                    "よろしいですか？"
-                ].join("\n")
-            ]);
+            assert.equal(calls.confirmRequests.length, 1);
+            const [confirmRequest] = calls.confirmRequests;
+            assert.equal(confirmRequest.title, "ブックマーク全体の置換");
+            assert.equal(confirmRequest.message, [
+                "現在のブックマークをすべて削除し、ファイルの内容で置換します。",
+                "削除するブックマーク：2件",
+                "置換後のブックマーク：1件（2曲）",
+                "よろしいですか？"
+            ].join("\n"));
+            assert.equal(confirmRequest.submitLabel, "置換");
+            assert.equal(confirmRequest.isDestructive, true);
+            assert.equal(confirmRequest.input, undefined);
             assert.deepEqual(calls.replaceAllArgs, accepted ? [importText] : []);
             assert.deepEqual(calls.importSelectedArgs, []);
-            assert.deepEqual(nativeDialogs.alerts, accepted ? ["ブックマークを、ファイルの1件で置換しました。"] : []);
+            assert.deepEqual(calls.notifications, accepted ? ["ブックマークを、ファイルの1件で置換しました。"] : []);
             assert.deepEqual(calls.transferDialogErrors, []);
         } finally {
-            nativeDialogs.restore();
-            restoreDom();
+                restoreDom();
         }
     });
 }
@@ -443,7 +438,6 @@ test("bookmark transfer ui: import of a file without bookmarks shows an error in
 
 test("bookmark transfer ui: import error is shown without replacing bookmarks", async () => {
     const restoreDom = installFakeDom();
-    const nativeDialogs = captureNativeDialogs();
     try {
         const { ui, calls, controller } = createTransferHarness({
             onPreviewBookmarkImportResult: { ok: false, reason: "invalid_json" }
@@ -458,11 +452,10 @@ test("bookmark transfer ui: import error is shown without replacing bookmarks", 
         assert.equal(calls.transferDialogRequests.length, 0);
         assert.deepEqual(calls.replaceAllArgs, []);
         assert.deepEqual(calls.importSelectedArgs, []);
-        assert.deepEqual(nativeDialogs.confirms, []);
+        assert.deepEqual(calls.confirmRequests, []);
         assert.equal(ui.el.bookmarkPanelError.hidden, false);
         assert.equal(ui.el.bookmarkPanelError.textContent, "JSONとして読み込めないファイルです。");
     } finally {
-        nativeDialogs.restore();
         restoreDom();
     }
 });
@@ -500,8 +493,7 @@ for (const { result, importMessage } of [
     for (const phase of ["preview", "merge", "replace"] as const) {
         test(`bookmark transfer ui: ${result.reason} ${phase} result prevents import success`, async () => {
             const restoreDom = installFakeDom();
-            const nativeDialogs = captureNativeDialogs();
-            try {
+                    try {
                 const { ui, calls, controller } = createTransferHarness({
                     ...(phase === "preview" ? { onPreviewBookmarkImportResult: result } : {}),
                     ...(phase === "merge" ? { onImportSelectedBookmarksResult: result } : {}),
@@ -517,8 +509,8 @@ for (const { result, importMessage } of [
                 assert.deepEqual(calls.previewImportArgs, [importText]);
                 assert.deepEqual(calls.importSelectedArgs, phase === "merge" ? [[importText, ["imported-1"]]] : []);
                 assert.deepEqual(calls.replaceAllArgs, phase === "replace" ? [importText] : []);
-                assert.equal(nativeDialogs.confirms.length, phase === "replace" ? 1 : 0);
-                assert.deepEqual(nativeDialogs.alerts, []);
+                assert.equal(calls.confirmRequests.length, phase === "replace" ? 1 : 0);
+                assert.deepEqual(calls.notifications, []);
                 if (phase === "preview") {
                     // 確認画面を出す前の失敗は、パネルに理由を出す。
                     assert.equal(calls.transferDialogRequests.length, 0);
@@ -531,8 +523,7 @@ for (const { result, importMessage } of [
                 }
                 assert.equal(ui.el.bookmarkPanelImportInput.value, "");
             } finally {
-                nativeDialogs.restore();
-                restoreDom();
+                        restoreDom();
             }
         });
     }
@@ -567,7 +558,6 @@ test("bookmark transfer ui: the open dialog is rebuilt in the new language with 
 
 test("bookmark transfer ui: import failures and panel errors can be rewritten in the new language", async () => {
     const restoreDom = installFakeDom();
-    const nativeDialogs = captureNativeDialogs();
     try {
         const failure = { ok: false, reason: "storage_write_failed" } as const;
         const { ui, calls, controller } = createTransferHarness({ onImportSelectedBookmarksResult: failure });
@@ -584,7 +574,6 @@ test("bookmark transfer ui: import failures and panel errors can be rewritten in
         assert.equal(result.message("en"), getBookmarkImportErrorMessage(failure, "en"));
         assert.notEqual(result.message("en"), result.message("ja"));
     } finally {
-        nativeDialogs.restore();
         restoreDom();
     }
 

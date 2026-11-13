@@ -267,22 +267,111 @@ test("bookmark deletion toast shows the deleted bookmark name", async ({ page })
     await bookmarkItem.hover();
     await expect(bookmarkItem.locator(".bookmark-delete-btn")).toHaveCSS("pointer-events", "auto");
 
-    const dialogPromise = new Promise<string>((resolve) => {
-        page.once("dialog", async (dialog) => {
-            const message = dialog.message();
-            await dialog.accept();
-            resolve(message);
-        });
-    });
-
     await bookmarkItem.locator(".bookmark-delete-btn").click();
-    expect(await dialogPromise).toBe(`ブックマーク「${bookmarkName}」を削除しますか？`);
+    // 削除はページ内のダイアログで確かめる。今ある内容を消す操作なので、最初のフォーカスは取り消しに置く。
+    const confirmDialog = page.getByRole("dialog", { name: "ブックマークの削除" });
+    await expect(confirmDialog.locator("#bookmark-prompt-message")).toHaveText(`ブックマーク「${bookmarkName}」を削除しますか？`);
+    await expect(confirmDialog.getByRole("button", { name: "キャンセル" })).toBeFocused();
+    await confirmDialog.getByRole("button", { name: "削除", exact: true }).click();
+    await expect(confirmDialog).toBeHidden();
 
     await expectBookmarkToast(
         page,
         `ブックマーク「${bookmarkName}」を削除しました。`
     );
     await expect(bookmarkItem).toHaveCount(0);
+    // 削除した項目のボタンは消えるので、フォーカスをパネルの中の作成欄へ移す。
+    await expect(page.locator("#bookmark-panel-new-name")).toBeFocused();
+});
+
+test("renaming and deleting use in-page dialogs that Escape closes without closing the bookmark panel", async ({ page }) => {
+    await seedBookmarks(page, {
+        p_1: { name: "Morning Set", songs: [], createdAt: 1 },
+        p_2: { name: "Evening Set", songs: [], createdAt: 2 }
+    });
+    const nativeDialogs: string[] = [];
+    page.on("dialog", async (dialog) => {
+        nativeDialogs.push(dialog.type());
+        await dialog.dismiss();
+    });
+    await openBookmarkPanel(page);
+    const morningItem = getBookmarkItem(page, "Morning Set");
+    const renameButton = morningItem.getByRole("button", { name: "ブックマーク名を変更" });
+
+    // キーボードだけで、名前の変更を開き、入力して Enter で確定する。
+    await renameButton.focus();
+    await page.keyboard.press("Enter");
+    const renameDialog = page.getByRole("dialog", { name: "ブックマーク名の変更" });
+    const nameInput = renameDialog.getByRole("textbox", { name: "新しいブックマーク名を入力してください。" });
+    await expect(nameInput).toBeFocused();
+    await expect(nameInput).toHaveValue("Morning Set");
+
+    // 空の名前では閉じず、理由をダイアログの中に出す。
+    await nameInput.fill("   ");
+    await page.keyboard.press("Enter");
+    await expect(renameDialog.locator("#bookmark-prompt-status")).toHaveText("ブックマーク名を入力してください。");
+    await expect(renameDialog).toBeVisible();
+    await expect(nameInput).toBeFocused();
+
+    await nameInput.fill("Daybreak Set");
+    await page.keyboard.press("Enter");
+    await expect(renameDialog).toBeHidden();
+    const renamedItem = getBookmarkItem(page, "Daybreak Set");
+    await expect(renamedItem).toBeVisible();
+    await expect(getBookmarkItem(page, "Morning Set")).toHaveCount(0);
+    // 一覧は作り直すが、フォーカスは同じブックマークの同じボタンへ戻す。
+    await expect(renamedItem.getByRole("button", { name: "ブックマーク名を変更" })).toBeFocused();
+    expect(await readStoredBookmarks(page)).toEqual({
+        version: 3,
+        bookmarks: {
+            p_1: { name: "Daybreak Set", songs: [], createdAt: 1 },
+            p_2: { name: "Evening Set", songs: [], createdAt: 2 }
+        }
+    });
+
+    // Esc はダイアログだけを閉じ、ブックマークパネルとサイドバーは開いたままにする。
+    const deleteButton = renamedItem.getByRole("button", { name: "ブックマークを削除" });
+    await deleteButton.focus();
+    await page.keyboard.press("Enter");
+    const deleteDialog = page.getByRole("dialog", { name: "ブックマークの削除" });
+    await expect(deleteDialog).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(deleteDialog).toBeHidden();
+    await expect(page.locator("#bookmark-sidebar-panel")).toBeVisible();
+    await expect(page.locator("#sidebar")).toHaveAttribute("aria-hidden", "false");
+    await expect(renamedItem).toBeVisible();
+    await expect(deleteButton).toBeFocused();
+
+    expect(nativeDialogs, "the browser's own prompt, confirm, and alert are not used").toEqual([]);
+});
+
+test("a failed bookmark action is reported in a toast instead of a blocking alert", async ({ page }) => {
+    await seedBookmarks(page, { p_1: { name: "Morning Set", songs: [], createdAt: 1 } });
+    const nativeDialogs: string[] = [];
+    page.on("dialog", async (dialog) => {
+        nativeDialogs.push(dialog.type());
+        await dialog.dismiss();
+    });
+    // 別のタブがブックマークを書き換えた状態にする。保存の直前の検査で見つかる。
+    await page.evaluate(() => {
+        localStorage.setItem("bookmarksV1", JSON.stringify({
+            version: 3,
+            bookmarks: { p_9: { name: "Other Tab", songs: [], createdAt: 9 } }
+        }));
+    });
+
+    await page.locator("#searchBox").fill("Manual Song");
+    await getSongCard(page, "Manual Song").locator(".add-to-bookmark-btn").click();
+    await getBookmarkItem(page, "Morning Set").click();
+
+    const errorToast = page.locator(".bookmark-toast-error");
+    await expect(errorToast).toHaveAttribute("role", "alert");
+    await expect(errorToast.locator(".bookmark-toast-message")).toHaveText(
+        "別のタブでブックマークが更新された可能性があります。画面を再読み込みしてから、もう一度お試しください。"
+    );
+    // 通知は操作を止めないので、追加先を選ぶパネルは開いたまま続けられる。
+    await expect(page.locator("#bookmark-sidebar-panel")).toBeVisible();
+    expect(nativeDialogs).toEqual([]);
 });
 
 test("the edit button fits beside the song count in Japanese and English", async ({ page }) => {
@@ -362,7 +451,6 @@ test("bookmarks at the file size limit can be exported and imported again", asyn
     payload.bookmarks.b1.songs = ["x".repeat(MAX_BOOKMARK_IMPORT_BYTES - Buffer.byteLength(JSON.stringify(payload)))];
     const buffer = Buffer.from(JSON.stringify(payload));
     expect(buffer.byteLength).toBe(MAX_BOOKMARK_IMPORT_BYTES);
-    page.on("dialog", (dialog) => dialog.accept());
     await page.locator("#bookmark-panel-import-input").setInputFiles({ name: "boundary.json", mimeType: "application/json", buffer });
     const importDialog = page.getByRole("dialog", { name: "ブックマークのインポート" });
     await importDialog.getByRole("button", { name: "インポート", exact: true }).click();
@@ -378,6 +466,7 @@ test("bookmarks at the file size limit can be exported and imported again", asyn
     await importDialog.getByRole("button", { name: "取り込み方を選ぶ" }).click();
     await importDialog.getByRole("menuitemradio", { name: /ブックマーク全体を置換/ }).click();
     await importDialog.getByRole("button", { name: "置換", exact: true }).click();
+    await page.getByRole("dialog", { name: "ブックマーク全体の置換" }).getByRole("button", { name: "置換", exact: true }).click();
     await expect(importDialog).toBeHidden();
     await expect(page.locator("#bookmark-panel-import-input")).toHaveValue("");
     await expect(page.locator("#bookmark-panel-error")).toBeHidden();
@@ -429,11 +518,6 @@ test("importing chosen bookmarks adds new IDs and overwrites the same ID after s
         p_2: { name: "Kept Set", songs: ["ref-c"], createdAt: 2 }
     });
     await openBookmarkPanel(page);
-    const alerts: string[] = [];
-    page.on("dialog", async (dialog) => {
-        alerts.push(dialog.message());
-        await dialog.accept();
-    });
     const file = {
         version: 3,
         bookmarks: {
@@ -458,7 +542,7 @@ test("importing chosen bookmarks adds new IDs and overwrites the same ID after s
     await dialog.getByRole("button", { name: "インポート", exact: true }).click();
 
     await expect(dialog).toBeHidden();
-    await expect.poll(() => alerts).toEqual(["ブックマークを1件追加し、1件上書きしました。"]);
+    await expectBookmarkToast(page, "ブックマークを1件追加し、1件上書きしました。");
     await expect(getBookmarkItem(page, "Friend Set")).toBeVisible();
     expect(await readStoredBookmarks(page)).toEqual(file);
 });
@@ -541,11 +625,6 @@ const FRIEND_FILE = { version: 3, bookmarks: { p_2: { name: "Friend Set", songs:
 test("a failed import keeps the dialog open so the same choice can be retried", async ({ page }) => {
     await seedBookmarks(page, KEPT_BOOKMARKS);
     await openBookmarkPanel(page);
-    const alerts: string[] = [];
-    page.on("dialog", async (nativeDialog) => {
-        alerts.push(nativeDialog.message());
-        await nativeDialog.accept();
-    });
     await page.locator("#bookmark-panel-import-input").setInputFiles({
         name: "friend.json",
         mimeType: "application/json",
@@ -577,7 +656,7 @@ test("a failed import keeps the dialog open so the same choice can be retried", 
     await submitButton.click();
 
     await expect(dialog).toBeHidden();
-    await expect.poll(() => alerts).toEqual(["ブックマークを1件追加しました。"]);
+    await expectBookmarkToast(page, "ブックマークを1件追加しました。");
     expect(await readStoredBookmarks(page)).toEqual({
         version: 3,
         bookmarks: { ...KEPT_BOOKMARKS, ...FRIEND_FILE.bookmarks }
@@ -596,27 +675,26 @@ test("declining the replace confirmation keeps the dialog open to continue", asy
     const menuButton = dialog.getByRole("button", { name: "取り込み方を選ぶ" });
     await menuButton.click();
     await dialog.getByRole("menuitemradio", { name: /ブックマーク全体を置換/ }).click();
-    const confirms: string[] = [];
-    page.once("dialog", async (nativeDialog) => {
-        confirms.push(nativeDialog.message());
-        await nativeDialog.dismiss();
-    });
-
     await dialog.getByRole("button", { name: "置換", exact: true }).click();
 
-    await expect.poll(() => confirms).toEqual([[
+    // 確認はインポートのダイアログの上に重ねて出す。件数を並べた確認文は、改行のまま見せる。
+    const confirmDialog = page.getByRole("dialog", { name: "ブックマーク全体の置換" });
+    await expect(confirmDialog.locator("#bookmark-prompt-message")).toHaveText([
         "現在のブックマークをすべて削除し、ファイルの内容で置換します。",
         "削除するブックマーク：1件",
         "置換後のブックマーク：1件（1曲）",
         "よろしいですか？"
-    ].join("\n")]);
+    ].join("\n"));
+    await expect(confirmDialog.locator("#bookmark-prompt-message")).toHaveCSS("white-space", "pre-line");
+    await expect(confirmDialog.getByRole("button", { name: "キャンセル" })).toBeFocused();
+    await confirmDialog.getByRole("button", { name: "キャンセル" }).click();
+    await expect(confirmDialog).toBeHidden();
     await expect(dialog).toBeVisible();
     await expect(dialog.locator("#bookmark-transfer-submit")).toHaveText("置換");
     await expect(dialog.locator("#bookmark-transfer-status")).toHaveText("今ある1件を削除し、ファイルの1件で置換します。");
     expect(await readStoredBookmarks(page)).toEqual({ version: 3, bookmarks: KEPT_BOOKMARKS });
 
     // 取り込み方を戻せば、続けて選んだブックマークを取り込める。
-    page.on("dialog", (nativeDialog) => nativeDialog.accept());
     await menuButton.click();
     await dialog.getByRole("menuitemradio", { name: /選んだブックマークを取り込む/ }).click();
     await dialog.getByRole("button", { name: "インポート", exact: true }).click();

@@ -4,7 +4,19 @@ import assert from "node:assert/strict";
 import { createBookmarkUiController } from "../app/ui/bookmark/ui.mts";
 import { createSongFixture } from "./fixtures/song.mts";
 import type { BookmarkUiCallbacks } from "../app/ui/bookmark/ui.mts";
+import type { BookmarkPromptDialogRequest } from "../app/ui/bookmark/prompt-dialog.mts";
+import type { SiteLanguage } from "../app/lib/site-language.mts";
 import { installFakeDom, invokeListener } from "./test-helpers.mts";
+
+/** 偽の確認・入力ダイアログで行う操作。submit は入力した値 (省略時は開いたときの値) で決定し、cancel は取り消す。 */
+type PromptDialogChoice =
+    | { action: "submit"; value?: string }
+    | { action: "cancel" };
+
+/** ダイアログを閉じた後のフォーカスの移動など、Promise の後に続く処理が終わるまで待つ。 */
+function settlePromptDialog() {
+    return new Promise((resolve) => setImmediate(resolve));
+}
 
 /**
  * ブックマーク UI テスト用の最小状態を作る。
@@ -102,6 +114,8 @@ function createBookmarkHarness(options: {
     onRemoveSongFromBookmarkResult?: StorageActionResult;
     /** 選択・解除・削除の成功時に state を更新し、本番の storage と同じく一覧を再描画する。 */
     rerenderOnStateChange?: boolean;
+    /** 偽の確認・入力ダイアログでの操作。省略時は開いたときの値のまま決定する。 */
+    promptDialogChoice?: PromptDialogChoice;
 } = {}) {
     const data: Parameters<typeof createBookmarkUiController>[0]["data"] = {
         allSongsRaw: options.allSongsRaw || [
@@ -127,6 +141,11 @@ function createBookmarkHarness(options: {
         renameBookmarkArgs: [string, string][];
         removeSongArgs: [string, string][];
         requestCloseSidebar: number;
+        /** 偽の確認・入力ダイアログが受け取った表示内容。 */
+        promptDialogRequests: BookmarkPromptDialogRequest[];
+        /** 決定が失敗して、ダイアログに開いたまま出す理由。 */
+        promptDialogErrors: string[];
+        promptDialogRefreshLanguages: SiteLanguage[];
     } = {
         selectActiveBookmarkArgs: [],
         clearActiveBookmark: 0,
@@ -136,7 +155,10 @@ function createBookmarkHarness(options: {
         deleteBookmarkArgs: [],
         renameBookmarkArgs: [],
         removeSongArgs: [],
-        requestCloseSidebar: 0
+        requestCloseSidebar: 0,
+        promptDialogRequests: [],
+        promptDialogErrors: [],
+        promptDialogRefreshLanguages: []
     };
     const callbacks: BookmarkUiCallbacks = {
         onSelectActiveBookmark(bookmarkId) {
@@ -197,6 +219,22 @@ function createBookmarkHarness(options: {
         },
         onRequestCloseSidebar() {
             calls.requestCloseSidebar += 1;
+        },
+        promptDialog: {
+            async open(buildRequest, language) {
+                const request = buildRequest(language);
+                calls.promptDialogRequests.push(request);
+                const choice = options.promptDialogChoice ?? { action: "submit" };
+                if (choice.action === "cancel") return false;
+                const result = request.onSubmit(choice.value ?? request.input?.value ?? "");
+                if (result.ok) return true;
+                // 本物のダイアログは開いたまま理由を出す。ここでは理由を記録し、利用者が閉じたものとして扱う。
+                calls.promptDialogErrors.push(result.message(language));
+                return false;
+            },
+            refreshText(language) {
+                calls.promptDialogRefreshLanguages.push(language);
+            }
         }
     };
 
@@ -207,6 +245,16 @@ function createBookmarkHarness(options: {
         calls,
         controller
     };
+}
+
+/**
+ * 表示中の失敗の通知の文言を返す。
+ * @param ui ブックマーク UI の状態
+ * @returns 失敗の通知の文言。出ていなければ null
+ */
+function readErrorToast(ui: ReturnType<typeof createBookmarkUiState>) {
+    return ui.el.bookmarkNotificationRegion.querySelector(".bookmark-toast-error")
+        ?.querySelector(".bookmark-toast-message")?.textContent ?? null;
 }
 
 /**
@@ -309,10 +357,8 @@ test("bookmark ui: selecting and clearing keep focus on the same bookmark after 
     }
 });
 
-test("bookmark ui: deleting a focused bookmark moves focus to a nearby bookmark or the create field", () => {
+test("bookmark ui: deleting a focused bookmark moves focus to a nearby bookmark or the create field", async () => {
     const restoreDom = installFakeDom();
-    const previousConfirm = globalThis.confirm;
-    globalThis.confirm = () => true;
     try {
         const { ui, calls, controller } = createBookmarkHarness({ rerenderOnStateChange: true });
         controller.renderBookmarks();
@@ -321,6 +367,7 @@ test("bookmark ui: deleting a focused bookmark moves focus to a nearby bookmark 
         const firstDelete = getBookmarkItemControl(firstItem, ".bookmark-delete-btn");
         firstDelete.focus();
         invokeListener(firstItem, "click", { target: firstDelete, stopPropagation() {} });
+        await settlePromptDialog();
 
         const secondItem = findBookmarkItem(ui, "bookmark-2");
         assert.deepEqual(calls.deleteBookmarkArgs, ["bookmark-1"]);
@@ -329,20 +376,81 @@ test("bookmark ui: deleting a focused bookmark moves focus to a nearby bookmark 
         const secondDelete = getBookmarkItemControl(secondItem, ".bookmark-delete-btn");
         secondDelete.focus();
         invokeListener(secondItem, "click", { target: secondDelete, stopPropagation() {} });
+        await settlePromptDialog();
 
         assert.deepEqual(calls.deleteBookmarkArgs, ["bookmark-1", "bookmark-2"]);
         assert.equal(ui.el.bookmarkList.querySelector(".bookmark-item"), null);
         assert.equal(document.activeElement, ui.el.bookmarkPanelNewName);
     } finally {
-        globalThis.confirm = previousConfirm;
+        restoreDom();
+    }
+});
+
+test("bookmark ui: renaming asks for the new name in a dialog and returns focus to the rename button", async () => {
+    const restoreDom = installFakeDom();
+    try {
+        const { ui, calls, controller } = createBookmarkHarness({
+            promptDialogChoice: { action: "submit", value: "Renamed" }
+        });
+        ui.el.bookmarkPanelNewName.maxLength = 64;
+        controller.renderBookmarks();
+
+        const firstItem = findBookmarkItem(ui, "bookmark-1");
+        const renameButton = getBookmarkItemControl(firstItem, ".bookmark-rename-btn");
+        invokeListener(firstItem, "click", { target: renameButton, stopPropagation() {} });
+
+        assert.equal(calls.promptDialogRequests.length, 1);
+        const [request] = calls.promptDialogRequests;
+        assert.equal(request.title, "ブックマーク名の変更");
+        assert.equal(request.message, "新しいブックマーク名を入力してください。");
+        assert.deepEqual(request.input, { value: "First", maxLength: 64 });
+        assert.equal(request.submitLabel, "変更");
+        assert.equal(request.cancelLabel, "キャンセル");
+        assert.equal(Boolean(request.isDestructive), false);
+        assert.deepEqual(calls.renameBookmarkArgs, [["bookmark-1", "Renamed"]]);
+        assert.deepEqual(calls.selectActiveBookmarkArgs, [], "the rename button does not select the bookmark");
+
+        await settlePromptDialog();
+        assert.equal(document.activeElement, renameButton);
+    } finally {
+        restoreDom();
+    }
+});
+
+test("bookmark ui: a failed rename keeps its reason in the dialog instead of a notification", () => {
+    const restoreDom = installFakeDom();
+    try {
+        const { ui, calls, controller } = createBookmarkHarness({
+            onRenameBookmarkResult: { ok: false, reason: "max_bookmark_name_length", limit: 64 }
+        });
+        controller.renderBookmarks();
+
+        const firstItem = findBookmarkItem(ui, "bookmark-1");
+        invokeListener(firstItem, "click", {
+            target: getBookmarkItemControl(firstItem, ".bookmark-rename-btn"),
+            stopPropagation() {}
+        });
+
+        assert.deepEqual(calls.promptDialogErrors, ["ブックマーク名は最大64文字までです。"]);
+        assert.equal(ui.el.bookmarkNotificationRegion.childElementCount, 0);
+    } finally {
+        restoreDom();
+    }
+});
+
+test("bookmark ui: a language change is passed on to the open dialog", () => {
+    const restoreDom = installFakeDom();
+    try {
+        const { calls, controller } = createBookmarkHarness();
+        controller.refreshText();
+        assert.deepEqual(calls.promptDialogRefreshLanguages, ["ja"]);
+    } finally {
         restoreDom();
     }
 });
 
 test("bookmark ui: add mode success adds to existing bookmark, closes the panel, and returns focus", () => {
     const restoreDom = installFakeDom();
-    const previousAlert = globalThis.alert;
-    globalThis.alert = () => {};
     try {
         const { ui, calls, controller } = createBookmarkHarness();
 
@@ -365,7 +473,6 @@ test("bookmark ui: add mode success adds to existing bookmark, closes the panel,
         assert.equal(document.activeElement, ui.el.openBookmarkPanelBtn);
         assert.equal(calls.requestCloseSidebar, 0);
     } finally {
-        globalThis.alert = previousAlert;
         restoreDom();
     }
 });
@@ -473,13 +580,8 @@ test("bookmark ui: create-and-add notifies created bookmark and saved song title
     }
 });
 
-test("bookmark ui: duplicate add shows alert and keeps the selection panel open", () => {
+test("bookmark ui: duplicate add shows an error notification and keeps the selection panel open", () => {
     const restoreDom = installFakeDom();
-    const previousAlert = globalThis.alert;
-    const alerts: string[] = [];
-    globalThis.alert = (message) => {
-        alerts.push(String(message));
-    };
     try {
         const { ui, calls, controller } = createBookmarkHarness({
             onAddSongToBookmarkResult: { ok: false, reason: "duplicate_song" }
@@ -495,9 +597,12 @@ test("bookmark ui: duplicate add shows alert and keeps the selection panel open"
 
         assert.deepEqual(calls.addSongArgs, [["bookmark-2", "song-z"]]);
         assert.equal(ui.el.bookmarkSidebarPanel.hidden, false);
-        assert.deepEqual(alerts, ["この曲はすでに選択したブックマークに追加されています。"]);
+        assert.equal(readErrorToast(ui), "この曲はすでに選択したブックマークに追加されています。");
+        assert.equal(
+            ui.el.bookmarkNotificationRegion.querySelector(".bookmark-toast-error")?.getAttribute("role"),
+            "alert"
+        );
     } finally {
-        globalThis.alert = previousAlert;
         restoreDom();
     }
 });
@@ -564,11 +669,6 @@ test("bookmark ui: create form success notifies created bookmark", () => {
 
 test("bookmark ui: unsupported storage version shows an error without a success notification", () => {
     const restoreDom = installFakeDom();
-    const previousAlert = globalThis.alert;
-    const alerts: string[] = [];
-    globalThis.alert = (message) => {
-        alerts.push(String(message));
-    };
     try {
         const { ui, controller } = createBookmarkHarness({
             onCreateBookmark: () => ({
@@ -582,24 +682,16 @@ test("bookmark ui: unsupported storage version shows an error without a success 
 
         invokeListener(ui.el.bookmarkPanelCreateBtn, "click", {});
 
-        assert.deepEqual(alerts, [
-            "このアプリより新しい形式のブックマークが保存されているため、変更できません。"
-        ]);
+        assert.equal(readErrorToast(ui), "このアプリより新しい形式のブックマークが保存されているため、変更できません。");
         assert.equal(ui.el.bookmarkPanelNewName.value, "Not persisted");
-        assert.equal(ui.el.bookmarkNotificationRegion.childElementCount, 0);
+        assert.equal(ui.el.bookmarkNotificationRegion.childElementCount, 1, "only the error is shown");
     } finally {
-        globalThis.alert = previousAlert;
         restoreDom();
     }
 });
 
 test("bookmark ui: stale loaded storage state asks for a reload without a success notification", () => {
     const restoreDom = installFakeDom();
-    const previousAlert = globalThis.alert;
-    const alerts: string[] = [];
-    globalThis.alert = (message) => {
-        alerts.push(String(message));
-    };
     try {
         const { ui, controller } = createBookmarkHarness({
             onCreateBookmark: () => ({
@@ -612,26 +704,18 @@ test("bookmark ui: stale loaded storage state asks for a reload without a succes
 
         invokeListener(ui.el.bookmarkPanelCreateBtn, "click", {});
 
-        assert.deepEqual(alerts, [
-            "別のタブでブックマークが更新された可能性があります。画面を再読み込みしてから、もう一度お試しください。"
-        ]);
+        assert.equal(readErrorToast(ui), "別のタブでブックマークが更新された可能性があります。画面を再読み込みしてから、もう一度お試しください。");
         assert.equal(ui.el.bookmarkPanelNewName.value, "Not persisted");
-        assert.equal(ui.el.bookmarkNotificationRegion.childElementCount, 0);
+        assert.equal(ui.el.bookmarkNotificationRegion.childElementCount, 1, "only the error is shown");
     } finally {
-        globalThis.alert = previousAlert;
         restoreDom();
     }
 });
 
 test("bookmark ui: public save error notifier asks for a reload", () => {
     const restoreDom = installFakeDom();
-    const previousAlert = globalThis.alert;
-    const alerts: string[] = [];
-    globalThis.alert = (message) => {
-        alerts.push(String(message));
-    };
     try {
-        const { controller } = createBookmarkHarness();
+        const { ui, controller } = createBookmarkHarness();
 
         const didNotify = controller.notifyBookmarkSaveError({
             ok: false,
@@ -639,11 +723,11 @@ test("bookmark ui: public save error notifier asks for a reload", () => {
         });
 
         assert.equal(didNotify, true);
-        assert.deepEqual(alerts, [
+        assert.equal(
+            readErrorToast(ui),
             "別のタブでブックマークが更新された可能性があります。画面を再読み込みしてから、もう一度お試しください。"
-        ]);
+        );
     } finally {
-        globalThis.alert = previousAlert;
         restoreDom();
     }
 });
@@ -689,10 +773,8 @@ test("bookmark ui: failed song removal does not show a success notification", ()
     }
 });
 
-test("bookmark ui: deleting a bookmark notifies the deleted bookmark name", () => {
+test("bookmark ui: deleting a bookmark asks in a dialog and notifies the deleted bookmark name", () => {
     const restoreDom = installFakeDom();
-    const previousConfirm = globalThis.confirm;
-    globalThis.confirm = () => true;
     try {
         const { ui, calls, controller } = createBookmarkHarness();
         controller.renderBookmarks();
@@ -709,21 +791,19 @@ test("bookmark ui: deleting a bookmark notifies the deleted bookmark name", () =
         assert.ok(message);
         assert.deepEqual(calls.deleteBookmarkArgs, ["bookmark-1"]);
         assert.equal(message.textContent, "ブックマーク「First」を削除しました。");
+        const [request] = calls.promptDialogRequests;
+        assert.equal(request.title, "ブックマークの削除");
+        assert.equal(request.message, "ブックマーク「First」を削除しますか？");
+        assert.equal(request.submitLabel, "削除");
+        assert.equal(request.input, undefined);
+        assert.equal(request.isDestructive, true);
     } finally {
-        globalThis.confirm = previousConfirm;
         restoreDom();
     }
 });
 
-test("bookmark ui: failed bookmark deletion does not show a success notification", () => {
+test("bookmark ui: failed bookmark deletion keeps its reason in the dialog without a success notification", () => {
     const restoreDom = installFakeDom();
-    const previousConfirm = globalThis.confirm;
-    const previousAlert = globalThis.alert;
-    const alerts: string[] = [];
-    globalThis.confirm = () => true;
-    globalThis.alert = (message) => {
-        alerts.push(String(message));
-    };
     try {
         const { ui, calls, controller } = createBookmarkHarness({
             onDeleteBookmarkResult: { ok: false, reason: "bookmark_not_found" }
@@ -740,10 +820,8 @@ test("bookmark ui: failed bookmark deletion does not show a success notification
 
         assert.deepEqual(calls.deleteBookmarkArgs, ["bookmark-1"]);
         assert.equal(ui.el.bookmarkNotificationRegion.childElementCount, 0);
-        assert.deepEqual(alerts, ["ブックマークが見つかりません。画面を更新して再度お試しください。"]);
+        assert.deepEqual(calls.promptDialogErrors, ["ブックマークが見つかりません。画面を更新して再度お試しください。"]);
     } finally {
-        globalThis.confirm = previousConfirm;
-        globalThis.alert = previousAlert;
         restoreDom();
     }
 });
@@ -776,12 +854,8 @@ test("bookmark ui: closing with restoreFocus returns focus to opener, or closes 
 
 test("bookmark ui: rename cancel and delete cancel are no-ops", () => {
     const restoreDom = installFakeDom();
-    const previousPrompt = globalThis.prompt;
-    const previousConfirm = globalThis.confirm;
-    globalThis.prompt = () => null;
-    globalThis.confirm = () => false;
     try {
-        const { ui, calls, controller } = createBookmarkHarness();
+        const { ui, calls, controller } = createBookmarkHarness({ promptDialogChoice: { action: "cancel" } });
         controller.renderBookmarks();
 
         const firstItem = findBookmarkItem(ui, "bookmark-1");
@@ -799,11 +873,11 @@ test("bookmark ui: rename cancel and delete cancel are no-ops", () => {
             stopPropagation() {}
         });
 
+        assert.equal(calls.promptDialogRequests.length, 2);
         assert.deepEqual(calls.renameBookmarkArgs, []);
         assert.deepEqual(calls.deleteBookmarkArgs, []);
+        assert.equal(ui.el.bookmarkNotificationRegion.childElementCount, 0);
     } finally {
-        globalThis.prompt = previousPrompt;
-        globalThis.confirm = previousConfirm;
         restoreDom();
     }
 });
@@ -824,9 +898,6 @@ for (const { result, saveMessage } of [
 ] as const) {
     test(`bookmark ui: ${result.reason} add result keeps the panel open without a success toast`, () => {
         const restoreDom = installFakeDom();
-        const previousAlert = globalThis.alert;
-        const alerts: string[] = [];
-        globalThis.alert = (message) => alerts.push(String(message));
         try {
             const { ui, calls, controller } = createBookmarkHarness({ onAddSongToBookmarkResult: result });
             controller.openBookmarkModal("song-z", {});
@@ -835,10 +906,9 @@ for (const { result, saveMessage } of [
 
             assert.deepEqual(calls.addSongArgs, [["bookmark-1", "song-z"]]);
             assert.equal(ui.el.bookmarkSidebarPanel.hidden, false);
-            assert.equal(ui.el.bookmarkNotificationRegion.childElementCount, 0);
-            assert.deepEqual(alerts, [saveMessage]);
+            assert.equal(ui.el.bookmarkNotificationRegion.childElementCount, 1, "only the error is shown");
+            assert.equal(readErrorToast(ui), saveMessage);
         } finally {
-            globalThis.alert = previousAlert;
             restoreDom();
         }
     });

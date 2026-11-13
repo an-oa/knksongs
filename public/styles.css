@@ -1008,6 +1008,36 @@ body.hide-thumbs .thumb {
   font-size: 12px;
 }
 
+/*
+ * ブックマークの名前の変更・削除の確認・全体の置換の確認に使う、小さいダイアログ。
+ * 枠とボタンはエクスポート・インポートのダイアログと同じクラスで描き、幅と本文だけを変える。
+ */
+.bookmark-prompt-dialog {
+  width: min(360px, calc(100vw - 32px));
+}
+
+/* 確かめる内容そのものなので、補足の色ではなく本文の色で出す。件数を並べた確認文の改行はそのまま見せる。 */
+.bookmark-prompt-message {
+  display: block;
+  color: var(--text-color);
+  font-size: 14px;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+
+.bookmark-prompt-body {
+  padding: 4px 16px 12px;
+}
+
+.bookmark-prompt-body[hidden] {
+  display: none;
+}
+
+/* 失敗の理由がないときは、決定ボタンの上に空きを残さない。 */
+.bookmark-prompt-footer .bookmark-transfer-status[hidden] {
+  display: none;
+}
+
 .bookmark-toast-region {
   position: fixed;
   right: max(16px, env(safe-area-inset-right));
@@ -1047,6 +1077,12 @@ body.hide-thumbs .thumb {
   inset: auto max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) auto;
   border: 1px solid var(--border-color);
   border-left: 4px solid var(--primary-color);
+}
+
+/* 失敗の通知は、左の線を入力エラーと同じ色にして成功の通知と見分ける。 */
+.bookmark-toast-error,
+.bookmark-toast-error:popover-open {
+  border-left-color: var(--validation-error-color);
 }
 
 .bookmark-toast-message {
