@@ -586,7 +586,9 @@ export function installFakeDom() {
         innerHeight: 720 as number | undefined,
         scrollBy() {},
         scrollTo(options?: ScrollToOptions) { void options; },
-        matchMedia() {
+        /** メディアクエリは既定ではどれも一致しない。一致させるテストでは差し替える。 */
+        matchMedia(query?: string) {
+            void query;
             return { matches: false };
         },
         getComputedStyle(element: Element) {

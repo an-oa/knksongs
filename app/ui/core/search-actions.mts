@@ -1,5 +1,5 @@
 import type { SearchConditionsState, SiteLanguageUiRuntimeState } from "../../state.types";
-import { isHtmlElement } from "../../lib/dom-utils.mjs";
+import { hasCoarsePrimaryPointer, isHtmlElement } from "../../lib/dom-utils.mjs";
 import {
     SEARCH_BOOLEAN_FILTER_KEYS,
     getSearchBooleanFilterElement,
@@ -29,6 +29,7 @@ type SearchActionsDateFilterController = {
 type SearchActionsSearchCoordinator = {
     cancelScheduledSearch: () => void;
     scheduleSearch: (options?: SearchScheduleOptions) => void;
+    flushScheduledSearch: () => boolean;
 };
 
 type SearchActionsSearchFiltersController = {
@@ -41,6 +42,12 @@ type SearchActionsStorageController = {
     saveSearchState: () => void;
     clearActiveBookmark: () => void;
 };
+
+/** 検索窓で押したキーのイベントのうち、入力の確定の判定に使う部分。 */
+type SearchBoxKeyDownEvent = Pick<KeyboardEvent, "key" | "isComposing" | "keyCode">;
+
+/** かな漢字変換の途中のキー操作に付くキーコード。isComposing を付けないブラウザがあるため併せて見る。 */
+const IME_PROCESSING_KEY_CODE = 229;
 
 type SearchUiActionsInput = {
     ui: { el: {
@@ -208,6 +215,20 @@ export function createSearchUiActions({
     }
 
     /**
+     * 検索窓で Enter を押したら、入力の確定として扱う。
+     * 入力のたびに少し待ってから検索しているので、待っている検索があればすぐ実行する。
+     * スマホなど指で操作する端末では、検索窓からフォーカスを外して画面のキーボードを閉じ、結果を見えるようにする。
+     * かな漢字変換を確定する Enter は、入力の途中なので確定として扱わない。
+     * @param event 検索窓で起きた keydown のイベント
+     * @param searchBox 検索窓
+     */
+    function handleSearchBoxKeyDown(event: SearchBoxKeyDownEvent, searchBox: HTMLElement): void {
+        if (event.key !== "Enter" || event.isComposing || event.keyCode === IME_PROCESSING_KEY_CODE) return;
+        searchCoordinator.flushScheduledSearch();
+        if (hasCoarsePrimaryPointer()) searchBox.blur();
+    }
+
+    /**
      * 検索語・真偽値フィルター・条件クリアボタンの操作を受け付ける。
      * 検索語とフィルターの要素は値の読み書きに必要な形だけを型で受け取るため、
      * イベントを付ける前に実際の要素かを確かめる。
@@ -229,6 +250,9 @@ export function createSearchUiActions({
             });
             searchBox.addEventListener("blur", () => {
                 validateCurrentQuery();
+            });
+            searchBox.addEventListener("keydown", (event) => {
+                handleSearchBoxKeyDown(event, searchBox);
             });
         }
         ui.el.clearBtn?.addEventListener("click", clearSearch);

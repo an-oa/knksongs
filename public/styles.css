@@ -336,7 +336,10 @@ body.hide-thumbs .thumb {
   pointer-events: none;
 }
 
-/* 検索窓はどちらのテーマでも白地にし、文字色をテーマに依存させない。 */
+/*
+ * 検索窓はどちらのテーマでも白地にし、文字色をテーマに依存させない。
+ * 文字は 16px 以上にする。iOS の Safari は、16px 未満の入力欄にフォーカスするとページを拡大する。
+ */
 .header-search input[type="text"] {
   height: 40px;
   padding: 0 16px 0 42px;
@@ -344,7 +347,7 @@ body.hide-thumbs .thumb {
   border-radius: 999px;
   background: #ffffff;
   color: #1b1b1b;
-  font-size: 15px;
+  font-size: 16px;
 }
 .header-search input[type="text"]::placeholder { color: #6b665c; }
 .header-search input[type="text"]:focus-visible {
@@ -513,10 +516,10 @@ body.hide-thumbs .thumb {
 .sidebar.active .sidebar-sheet { transform: translateX(0); }
 .sidebar-header { padding: 12px 16px 8px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-color); }
 .sidebar-title-group h2 { margin: 0; font-size: 18px; }
+/* 「条件をクリア」は押せる高さを 32px 取るので、その分だけ下の余白を詰める。 */
 .sidebar-actions {
   display: flex;
   justify-content: flex-end;
-  margin-bottom: 8px;
 }
 .sidebar-scroll-area {
   padding: 8px 16px 16px;
@@ -566,9 +569,9 @@ body.hide-thumbs .thumb {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   column-gap: 10px;
-  row-gap: 8px;
+  row-gap: 2px;
   margin-bottom: 0;
-  padding-top: 12px;
+  padding-top: 8px;
   border-top: 1px solid var(--border-color);
 }
 .sidebar-setting-item {
@@ -1114,7 +1117,8 @@ body.hide-thumbs .thumb {
 
 .section-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
 .section-label { display: block; font-size: 11px; font-weight: bold; color: var(--text-mute); }
-.text-clear-btn { background: none; border: none; color: var(--primary-color); font-size: 11px; cursor: pointer; padding: 0; text-decoration: underline; }
+/* 文字は小さくても、指で押せるよう高さと左右の余白を取る。 */
+.text-clear-btn { min-height: 32px; background: none; border: none; color: var(--primary-color); font-size: 12px; cursor: pointer; padding: 0 4px; text-decoration: underline; }
 .search-query-error {
   margin: 6px 0 0;
   color: var(--validation-error-color);
@@ -1136,7 +1140,7 @@ input[type="text"][aria-invalid="true"] {
   display: grid !important;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   column-gap: 12px;
-  row-gap: 8px;
+  row-gap: 2px;
   width: 100%;
 }
 #formatsList .checkbox-item {
@@ -1149,7 +1153,8 @@ input[type="text"][aria-invalid="true"] {
 }
 /* 英語の形態名(Originals & Covers など)は列の幅に収まらないので、折り返して枠からはみ出さないようにする。 */
 :root[lang="en"] #formatsList .checkbox-item { white-space: normal; }
-.checkbox-item { display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 13px; margin-bottom: 8px; }
+/* 行そのものを押せる高さ (28px) にし、行の間の余白はその分だけ詰める。 */
+.checkbox-item { display: flex; align-items: center; gap: 8px; min-height: 28px; cursor: pointer; font-size: 13px; margin-bottom: 2px; }
 
 .checkbox-item input[type="checkbox"] {
   -webkit-appearance: none;
@@ -1242,6 +1247,7 @@ input[type="text"][aria-invalid="true"] {
 .date-select {
   flex: 1 1 0;
   min-width: 0;
+  min-height: 32px;
   padding: 4px 6px;
   border: 1px solid var(--border-color);
   border-radius: 6px;
@@ -1251,6 +1257,10 @@ input[type="text"][aria-invalid="true"] {
   font-family: inherit;
   outline: none;
   appearance: none;
+}
+/* 指で操作する端末では 16px にする。iOS の Safari は、16px 未満の選択欄にフォーカスするとページを拡大する。 */
+@media (pointer: coarse) {
+  .date-select { font-size: 16px; }
 }
 .date-select.year { flex: 1.5 1 0; }
 .date-select.month,
@@ -1264,7 +1274,7 @@ input[type="text"][aria-invalid="true"] {
 .date-clear-btn {
   flex-shrink: 0;
   width: 28px;
-  height: 28px;
+  height: 32px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1770,15 +1780,22 @@ body.hide-thumbs .song-card { border-radius: 12px; }
 .overlay { position: fixed; inset: 0; background: var(--overlay-color); z-index: 900; opacity: 0; pointer-events: none; transition: opacity 0.3s; }
 .overlay.show { opacity: 1; pointer-events: auto; }
 
+/*
+ * スイッチの行は全体が label で、項目名を押しても切り替わる。スイッチ自体は 34×18px と小さいので、
+ * 行に押せる高さを持たせる。
+ */
 .menu-item-toggle {
   display: flex;
   justify-content: space-between;
   align-items: center;
   width: 100%;
+  min-height: 32px;
   gap: 8px;
   min-width: 0;
+  cursor: pointer;
 }
-.menu-item-toggle span { flex: 1; min-width: 0; }
+/* 項目名だけを伸ばす。スイッチとつまみも span なので、子孫の span すべてには指定しない。 */
+.menu-item-toggle > span:first-child { flex: 1; min-width: 0; }
 .setting-item-copy {
   display: flex;
   flex-direction: column;

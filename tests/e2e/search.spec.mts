@@ -511,3 +511,71 @@ test("the condition inputs ask the browser not to restore their values", async (
         await expect(checkbox).toHaveAttribute("autocomplete", "off");
     }
 });
+
+test("Enter in the search box shows the results without waiting for the typing pause", async ({ page }) => {
+    const searchBox = page.locator("#searchBox");
+    await searchBox.click();
+    // 入力のたびに少し待ってから検索するので、待ち時間のうちに Enter を押す。
+    await page.evaluate(() => {
+        const input = document.querySelector<HTMLInputElement>("#searchBox");
+        if (!input) throw new Error("The search box is missing");
+        input.value = "Manual Song";
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+        input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+        // 同じ処理の中で読むので、待ち時間は経過していない。
+        document.body.dataset.countRightAfterEnter = document.querySelector("#resultCount")?.textContent ?? "";
+    });
+    expect(await page.evaluate(() => document.body.dataset.countRightAfterEnter)).toBe("1 件がヒット");
+    // マウスが主な入力手段の画面では、続けて入力できるようフォーカスを残す。
+    await expect(searchBox).toBeFocused();
+});
+
+test.describe("on a phone", () => {
+    test.use({ hasTouch: true, isMobile: true, viewport: { width: 412, height: 915 } });
+
+    test("the search box is large enough not to zoom the page, and Enter closes the keyboard", async ({ page }) => {
+        const searchBox = page.locator("#searchBox");
+        // iOS の Safari は、16px 未満の入力欄にフォーカスするとページを拡大する。
+        expect(await searchBox.evaluate((input) => Number.parseFloat(getComputedStyle(input).fontSize))).toBeGreaterThanOrEqual(16);
+        await expect(searchBox).toHaveAttribute("enterkeyhint", "search");
+
+        const hasCoarsePointer = await page.evaluate(() => matchMedia("(pointer: coarse)").matches);
+        test.skip(!hasCoarsePointer, "このブラウザのエミュレーションは、主な入力手段を指として報告しない");
+        await searchBox.tap();
+        await page.keyboard.type("Manual Song");
+        await page.keyboard.press("Enter");
+        await expect(page.locator("#resultCount")).toHaveText("1 件がヒット");
+        // フォーカスを外して画面のキーボードを閉じ、結果を見えるようにする。
+        await expect(searchBox).not.toBeFocused();
+    });
+
+    test("filter and setting controls are tall enough to tap, and a switch toggles from its label", async ({ page }) => {
+        await openSidebar(page);
+        /** 要素の高さを返す。 */
+        const heightOf = async (selector: string) => (await page.locator(selector).boundingBox())?.height ?? 0;
+        // WCAG 2.5.8 の目安の 24px を、行そのものの高さで満たす。
+        expect(await heightOf("#clearBtn")).toBeGreaterThanOrEqual(24);
+        expect(await heightOf("#dateFromYear")).toBeGreaterThanOrEqual(24);
+        expect(await heightOf("label[for=relayOnly]")).toBeGreaterThanOrEqual(24);
+        expect(await page.locator("#dateFromYear").evaluate((select) => Number.parseFloat(getComputedStyle(select).fontSize)))
+            .toBeGreaterThanOrEqual(getRequiredDateSelectFontSize(await page.evaluate(() => matchMedia("(pointer: coarse)").matches)));
+
+        await page.locator("#open-settings-panel").click();
+        expect(await heightOf("label[for=theme-toggle]")).toBeGreaterThanOrEqual(24);
+        // スイッチ自体は小さいので、項目名を押しても切り替わる。
+        await expect(page.locator("#theme-toggle")).not.toBeChecked();
+        await page.locator("#theme-toggle-label").tap();
+        await expect(page.locator("#theme-toggle")).toBeChecked();
+        await expect(page.locator("html")).toHaveClass(/dark-theme/);
+        await page.locator("#theme-toggle-label").tap();
+        await expect(page.locator("#theme-toggle")).not.toBeChecked();
+    });
+});
+
+/**
+ * 日付の選択欄に求める文字の大きさを返す。指で操作する端末では、iOS の拡大を避ける 16px を求める。
+ * @param hasCoarsePointer 主な入力手段が指かどうか
+ */
+function getRequiredDateSelectFontSize(hasCoarsePointer: boolean): number {
+    return hasCoarsePointer ? 16 : 13;
+}

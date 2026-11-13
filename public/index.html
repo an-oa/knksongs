@@ -167,29 +167,30 @@
         <button id="close-settings-sidebar" class="close-btn" aria-label="閉じる" data-i18n-aria-label="close">&times;</button>
       </div>
       <div class="sidebar-subpanel-body">
+        <!-- スイッチは小さいので、行全体を label にして、項目名を押しても切り替わるようにする。 -->
         <section class="sidebar-group">
           <div class="sidebar-group-header">
             <div class="sidebar-group-title" data-i18n="displayGroup">表示</div>
           </div>
           <div class="sidebar-group-body">
             <div class="sidebar-section sidebar-setting-item">
-              <div class="menu-item-toggle">
+              <label class="menu-item-toggle" for="thumbnail-toggle">
                 <span id="thumbnail-toggle-label" data-i18n="thumbnails">サムネイル表示</span>
-                <label class="switch">
+                <span class="switch">
                   <input type="checkbox" id="thumbnail-toggle" autocomplete="off" aria-labelledby="thumbnail-toggle-label">
                   <span class="slider"></span>
-                </label>
-              </div>
+                </span>
+              </label>
             </div>
 
             <div class="sidebar-section sidebar-setting-item">
-              <div class="menu-item-toggle">
+              <label class="menu-item-toggle" for="theme-toggle">
                 <span id="theme-toggle-label" data-i18n="darkMode">ダークモード</span>
-                <label class="switch">
+                <span class="switch">
                   <input type="checkbox" id="theme-toggle" autocomplete="off" aria-labelledby="theme-toggle-label">
                   <span class="slider"></span>
-                </label>
-              </div>
+                </span>
+              </label>
             </div>
 
           </div>
@@ -202,26 +203,26 @@
           <div class="sidebar-group-body">
             <div class="sidebar-section sidebar-setting-item">
               <div class="setting-item-copy">
-                <div class="menu-item-toggle">
+                <label class="menu-item-toggle" for="youtube-nocookie-toggle">
                   <span id="youtube-nocookie-toggle-label" data-i18n="privacyMode">プライバシー強化</span>
-                  <label class="switch">
+                  <span class="switch">
                     <input type="checkbox" id="youtube-nocookie-toggle" autocomplete="off" aria-labelledby="youtube-nocookie-toggle-label" aria-describedby="youtube-nocookie-toggle-help">
                     <span class="slider"></span>
-                  </label>
-                </div>
+                  </span>
+                </label>
                 <div id="youtube-nocookie-toggle-help" class="setting-item-help" data-i18n="privacyModeHelp">youtube-nocookie.com を使用します。</div>
               </div>
             </div>
 
             <div class="sidebar-section sidebar-setting-item">
               <div class="setting-item-copy">
-                <div class="menu-item-toggle">
+                <label class="menu-item-toggle" for="play-archive-to-end-toggle">
                   <span id="play-archive-to-end-toggle-label" data-i18n="playArchiveToEnd">アーカイブ全体を再生</span>
-                  <label class="switch">
+                  <span class="switch">
                     <input type="checkbox" id="play-archive-to-end-toggle" autocomplete="off" aria-labelledby="play-archive-to-end-toggle-label" aria-describedby="play-archive-to-end-toggle-help">
                     <span class="slider"></span>
-                  </label>
-                </div>
+                  </span>
+                </label>
                 <div id="play-archive-to-end-toggle-help" class="setting-item-help" data-i18n="playArchiveToEndHelp">OFFでは曲の終わりで停止します。</div>
               </div>
             </div>
@@ -229,26 +230,26 @@
             <div id="experimental-playback-settings" aria-hidden="true" hidden>
               <div class="sidebar-section sidebar-setting-item">
                 <div class="setting-item-copy">
-                  <div class="menu-item-toggle">
+                  <label class="menu-item-toggle" for="continuous-playback-toggle">
                     <span id="continuous-playback-toggle-label" data-i18n="continuousPlayback">終了後、次の曲を再生</span>
-                    <label class="switch">
+                    <span class="switch">
                       <input type="checkbox" id="continuous-playback-toggle" autocomplete="off" aria-labelledby="continuous-playback-toggle-label">
                       <span class="slider"></span>
-                    </label>
-                  </div>
+                    </span>
+                  </label>
                   <div class="setting-item-help" data-i18n="continuousPlaybackHelp">現在の一覧で、次の曲へ順に進みます。</div>
                 </div>
               </div>
 
               <div class="sidebar-section sidebar-setting-item">
                 <div class="setting-item-copy">
-                  <div class="menu-item-toggle">
+                  <label class="menu-item-toggle" for="loop-playback-toggle">
                     <span id="loop-playback-toggle-label" data-i18n="loopPlayback">リピート再生</span>
-                    <label class="switch">
+                    <span class="switch">
                       <input type="checkbox" id="loop-playback-toggle" autocomplete="off" aria-labelledby="loop-playback-toggle-label">
                       <span class="slider"></span>
-                    </label>
-                  </div>
+                    </span>
+                  </label>
                   <div class="setting-item-help" data-i18n="loopPlaybackHelp">「終了後、次の曲を再生」がOFFでは1曲、ONでは一覧全体を繰り返します。</div>
                 </div>
               </div>
@@ -312,7 +313,7 @@
         <div class="header-search">
           <svg class="header-search-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5 21 21"/></svg>
           <label class="visually-hidden" for="searchBox" data-i18n="searchLabel">曲名・アーティスト名・読みで検索</label>
-          <input type="text" id="searchBox" placeholder="曲名・歌手・読み..." data-i18n-placeholder="searchPlaceholder" aria-errormessage="searchBoxError" autocomplete="off" disabled>
+          <input type="text" id="searchBox" placeholder="曲名・歌手・読み..." data-i18n-placeholder="searchPlaceholder" aria-errormessage="searchBoxError" enterkeyhint="search" autocomplete="off" autocapitalize="none" spellcheck="false" disabled>
         </div>
         <svg class="header-spots header-spots-wide header-spots-wide-right" viewBox="0 0 170 64" aria-hidden="true" focusable="false">
           <path d="M10 0h100c-2 12-10 22-24 25-10 2-14 12-28 13-15 1-27-7-33-18C21 12 14 6 10 0z"/>

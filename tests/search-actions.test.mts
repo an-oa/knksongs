@@ -8,8 +8,9 @@ import type { SiteLanguage } from "../app/lib/site-language.mts";
 /**
  * search actions が委譲する controller を、呼び出し順を記録するモックとして作る。
  * @param calls 呼び出し名を追記する配列
+ * @param options hasScheduledSearch が true なら、予約済みの検索があるものとして前倒しに応じる
  */
-function createRecordingDependencies(calls: string[]): Pick<
+function createRecordingDependencies(calls: string[], options: { hasScheduledSearch?: boolean } = {}): Pick<
     Parameters<typeof createSearchUiActions>[0],
     "searchFiltersController" | "dateFilterController" | "searchCoordinator" | "storageController"
 > {
@@ -31,6 +32,10 @@ function createRecordingDependencies(calls: string[]): Pick<
             cancelScheduledSearch: () => { calls.push("cancel"); },
             scheduleSearch: (scheduleOptions) => {
                 calls.push(`search ${scheduleOptions?.immediate ? "immediate" : "debounced"}`);
+            },
+            flushScheduledSearch: () => {
+                calls.push("flush");
+                return Boolean(options.hasScheduledSearch);
             }
         },
         storageController: {
@@ -72,8 +77,9 @@ function createRecordingActions() {
 
 /**
  * 偽の DOM の入力欄で、イベントを受ける search actions を作る。
+ * @param options hasScheduledSearch が true なら、予約済みの検索があるものとして前倒しに応じる
  */
-function createFormActions() {
+function createFormActions(options: { hasScheduledSearch?: boolean } = {}) {
     const calls: string[] = [];
     const ui = {
         el: {
@@ -92,7 +98,7 @@ function createFormActions() {
     const controller = createSearchUiActions({
         ui,
         search,
-        ...createRecordingDependencies(calls)
+        ...createRecordingDependencies(calls, options)
     });
     controller.setupSearchFormHandlers();
     return { calls, ui, search, controller };
@@ -221,6 +227,54 @@ test("search actions: typing and toggling write the state, then search after a p
         assert.equal(search.conditions.query, "");
         assert.equal(ui.el.searchBox.value, "");
         assert.deepEqual(calls, ["cancel", "reset filters", "reset dates", "clear bookmark"]);
+    } finally {
+        restoreDom();
+    }
+});
+
+test("search actions: Enter runs the waiting search at once and keeps focus where a mouse is the main pointer", () => {
+    const restoreDom = installFakeDom();
+    try {
+        const { calls, ui } = createFormActions({ hasScheduledSearch: true });
+        ui.el.searchBox.focus();
+
+        invokeListener(ui.el.searchBox, "keydown", { key: "a" });
+        assert.deepEqual(calls, []);
+
+        invokeListener(ui.el.searchBox, "keydown", { key: "Enter" });
+        assert.deepEqual(calls, ["flush"]);
+        assert.equal(document.activeElement, ui.el.searchBox);
+    } finally {
+        restoreDom();
+    }
+});
+
+test("search actions: Enter also closes the on-screen keyboard where a finger is the main pointer", () => {
+    const restoreDom = installFakeDom();
+    try {
+        restoreDom.window.matchMedia = (query?: string) => ({ matches: query === "(pointer: coarse)" });
+        const { calls, ui } = createFormActions();
+        ui.el.searchBox.focus();
+
+        invokeListener(ui.el.searchBox, "keydown", { key: "Enter" });
+        assert.deepEqual(calls, ["flush"]);
+        assert.equal(document.activeElement, null, "the search box gives up focus");
+    } finally {
+        restoreDom();
+    }
+});
+
+test("search actions: Enter that confirms a kana conversion is not treated as the end of the input", () => {
+    const restoreDom = installFakeDom();
+    try {
+        restoreDom.window.matchMedia = (query?: string) => ({ matches: query === "(pointer: coarse)" });
+        const { calls, ui } = createFormActions({ hasScheduledSearch: true });
+        ui.el.searchBox.focus();
+
+        invokeListener(ui.el.searchBox, "keydown", { key: "Enter", isComposing: true });
+        invokeListener(ui.el.searchBox, "keydown", { key: "Enter", keyCode: 229 });
+        assert.deepEqual(calls, []);
+        assert.equal(document.activeElement, ui.el.searchBox);
     } finally {
         restoreDom();
     }
