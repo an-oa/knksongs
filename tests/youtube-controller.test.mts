@@ -1094,6 +1094,78 @@ test("youtube: updating another thumbnail preserves the active player's ended ha
     }
 });
 
+test("youtube: an exception in the ended hook is recorded after the thumbnail is restored", async (t) => {
+    const cleanup = installFakeDom();
+    const unhandledRejections: unknown[] = [];
+    const recordUnhandledRejection = (reason: unknown) => { unhandledRejections.push(reason); };
+    process.on("unhandledRejection", recordUnhandledRejection);
+    try {
+        const { ui, controller } = createYoutubeControllerHarness();
+        const players = installYoutubePlayerFixture();
+        const consoleError = t.mock.method(console, "error", () => {});
+        const hookError = new Error("continuation failed");
+        controller.setPlaybackEndedHook(() => { throw hookError; });
+        const { thumbA } = createTwoYoutubePlaybackThumbs(controller);
+        const cardA = thumbA.closest(".song-card");
+        assert.ok(cardA instanceof HTMLElement);
+        cardA.dataset.songKey = "song:a";
+        clickThumbnail(thumbA);
+        await setImmediate();
+        players[0].emitStateChange(globalThis.window.YT.PlayerState.PLAYING);
+
+        players[0].emitStateChange(globalThis.window.YT.PlayerState.ENDED);
+        await setImmediate();
+        await setImmediate();
+
+        // 通知先の例外は、理由の分からない未処理の rejection にせず、どこで起きたかを添えて記録する。
+        assert.deepEqual(consoleError.mock.calls.map((call) => call.arguments), [
+            ["YouTube playback hook failed", hookError]
+        ]);
+        assert.deepEqual(unhandledRejections, []);
+        assert.ok(thumbA.querySelector("img"));
+        assert.equal(ui.playback.activeThumb, null);
+    } finally {
+        process.off("unhandledRejection", recordUnhandledRejection);
+        cleanup();
+    }
+});
+
+test("youtube: an exception in the start-failed hook is recorded after the thumbnail is restored", async (t) => {
+    const cleanup = installFakeDom();
+    const unhandledRejections: unknown[] = [];
+    const recordUnhandledRejection = (reason: unknown) => { unhandledRejections.push(reason); };
+    process.on("unhandledRejection", recordUnhandledRejection);
+    try {
+        const { ui, controller } = createYoutubeControllerHarness();
+        const players = installYoutubePlayerFixture();
+        const consoleError = t.mock.method(console, "error", () => {});
+        const hookError = new Error("continuation failed");
+        controller.setPlaybackStartFailedHook(() => { throw hookError; });
+        const { thumbA } = createTwoYoutubePlaybackThumbs(controller);
+        const cardA = thumbA.closest(".song-card");
+        assert.ok(cardA instanceof HTMLElement);
+        cardA.dataset.songKey = "song:a";
+        const playbackPromise = controller.playThumbnail(thumbA, { videoId: "video1", startSeconds: 5, isVertical: false });
+        await setImmediate();
+
+        // 埋め込みを許可していない動画などで、プレーヤーが再生を始められない。
+        players[0].emitError(150);
+        await setImmediate();
+        await setImmediate();
+
+        assertPlaybackStartStatus(await playbackPromise, YOUTUBE_PLAYBACK_START_STATUS.FAILED);
+        assert.deepEqual(consoleError.mock.calls.map((call) => call.arguments), [
+            ["YouTube playback hook failed", hookError]
+        ]);
+        assert.deepEqual(unhandledRejections, []);
+        assert.ok(thumbA.querySelector("img"));
+        assert.equal(ui.playback.activeThumb, null);
+    } finally {
+        process.off("unhandledRejection", recordUnhandledRejection);
+        cleanup();
+    }
+});
+
 test("youtube: updating another thumbnail keeps playback start pending until PLAYING", async () => {
     const cleanup = installFakeDom();
     const fakeTimeouts = installFakeTimeouts();

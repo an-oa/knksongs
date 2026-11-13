@@ -250,6 +250,15 @@ export function createYoutubeController({ ui, youtube, constants }: YoutubeContr
     }
 
     /**
+     * サムネイルを復元した後に呼ぶ通知 (再生終了・再生開始失敗) の中で起きた例外を記録する。
+     * サムネイルは復元済みで画面は使えるので、止めずに記録だけ残す。
+     * @param error 通知先で起きた例外
+     */
+    function reportPlaybackHookError(error: unknown): void {
+        console.error("YouTube playback hook failed", error);
+    }
+
+    /**
      * 再生終了として扱い、サムネイル復元と継続再生通知を行う。
      */
     function completeEndedPlayback(thumbDiv: HTMLElement, playbackSessionId: number): void {
@@ -279,7 +288,7 @@ export function createYoutubeController({ ui, youtube, constants }: YoutubeContr
                     wasPlaybackStartUnconfirmed
                 }));
             }
-        });
+        }).catch(reportPlaybackHookError);
     }
 
     const postPlaybackAdRestore = createYoutubePostPlaybackAdRestoreManager({
@@ -501,7 +510,7 @@ export function createYoutubeController({ ui, youtube, constants }: YoutubeContr
             event.stopPropagation();
             const activeThumb = playbackUi.activeThumb;
             if (!activeThumb) return;
-            restoreThumbnail(activeThumb, activeThumb.dataset.videoId || "");
+            void restoreThumbnail(activeThumb, activeThumb.dataset.videoId || "");
         });
         return close;
     }
@@ -586,7 +595,7 @@ export function createYoutubeController({ ui, youtube, constants }: YoutubeContr
                 errorCode: options && options.errorCode
             });
             handlePlaybackStartFailed(buildPlaybackStartFailedPayload(failedSongKey, playbackMode, options));
-        });
+        }).catch(reportPlaybackHookError);
     }
 
     /**
@@ -802,7 +811,7 @@ export function createYoutubeController({ ui, youtube, constants }: YoutubeContr
      */
     function setActiveThumb(thumbDiv: HTMLElement, options?: { preserveTransitionGeneration?: boolean }) {
         if (playbackUi.activeThumb && playbackUi.activeThumb !== thumbDiv) {
-            restoreThumbnail(playbackUi.activeThumb, playbackUi.activeThumb.dataset.videoId || "", {
+            void restoreThumbnail(playbackUi.activeThumb, playbackUi.activeThumb.dataset.videoId || "", {
                 preserveTransitionGeneration: Boolean(options && options.preserveTransitionGeneration)
             });
         }
@@ -874,7 +883,7 @@ export function createYoutubeController({ ui, youtube, constants }: YoutubeContr
             playbackMode: getYoutubeThumbnailPlaybackMode(activeThumb),
             sessionId: getYoutubeThumbnailPlaybackSessionId(activeThumb)
         });
-        restoreThumbnail(activeThumb, activeThumb.dataset.videoId || "");
+        void restoreThumbnail(activeThumb, activeThumb.dataset.videoId || "");
     }
 
     /**
@@ -926,7 +935,7 @@ export function createYoutubeController({ ui, youtube, constants }: YoutubeContr
             });
         });
         if (yt && yt.isVertical) {
-            refreshCardLayoutSoon(thumbDiv);
+            void refreshCardLayoutSoon(thumbDiv);
         }
         if (options && options.revealCard) {
             revealYoutubePlaybackCardIfNeeded(thumbDiv);
@@ -993,7 +1002,7 @@ export function createYoutubeController({ ui, youtube, constants }: YoutubeContr
         if (!playButton) return;
         thumbDiv.onclick = () => {
             if (thumbDiv.classList.contains("playing")) return;
-            startEmbeddedPlayback(thumbDiv, yt, {
+            void startEmbeddedPlayback(thumbDiv, yt, {
                 revealCard: true,
                 playbackMode: "manual"
             });

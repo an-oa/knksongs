@@ -195,7 +195,7 @@ export function getSongKeyFromYoutubeThumb(thumbDiv: unknown) {
 export function revealYoutubePlaybackCardIfNeeded(thumbDiv: unknown) {
     const card = isHtmlElement(thumbDiv) ? thumbDiv.closest(".song-card") : null;
     if (!isHtmlElement(card)) return;
-    scheduleScrollElementIntoView(card, {
+    void scheduleScrollElementIntoView(card, {
         topOffset: getHeaderHeight(),
         behavior: "smooth"
     });

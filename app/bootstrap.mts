@@ -219,6 +219,15 @@ function createBookmarkUiCallbacks({
 /**
  * YouTube 再生イベントを描画更新と連続再生セッションへ接続する。
  */
+/**
+ * 次の曲へ進む処理の失敗を記録する。
+ * 再生の終了や開始失敗の通知から始める処理で、完了を待つ呼び出し元がないため、ここで受ける。
+ * @param error 継続再生の途中で起きた例外
+ */
+function reportContinuePlaybackError(error: unknown): void {
+    console.error("continuePlayback failed", error);
+}
+
 function wireYoutubePlaybackHooks({
     youtubeController,
     renderController,
@@ -229,7 +238,7 @@ function wireYoutubePlaybackHooks({
         debugPlayback("script", "continuePlayback requested from playback ended", {
             songKey
         });
-        playbackSessionController.continuePlayback(songKey);
+        playbackSessionController.continuePlayback(songKey).catch(reportContinuePlaybackError);
     });
     youtubeController.setPlaybackStartFailedHook(({ songKey, playbackMode, wasPlaybackStartUnconfirmed }) => {
         debugPlayback("script", "playback start failed hook received", {
@@ -243,7 +252,7 @@ function wireYoutubePlaybackHooks({
             : "continuePlayback requested from manual playback start failure", {
             songKey
         });
-        playbackSessionController.continuePlayback(songKey);
+        playbackSessionController.continuePlayback(songKey).catch(reportContinuePlaybackError);
     });
 }
 

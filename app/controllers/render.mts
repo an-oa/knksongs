@@ -562,7 +562,7 @@ export function createRenderController({
     function scrollSongIntoView(songKey: string) {
         const entry = getCardEntryBySongKey(songKey);
         if (!entry) return;
-        scheduleScrollElementIntoView(entry.card, {
+        void scheduleScrollElementIntoView(entry.card, {
             topOffset: getHeaderHeight(),
             behavior: "smooth",
             force: true
@@ -842,7 +842,7 @@ export function createRenderController({
         const row = data.currentResults[toIndex];
         if (!entry || !row) return;
         entry.dragHandle.focus({ preventScroll: true });
-        scheduleScrollElementIntoView(entry.card, {
+        void scheduleScrollElementIntoView(entry.card, {
             topOffset: getHeaderHeight(),
             behavior: "smooth"
         });

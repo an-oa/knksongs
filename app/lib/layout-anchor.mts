@@ -107,8 +107,9 @@ export function createLayoutRefreshScheduler(
     return function scheduleLayoutRefresh(anchorElement: Element | null | undefined): Promise<boolean> {
         const requestGeneration = ++generation;
         const anchor = createViewportAnchor(anchorElement);
+        // 結果は resolve で返すので、フレーム待ちが返す Promise は受け取らない。
         return new Promise<boolean>((resolve) => {
-            afterAnimationFrames(1, () => {
+            void afterAnimationFrames(1, () => {
                 if (requestGeneration !== generation) {
                     resolve(false);
                     return;
@@ -118,7 +119,7 @@ export function createLayoutRefreshScheduler(
                     refreshLayout();
                 }
                 restoreViewportAnchor(anchor);
-                afterAnimationFrames(1, () => {
+                void afterAnimationFrames(1, () => {
                     if (requestGeneration !== generation) {
                         resolve(false);
                         return;

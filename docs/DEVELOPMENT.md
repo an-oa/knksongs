@@ -135,6 +135,9 @@ flowchart LR
 - すべて `strict: true` です。scripts は Node が型を除去して実行できる構文に限定するため、
   `erasableSyntaxOnly`・`verbatimModuleSyntax` も有効にしています。
 - ESLint は `app/`・`scripts/`・`tests/` の `.mts` に直接適用し、`_build` は対象外です。
+- `app/` と `scripts/` には、型情報を使う `@typescript-eslint/no-floating-promises` も適用します。
+  `await` も `catch` もしていない Promise を検出します。完了を待たない呼び出しには `void` を付けて意図を示し、
+  失敗し得るものは `catch` で記録します。`tests/` は、`node:test` の `test()` などが Promise を返すため対象外です。
 
 ## テスト
 
