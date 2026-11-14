@@ -163,6 +163,49 @@ test("sidebar: escape closes settings panel, removes inert, and restores focus",
     }
 });
 
+test("sidebar: Escape that cancels a kana-kanji conversion closes neither the panel nor the sidebar", () => {
+    const restoreDom = installFakeDom();
+    try {
+        const { ui, openSidebarBtn } = createSidebarUiState();
+        const controller = createSidebarController({
+            ui,
+            ...createSidebarDependencies()
+        });
+
+        controller.setupUIHandlers();
+        invokeListener(openSidebarBtn, "click", {});
+        assert.equal(controller.isOpen(), true);
+
+        // サイドバーの入力欄で変換を取り消す Esc。isComposing を付けるブラウザと、キーコード 229 だけを付けるブラウザがある。
+        let prevented = false;
+        const pressComposingEscape = () => {
+            for (const composing of [{ isComposing: true }, { keyCode: 229 }]) {
+                invokeListener(restoreDom.document, "keydown", {
+                    key: "Escape",
+                    ...composing,
+                    preventDefault() {
+                        prevented = true;
+                    }
+                });
+            }
+        };
+        pressComposingEscape();
+        assert.equal(controller.isOpen(), true);
+
+        invokeListener(ui.el.openSettingsPanelBtn, "click", {});
+        pressComposingEscape();
+        assert.equal(ui.el.settingsSidebarPanel.hidden, false);
+        assert.equal(prevented, false);
+
+        // 変換が終わった後の Esc は、開いているパネルを閉じる。
+        invokeListener(restoreDom.document, "keydown", { key: "Escape", preventDefault() {} });
+        assert.equal(ui.el.settingsSidebarPanel.hidden, true);
+        assert.equal(controller.isOpen(), true);
+    } finally {
+        restoreDom();
+    }
+});
+
 test("sidebar: openBookmarkModal opens sidebar first when closed and passes closeSidebarOnExit", () => {
     const restoreDom = installFakeDom();
     try {

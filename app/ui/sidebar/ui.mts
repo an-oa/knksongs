@@ -1,3 +1,4 @@
+import { isImeComposingKeyEvent } from "../../lib/ime-key-event.mjs";
 import { createSidebarPopoverController } from "./popover.mjs";
 import { createSidebarSubpanelController } from "./subpanel.mjs";
 import type { AppUiState } from "../../state.types.mjs";
@@ -179,7 +180,8 @@ export function createSidebarController(input: SidebarControllerInput) {
             ui.el.closeBookmarkSidebarBtn.addEventListener("click", closeSidebarMenu);
         }
         document.addEventListener("keydown", (event) => {
-            if (event.key === "Escape") {
+            // かな漢字変換を取り消す Esc は、入力の途中なので、パネルもサイドバーも閉じない。
+            if (event.key === "Escape" && !isImeComposingKeyEvent(event)) {
                 if (ui.el.settingsSidebarPanel && !ui.el.settingsSidebarPanel.hidden) {
                     event.preventDefault();
                     closeSettingsPanel({ restoreFocus: true });

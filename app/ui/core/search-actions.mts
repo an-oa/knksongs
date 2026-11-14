@@ -1,5 +1,6 @@
 import type { SearchConditionsState, SiteLanguageUiRuntimeState } from "../../state.types.mjs";
 import { hasCoarsePrimaryPointer, isHtmlElement } from "../../lib/dom-utils.mjs";
+import { isImeComposingKeyEvent } from "../../lib/ime-key-event.mjs";
 import {
     SEARCH_BOOLEAN_FILTER_KEYS,
     getSearchBooleanFilterElement,
@@ -45,9 +46,6 @@ type SearchActionsStorageController = {
 
 /** 検索窓で押したキーのイベントのうち、入力の確定の判定に使う部分。 */
 type SearchBoxKeyDownEvent = Pick<KeyboardEvent, "key" | "isComposing" | "keyCode">;
-
-/** かな漢字変換の途中のキー操作に付くキーコード。isComposing を付けないブラウザがあるため併せて見る。 */
-const IME_PROCESSING_KEY_CODE = 229;
 
 type SearchUiActionsInput = {
     ui: { el: {
@@ -223,7 +221,7 @@ export function createSearchUiActions({
      * @param searchBox 検索窓
      */
     function handleSearchBoxKeyDown(event: SearchBoxKeyDownEvent, searchBox: HTMLElement): void {
-        if (event.key !== "Enter" || event.isComposing || event.keyCode === IME_PROCESSING_KEY_CODE) return;
+        if (event.key !== "Enter" || isImeComposingKeyEvent(event)) return;
         searchCoordinator.flushScheduledSearch();
         if (hasCoarsePrimaryPointer()) searchBox.blur();
     }

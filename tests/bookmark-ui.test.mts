@@ -624,6 +624,20 @@ test("bookmark ui: create form shows inline error, clears it on input, and creat
         assert.equal(ui.el.bookmarkPanelError.hidden, true);
 
         let prevented = false;
+        // かな漢字変換を確定する Enter では作成しない。isComposing を付けるブラウザと、キーコード 229 だけを付けるブラウザがある。
+        for (const composing of [{ isComposing: true }, { keyCode: 229 }]) {
+            invokeListener(ui.el.bookmarkPanelNewName, "keydown", {
+                key: "Enter",
+                ...composing,
+                preventDefault() {
+                    prevented = true;
+                }
+            });
+        }
+        assert.equal(prevented, false);
+        assert.deepEqual(calls.createBookmarkArgs, []);
+        assert.equal(ui.el.bookmarkPanelNewName.value, "Focus Songs");
+
         invokeListener(ui.el.bookmarkPanelNewName, "keydown", {
             key: "Enter",
             preventDefault() {

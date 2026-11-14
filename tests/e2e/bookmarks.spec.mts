@@ -372,6 +372,32 @@ test("Escape that cancels a kana-kanji conversion keeps the rename dialog and th
     await expect(getBookmarkItem(page, "Morning Set")).toBeVisible();
 });
 
+test("keys that confirm or cancel a kana-kanji conversion in the new bookmark name do not create it or close the panel", async ({ page, browserName }) => {
+    // かな漢字変換の途中の状態は、Chromium の開発者向けの通信 (CDP) でしか作れない。
+    test.skip(browserName !== "chromium", "an IME conversion can only be simulated through CDP");
+    await openBookmarkPanel(page);
+    const nameInput = page.locator("#bookmark-panel-new-name");
+    const ime = await page.context().newCDPSession(page);
+
+    // 変換を確定する Enter では、まだ作成しない。
+    await nameInput.focus();
+    await ime.send("Input.imeSetComposition", { text: "よる", selectionStart: 2, selectionEnd: 2 });
+    await page.keyboard.press("Enter");
+    await expect(page.locator(".bookmark-item")).toHaveCount(0);
+
+    // 変換を取り消す Esc では、ブックマークパネルを閉じない。
+    await page.keyboard.press("Escape");
+    await expect(page.locator("#bookmark-sidebar-panel")).toBeVisible();
+    await expect(nameInput).toBeFocused();
+
+    // 変換を確定した後の Enter で作成する。
+    await ime.send("Input.insertText", { text: "夜" });
+    await expect(nameInput).toHaveValue("夜");
+    await page.keyboard.press("Enter");
+    await expect(getBookmarkItem(page, "夜")).toBeVisible();
+    await expect(page.locator("#bookmark-sidebar-panel")).toBeVisible();
+});
+
 test("a failed bookmark action is reported in a toast instead of a blocking alert", async ({ page }) => {
     await seedBookmarks(page, { p_1: { name: "Morning Set", songs: [], createdAt: 1 } });
     const nativeDialogs: string[] = [];

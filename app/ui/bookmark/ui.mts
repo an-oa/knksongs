@@ -5,6 +5,7 @@ import { createBookmarkPromptDialogController } from "./prompt-dialog.mjs";
 import type { BookmarkPromptDialogResult, OpenBookmarkPromptDialog } from "./prompt-dialog.mjs";
 import { createSidebarSubpanelController } from "../sidebar/subpanel.mjs";
 import { isHtmlElement } from "../../lib/dom-utils.mjs";
+import { isImeComposingKeyEvent } from "../../lib/ime-key-event.mjs";
 import { getBookmarkText } from "./text.mjs";
 import type { LocalizedText } from "./text.mjs";
 import type { SiteLanguage } from "../../lib/site-language.mjs";
@@ -486,7 +487,8 @@ export function createBookmarkUiController({ data, ui, callbacks }: BookmarkUiCo
         if (nameInput) {
             nameInput.addEventListener("input", clearBookmarkPanelError);
             nameInput.addEventListener("keydown", (e) => {
-                if (e.key === "Enter") {
+                // かな漢字変換を確定する Enter は、入力の途中なので作成しない。
+                if (e.key === "Enter" && !isImeComposingKeyEvent(e)) {
                     e.preventDefault();
                     createBookmarkFromPanel();
                 }
