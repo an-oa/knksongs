@@ -80,9 +80,13 @@ function startCardTextMarquee(target: CardTextMarqueeTarget): void {
 
 /**
  * 文字を流す動きを止め、先頭を見せて省略記号の表示に戻す。流していないときは何もしない。
+ * 流しているかは、流している間だけ外側の要素に付くクラスで見分ける。
+ * getAnimations() は未反映のスタイルをその場でブラウザに計算させるので、流していない名前では呼ばない。
+ * 言語の切り替えは表示中の全カードの名前を書き換えるため、名前ごとに呼ぶと、カードの枚数の 2 乗で遅くなる。
  * @param target 曲名またはアーティスト名
  */
 export function stopCardTextMarquee(target: CardTextMarqueeTarget): void {
+    if (!target.box.classList.contains(CARD_TEXT_MARQUEE_CLASS)) return;
     if (typeof target.text.getAnimations === "function") {
         for (const animation of target.text.getAnimations()) {
             if (animation.id === CARD_TEXT_MARQUEE_ANIMATION_ID) animation.cancel();
