@@ -86,6 +86,8 @@ test("bookmark prompt dialog: an input request opens with the current value sele
         assert.equal(parts.input.parentElement?.hidden, false);
         assert.equal(parts.status.hidden, true);
         assert.equal(document.activeElement, parts.input);
+        // 最初のフォーカスは autofocus でも示す。WebKit は、別のダイアログの上に重ねて開き直したとき、focus() で移したフォーカスを奪う。
+        assert.deepEqual([parts.input.autofocus, parts.cancelBtn.autofocus, parts.submitBtn.autofocus], [true, false, false]);
 
         parts.input.value = "Renamed";
         parts.submitBtn.click();
@@ -251,16 +253,61 @@ test("bookmark prompt dialog: a confirmation has no field and puts focus on the 
         assert.equal(parts.message.textContent, "ブックマーク「First」を削除しますか？");
         assert.equal(parts.submitBtn.parentElement?.classList.contains("bookmark-transfer-submit-group-caution"), true);
         assert.equal(document.activeElement, parts.cancelBtn);
+        assert.deepEqual([parts.input.autofocus, parts.cancelBtn.autofocus, parts.submitBtn.autofocus], [false, true, false]);
         parts.submitBtn.click();
         assert.equal(await destructive, true);
 
         const plain = controller.open(buildConfirmRequest(false), "ja");
         assert.equal(parts.submitBtn.parentElement?.classList.contains("bookmark-transfer-submit-group-caution"), false);
         assert.equal(document.activeElement, parts.submitBtn);
+        assert.deepEqual([parts.input.autofocus, parts.cancelBtn.autofocus, parts.submitBtn.autofocus], [false, false, true]);
         parts.cancelBtn.click();
         assert.equal(await plain, false);
     } finally {
         restoreDom();
+    }
+});
+
+test("bookmark prompt dialog: a dialog under it cannot be reached while it is stacked, and is usable again before it closes", async () => {
+    const dom = installFakeDom();
+    try {
+        const controller = createBookmarkPromptDialogController();
+        // 背面に開いているインポートのダイアログと、開いているがモーダルではないダイアログ。
+        const lowerModal = Object.assign(document.createElement("dialog"), { open: true, matches: (selector: string) => selector === ":modal" });
+        const nonModal = Object.assign(document.createElement("dialog"), { open: true, matches: () => false });
+        const openDialogs: HTMLElement[] = [lowerModal, nonModal];
+        // 偽の document の一覧検索は空を返すので、開いているダイアログを返すように差し替える。
+        dom.document.querySelectorAll = ((selector: string) => (selector === "dialog[open]" ? openDialogs : [])) as never;
+
+        for (const choose of ["submit", "cancel"] as const) {
+            const closed = controller.open(buildConfirmRequest(true), "ja");
+            const parts = getDialogParts();
+            openDialogs.push(parts.dialog);
+            assert.equal(lowerModal.inert, true, "WebKit lets Tab reach the dialog under a stacked modal");
+            assert.notEqual(nonModal.inert, true);
+            assert.notEqual(parts.dialog.inert, true, "the dialog on top stays usable");
+
+            // ブラウザは閉じるときに、開く前の要素 (背面のダイアログの中) へフォーカスを戻す。inert のままだと戻せない。
+            let lowerInertWhenClosing: boolean | undefined;
+            const close = parts.dialog.close.bind(parts.dialog);
+            parts.dialog.close = () => {
+                lowerInertWhenClosing = lowerModal.inert;
+                close();
+            };
+            (choose === "submit" ? parts.submitBtn : parts.cancelBtn).click();
+            assert.equal(await closed, choose === "submit");
+            assert.equal(lowerInertWhenClosing, false);
+            assert.equal(lowerModal.inert, false);
+            openDialogs.pop();
+        }
+
+        // 背面に別のダイアログがなければ、何も変えない。
+        openDialogs.length = 0;
+        const alone = controller.open(buildConfirmRequest(false), "ja");
+        getDialogParts().cancelBtn.click();
+        assert.equal(await alone, false);
+    } finally {
+        dom();
     }
 });
 

@@ -60,6 +60,8 @@ type DialogSession = {
     language: SiteLanguage;
     /** 決定操作が失敗した理由。開いたまま決定ボタンの上に出す。 */
     failureMessage: LocalizedText | null;
+    /** このダイアログを重ねている間、操作できなくした背面のダイアログ。閉じるときに戻す。 */
+    blockedDialogs: HTMLDialogElement[];
     resolve: (submitted: boolean) => void;
 };
 
@@ -207,14 +209,32 @@ export function createBookmarkPromptDialogController() {
     }
 
     /**
+     * 背面に開いているモーダルのダイアログを、このダイアログを閉じるまで操作できなくする。
+     * 本来はブラウザが、最後に開いたモーダル以外を操作できなくする。ところが WebKit は、重ねたモーダルの
+     * 下にあるダイアログを Tab の移動先から外さず、置換の確認から背面のインポートのダイアログへフォーカスが抜けて、
+     * 背面だけを閉じられてしまう (Playwright の WebKit で確認)。そのため、重ねている間だけ inert を付ける。
+     * @param own このダイアログ
+     * @returns inert を付けたダイアログ。閉じるときに外す
+     */
+    function blockLowerDialogs(own: HTMLDialogElement): HTMLDialogElement[] {
+        const blocked = Array.from(document.querySelectorAll<HTMLDialogElement>("dialog[open]")).filter(
+            (dialog) => dialog !== own && !dialog.inert && dialog.matches(":modal")
+        );
+        for (const dialog of blocked) dialog.inert = true;
+        return blocked;
+    }
+
+    /**
      * ダイアログを閉じて呼び出し元へ結果を返す。
      * フォーカスは、ブラウザが開く前の要素へ戻す。その要素が作り直されている場合は、呼び出し元が戻す。
+     * 背面のダイアログは、閉じる前に操作できる状態へ戻す。inert のままだと、ブラウザがその中の要素へフォーカスを戻せない。
      * @param submitted 決定して閉じたら true、取り消したら false
      */
     function finish(submitted: boolean): void {
         const current = session;
         if (!current || !parts) return;
         session = null;
+        for (const dialog of current.blockedDialogs) dialog.inert = false;
         if (parts.dialog.open) parts.dialog.close();
         current.resolve(submitted);
     }
@@ -238,16 +258,20 @@ export function createBookmarkPromptDialogController() {
         else current.input.removeAttribute("maxlength");
 
         return new Promise<boolean>((resolve) => {
-            session = { request, buildRequest, language, failureMessage: null, resolve };
+            const blockedDialogs = blockLowerDialogs(current.dialog);
+            session = { request, buildRequest, language, failureMessage: null, blockedDialogs, resolve };
             renderState();
-            current.dialog.showModal();
-            if (request.input) {
-                current.input.focus();
-                current.input.select();
-            } else {
-                // 今ある内容を消す操作では、Enter をそのまま押しても実行しないよう、取り消しへフォーカスを置く。
-                (request.isDestructive ? current.cancelBtn : current.submitBtn).focus();
+            // 今ある内容を消す操作では、Enter をそのまま押しても実行しないよう、取り消しへフォーカスを置く。
+            const initialFocus = request.input ? current.input : request.isDestructive ? current.cancelBtn : current.submitBtn;
+            // 最初にフォーカスする要素は autofocus で示し、ブラウザが開く処理の中で移す。開いた後に focus() で移すだけでは、
+            // WebKit は、別のダイアログの上に重ねて 2 回目以降に開いたとき、移したフォーカスをダイアログそのものへ奪う
+            // (Playwright の WebKit で確認)。
+            for (const control of [current.input, current.cancelBtn, current.submitBtn]) {
+                control.autofocus = control === initialFocus;
             }
+            current.dialog.showModal();
+            initialFocus.focus();
+            if (request.input) current.input.select();
         });
     }
 

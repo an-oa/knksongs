@@ -335,6 +335,8 @@ test("renaming and deleting use in-page dialogs that Escape closes without closi
     await page.keyboard.press("Enter");
     const deleteDialog = page.getByRole("dialog", { name: "ブックマークの削除" });
     await expect(deleteDialog).toBeVisible();
+    // 同じダイアログを開き直しても、削除では最初のフォーカスを取り消しに置く。
+    await expect(deleteDialog.getByRole("button", { name: "キャンセル" })).toBeFocused();
     await page.keyboard.press("Escape");
     await expect(deleteDialog).toBeHidden();
     await expect(page.locator("#bookmark-sidebar-panel")).toBeVisible();
@@ -710,6 +712,70 @@ test("a failed import keeps the dialog open so the same choice can be retried", 
 
     await expect(dialog).toBeHidden();
     await expectBookmarkToast(page, "ブックマークを1件追加しました。");
+    expect(await readStoredBookmarks(page)).toEqual({
+        version: 3,
+        bookmarks: { ...KEPT_BOOKMARKS, ...FRIEND_FILE.bookmarks }
+    });
+});
+
+test("keyboard focus stays in the replace confirmation, and declining it by keyboard lets the import continue", async ({ page }) => {
+    await seedBookmarks(page, KEPT_BOOKMARKS);
+    await openBookmarkPanel(page);
+    await page.locator("#bookmark-panel-import-input").setInputFiles({
+        name: "friend.json",
+        mimeType: "application/json",
+        buffer: Buffer.from(JSON.stringify(FRIEND_FILE))
+    });
+    const dialog = page.getByRole("dialog", { name: "ブックマークのインポート" });
+    const menuButton = dialog.getByRole("button", { name: "取り込み方を選ぶ" });
+    const replaceButton = dialog.getByRole("button", { name: "置換", exact: true });
+    await menuButton.click();
+    await dialog.getByRole("menuitemradio", { name: /ブックマーク全体を置換/ }).click();
+    await replaceButton.focus();
+    await page.keyboard.press("Enter");
+
+    const confirmDialog = page.getByRole("dialog", { name: "ブックマーク全体の置換" });
+    const confirmCancel = confirmDialog.getByRole("button", { name: "キャンセル" });
+    await expect(confirmCancel).toBeFocused();
+    /** フォーカスが、背面のインポートのダイアログの中にあるかを返す。 */
+    const isFocusBehindConfirmation = () => page.evaluate(() => Boolean(document.activeElement?.closest("#bookmark-transfer-dialog")));
+
+    // Tab と Shift+Tab で何周しても、背面のインポートのダイアログへは入らない。
+    // WebKit は、重ねたモーダルの下のダイアログへ Tab を通し、背面だけを閉じられてしまっていた。
+    for (const key of ["Tab", "Shift+Tab"]) {
+        for (let press = 0; press < 6; press += 1) {
+            await page.keyboard.press(key);
+            expect(await isFocusBehindConfirmation(), `${key} × ${press + 1}`).toBe(false);
+        }
+    }
+
+    // 一周した後の Enter は、確認だけを取り消す。フォーカスは、確認を開いた「置換」へ戻る。
+    // 背面のダイアログを inert のまま閉じると、ブラウザがここへフォーカスを戻せない。
+    await pressTabUntilFocused(page, confirmCancel);
+    await page.keyboard.press("Enter");
+    await expect(confirmDialog).toBeHidden();
+    await expect(dialog).toBeVisible();
+    await expect(replaceButton).toBeFocused();
+    expect(await readStoredBookmarks(page)).toEqual({ version: 3, bookmarks: KEPT_BOOKMARKS });
+
+    // Esc でも、確認だけを閉じる。重ねて開き直しても、最初のフォーカスは取り消しに置く。
+    // WebKit は、重ねて 2 回目以降に開いたとき、開いた後に移したフォーカスをダイアログそのものへ奪っていた。
+    await page.keyboard.press("Enter");
+    await expect(confirmCancel).toBeFocused();
+    for (let press = 0; press < 3; press += 1) await page.keyboard.press("Tab");
+    expect(await isFocusBehindConfirmation()).toBe(false);
+    await page.keyboard.press("Escape");
+    await expect(confirmDialog).toBeHidden();
+    await expect(dialog).toBeVisible();
+    await expect(replaceButton).toBeFocused();
+    await expect(page.locator("#bookmark-sidebar-panel")).toBeVisible();
+    expect(await readStoredBookmarks(page)).toEqual({ version: 3, bookmarks: KEPT_BOOKMARKS });
+
+    // 取り消した後も、取り込み方を戻せば、続けて選んだブックマークを取り込める。
+    await menuButton.click();
+    await dialog.getByRole("menuitemradio", { name: /選んだブックマークを取り込む/ }).click();
+    await dialog.getByRole("button", { name: "インポート", exact: true }).click();
+    await expect(dialog).toBeHidden();
     expect(await readStoredBookmarks(page)).toEqual({
         version: 3,
         bookmarks: { ...KEPT_BOOKMARKS, ...FRIEND_FILE.bookmarks }
