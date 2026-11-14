@@ -2,8 +2,9 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <!-- テーマと言語の初期化だけを SHA-256 で許可し、YouTube API の script は必要な path に限定する。 -->
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-dVbQd0MMdvnWvuB2DHfgdemsr4Cg2QL1JvqSzHdCE5c=' https://www.youtube.com/iframe_api https://www.youtube.com/s/player/; script-src-attr 'none'; style-src 'self'; img-src 'self' https://i.ytimg.com; connect-src 'self' https://docs.google.com https://*.googleusercontent.com; frame-src https://www.youtube.com/embed/ https://www.youtube-nocookie.com/embed/; object-src 'none'; base-uri 'none'; form-action 'none'">
+  <!-- 埋め込みスクリプト (テーマと言語の初期化、入口の script を読み込めなかったときの表示) だけを SHA-256 で許可し、
+       YouTube API の script は必要な path に限定する。 -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-YOqdzavZ/sFP/UEFJLATiBqWN5vjlpsxUIPl1+OgAc0=' https://www.youtube.com/iframe_api https://www.youtube.com/s/player/; script-src-attr 'none'; style-src 'self'; img-src 'self' https://i.ytimg.com; connect-src 'self' https://docs.google.com https://*.googleusercontent.com; frame-src https://www.youtube.com/embed/ https://www.youtube-nocookie.com/embed/; object-src 'none'; base-uri 'none'; form-action 'none'">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title data-i18n="siteTitle">鐘輝かう 歌サーチ</title>
   <!-- 検索結果に出る説明文。共有カードの説明 (og:description) と同じ文にする。 -->
@@ -83,6 +84,43 @@
         root.classList.add('i18n-pending');
         setTimeout(function () { root.classList.remove('i18n-pending'); }, 4000);
       }
+      // アプリの入口の script (startup) か、その依存を読み込めなかったときは、アプリのコードが 1 行も動かない。
+      // 何も出さないと「接続中...」のまま止まるので、ここで失敗と再読み込みのボタンを出す。
+      // 入口が動いた後の失敗は app/startup-error.mts が出す。見た目と文言はそれと同じにし、
+      // tests/inline-startup-error-script.test.mts で一致を確かめる。
+      window.addEventListener('error', function (event) {
+        var script = event.target;
+        if (!script || script.tagName !== 'SCRIPT' || script.type !== 'module') return;
+        var text = root.lang === 'en'
+          ? ['Failed to load', 'The page could not be loaded. Check your connection and reload the page.', 'Reload']
+          : ['読込エラー', 'ページを読み込めませんでした。通信状況を確認して、ページを再読み込みしてください。', '再読み込み'];
+        root.classList.remove('i18n-pending');
+        var count = document.getElementById('resultCount');
+        if (count) count.textContent = text[0];
+        var list = document.getElementById('resultList');
+        if (list) {
+          var item = document.createElement('li');
+          item.className = 'result-empty-state result-load-error';
+          var detail = document.createElement('p');
+          detail.className = 'result-empty-state-title';
+          detail.textContent = text[1];
+          var reload = document.createElement('button');
+          reload.type = 'button';
+          reload.className = 'result-reload-btn';
+          reload.textContent = text[2];
+          reload.addEventListener('click', function () { location.reload(); });
+          item.append(detail, reload);
+          list.replaceChildren(item);
+        }
+        // WebKit は先読みに失敗した module を覚えていて、読み込み直しても取りに行かない。
+        // 取り直しておくと (失敗しても) 覚えていた失敗を捨てるので、次に読み込み直した時には取りに行く。
+        try {
+          var preloads = document.querySelectorAll('link[rel="modulepreload"]');
+          for (var j = 0; j < preloads.length; j++) {
+            fetch(preloads[j].href, { cache: 'reload' }).catch(function () {});
+          }
+        } catch (e) {}
+      }, true);
     })();
   </script>
   <link rel="stylesheet" href="styles.css">

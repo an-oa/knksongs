@@ -628,6 +628,12 @@ IndexedDB保存：
   - UI のコードを使えない状況なので、`app/startup-error.mts` が要素の id と自前の文言だけで表示する。
     文言は辞書と同じにし、単体テストで一致を確かめる。辞書を読むと、最初に読むコードが増えて曲データの取得開始が遅れる
   - 英語で開いたときに中身を隠す印（`i18n-pending`）は、文言を置き換える UI のコードが来ないので、ここで外す
+- 入口の script（`startup`）か、それが import する共有のコードを読み込めなかったときは、アプリのコードが 1 行も動かないので、
+  `index.html` の埋め込みスクリプトが同じ見た目で失敗を出す。`<script type="module">` に届く `error` イベントを
+  `window` で受け、件数表示と結果一覧を書き換える
+  - 埋め込みスクリプトは module を読めないので、文言と要素の構造を書き写している。
+    `tests/inline-startup-error-script.test.mts` で、`app/startup-error.mts` が出す表示と一致することを確かめる
+  - 先読みした module の取り直し（次項）も、失敗を出した時に一度行う。ボタンは、取り直しを待たずに読み込み直す
 - 「再読み込み」は、ページを読み込み直す前に、HTML が先読み（`modulepreload`）を指定している module を、
   キャッシュを使わずに取り直す（最長3秒）。WebKit は、先読みに失敗した module を覚えていて、読み込み直しても
   取りに行かないため、そのまま読み込み直すと、通信が戻っていても同じ失敗を繰り返す
@@ -635,8 +641,8 @@ IndexedDB保存：
   同じ取り直しを裏で一度行う。取り直しそのものが失敗しても、途中で読み込み直されても、WebKit は覚えていた失敗を捨て、
   次の読み込み直しでは取りに行く。そのため、通信の復帰を待って取り直し直す仕組みは持たない
   - この挙動は Playwright の WebKit で確かめたもので、実機の Safari では確かめていない
-  - Playwright の通信の差し替え（`page.route`）で失敗させても WebKit は失敗を覚えないので、
-    E2E は実際に 503 を返すサーバー（`tests/e2e/support/failing-site-server.mts`）で確かめる
+  - UI のコードの取得を Playwright の通信の差し替え（`page.route`）で失敗させても、WebKit は失敗を覚えない。
+    E2E は実際に 503 を返すサーバー（`tests/e2e/support/failing-site-server.mts`）でも確かめる
 
 ## 制約・注意点
 - IntersectionObserver を前提とし、非対応ブラウザは対象外とする。結果一覧の段階表示に使い、代替の監視は持たない
@@ -653,7 +659,8 @@ IndexedDB保存：
 
 ## セキュリティ
 - `public/index.html` のmeta CSPでscript・画像・iframe・通信の取得元を制限する
-- 初回描画前のテーマ初期化はインラインのままSHA-256で限定して許可する。変更時はCSPのhashも更新し、
+- 初回描画前のテーマ・言語の初期化と、入口の script を読み込めなかったときの表示は、1 つの埋め込みスクリプトにまとめ、
+  インラインのままSHA-256で限定して許可する。変更時はCSPのhashも更新し、
   `tests/content-security-policy.test.mts` でhashの一致を検証する
 - 外部取得元として許可するのは、YouTube APIのloaderとwidget用path、2種類のembed host、サムネイルhost、
   Google SheetsとCSVのredirect先だけとする
