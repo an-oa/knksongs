@@ -79,8 +79,7 @@ export default defineConfig([
     {
         // 型情報を使う規則。await も catch もしていない Promise を検出する。
         // 完了を待たない呼び出しは void を付けて意図を示し、失敗し得るものは catch で記録する。
-        // tests は対象にしない。node:test の test() や偽の DOM の補助関数が Promise を返すため、検出の大半が意図どおりの呼び出しになる。
-        files: ["app/**/*.mts", "scripts/**/*.mts"],
+        files: ["app/**/*.mts", "scripts/**/*.mts", "tests/**/*.mts"],
         languageOptions: {
             parserOptions: {
                 projectService: true,
@@ -89,6 +88,18 @@ export default defineConfig([
         },
         rules: {
             "@typescript-eslint/no-floating-promises": "error"
+        }
+    },
+    {
+        // node:test の test() は Promise を返すが、完了は test runner が待つので、呼び出しごとに待たなくてよい。
+        files: ["tests/**/*.mts"],
+        rules: {
+            "@typescript-eslint/no-floating-promises": [
+                "error",
+                {
+                    allowForKnownSafeCalls: [{ from: "package", name: "test", package: "node:test" }]
+                }
+            ]
         }
     }
 ]);

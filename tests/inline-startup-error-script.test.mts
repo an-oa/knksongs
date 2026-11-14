@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import vm from "node:vm";
 import { showStartupLoadError } from "../app/startup-error.mts";
-import { installFakeDom } from "./test-helpers.mts";
+import { installFakeDom, invokeListener } from "./test-helpers.mts";
 
 type FakeDom = ReturnType<typeof installFakeDom>;
 type FakeElement = ReturnType<FakeDom["document"]["createElement"]>;
@@ -66,7 +66,7 @@ function runInlineScript(source: string, dom: FakeDom, language: "ja" | "en") {
 function dispatchLoadError(dom: FakeDom, tagName: string, type: string) {
     const target = dom.document.createElement(tagName);
     target.type = type;
-    void dom.window.dispatchListeners("error", { target });
+    invokeListener(dom.window, "error", { target });
 }
 
 /**
@@ -173,7 +173,7 @@ test("inline startup error script: other load errors are left to the app", async
         dispatchLoadError(dom, "script", "");
         dispatchLoadError(dom, "img", "");
         // 実行中の例外では、要素ではなく window が対象になる。
-        void dom.window.dispatchListeners("error", { target: null });
+        invokeListener(dom.window, "error", { target: null });
 
         assert.equal(page.resultCount.textContent, "接続中...");
         assert.equal(page.resultList.children.length, 0);

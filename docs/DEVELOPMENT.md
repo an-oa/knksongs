@@ -135,9 +135,9 @@ flowchart LR
 - すべて `strict: true` です。scripts は Node が型を除去して実行できる構文に限定するため、
   `erasableSyntaxOnly`・`verbatimModuleSyntax` も有効にしています。
 - ESLint は `app/`・`scripts/`・`tests/` の `.mts` に直接適用し、`_build` は対象外です。
-- `app/` と `scripts/` には、型情報を使う `@typescript-eslint/no-floating-promises` も適用します。
+- 型情報を使う `@typescript-eslint/no-floating-promises` も適用します。
   `await` も `catch` もしていない Promise を検出します。完了を待たない呼び出しには `void` を付けて意図を示し、
-  失敗し得るものは `catch` で記録します。`tests/` は、`node:test` の `test()` などが Promise を返すため対象外です。
+  失敗し得るものは `catch` で記録します。`tests/` では、完了を test runner が待つ `node:test` の `test()` だけを除外しています。
 
 ## テスト
 
@@ -149,6 +149,9 @@ flowchart LR
 
 - `npm run test:unit` は、scripts のテストが生成 module を読むため事前に `build:ts` を実行します。
   `tsx` は型検査をしないため、`npm run typecheck` も併せて実行してください。
+- DOM モックに登録された listener は、`invokeListener`（同期専用）か `invokeAsyncListener`（非同期。`await` する）で呼びます。
+  `invokeListener` は、listener が Promise を返すとその場で失敗します。完了を待たずに先へ進むと、
+  「〜されていない」ことを確かめる assert が、処理の途中で通ってしまうためです。
 - テストファイル名は対象 module に揃えています（例: `app/lib/search-query.mts` → `tests/search-query.test.mts`）。
   一覧は `ls tests/` で確認してください。
 - E2E では `_site` を `python3 -m http.server 4173` でローカル配信し、曲データと YouTube Iframe API はモックに差し替えます。

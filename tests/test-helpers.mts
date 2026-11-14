@@ -658,15 +658,58 @@ export function makeRenderRow(input: Pick<Song, "songKey"> & Partial<Pick<Song,
     });
 }
 
-/** listener の存在を確認して呼び、非同期 handler の完了も待てるよう戻り値を返す。 */
+/**
+ * listener の存在を確認して、登録順に呼ぶ。
+ * @param element イベントを届ける DOM モック
+ * @param type イベントの種類
+ * @param event listener へ渡すイベント
+ * @returns 非同期の listener があれば、そのすべての完了。すべて同期なら undefined
+ */
+function dispatchRequiredListeners(
+    element: Element | FakeEventTarget | null | undefined,
+    type: string,
+    event: FakeEvent
+): void | Promise<void> {
+    assert.ok(element instanceof FakeEventTarget, "event target is not a DOM mock");
+    assert.ok(element._events.get(type)?.size, `${type} listener is missing`);
+    return element.dispatchListeners(type, event);
+}
+
+/**
+ * 同期の listener を呼ぶ。listener が Promise を返したら、その場で失敗にする。
+ * 完了を待たずに次の確認へ進むと、「〜されていない」の確認が処理の途中で通ってしまうため。
+ * 非同期の listener には invokeAsyncListener を使い、完了を待つ。
+ * @param element イベントを届ける DOM モック
+ * @param type イベントの種類
+ * @param event listener へ渡すイベント
+ */
 export function invokeListener(
     element: Element | FakeEventTarget | null | undefined,
     type: string,
     event: FakeEvent
-) {
-    assert.ok(element instanceof FakeEventTarget, "event target is not a DOM mock");
-    assert.ok(element._events.get(type)?.size, `${type} listener is missing`);
-    return element.dispatchListeners(type, event);
+): void {
+    const pending = dispatchRequiredListeners(element, type, event);
+    assert.equal(
+        pending,
+        undefined,
+        `${type} listener is asynchronous; use "await invokeAsyncListener(...)" so that the test waits for it`
+    );
+}
+
+/**
+ * 非同期の listener を呼び、Promise を返した listener すべての完了を待てるようにする。
+ * listener は呼び出した時点で同期的に始まり、返す Promise はその完了を表す。
+ * @param element イベントを届ける DOM モック
+ * @param type イベントの種類
+ * @param event listener へ渡すイベント
+ * @returns Promise を返した listener すべての完了
+ */
+export async function invokeAsyncListener(
+    element: Element | FakeEventTarget | null | undefined,
+    type: string,
+    event: FakeEvent
+): Promise<void> {
+    await dispatchRequiredListeners(element, type, event);
 }
 
 /** setTimeout/clearTimeout を記録型 fake に差し替える。 */

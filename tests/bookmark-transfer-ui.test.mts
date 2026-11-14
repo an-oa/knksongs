@@ -8,7 +8,7 @@ import type { BookmarkTransferDialogRequest } from "../app/ui/bookmark/transfer-
 import type { BookmarkPromptDialogRequest } from "../app/ui/bookmark/prompt-dialog.mts";
 import type { AppDataState } from "../app/state.types.mts";
 import type { SiteLanguage } from "../app/lib/site-language.mts";
-import { installFakeDom, invokeListener } from "./test-helpers.mts";
+import { installFakeDom, invokeAsyncListener, invokeListener } from "./test-helpers.mts";
 
 /** 偽のダイアログで行う操作。submit は選んだ ID で決定し、allItems は ▼ で全体を対象にして決定し、cancel は取り消す。 */
 type TransferDialogChoice =
@@ -187,7 +187,7 @@ test("bookmark transfer ui: export dialog lists bookmarks in creation order and 
         });
         controller.setupTransferHandlers();
 
-        await invokeListener(ui.el.bookmarkPanelExportBtn, "click", {});
+        await invokeAsyncListener(ui.el.bookmarkPanelExportBtn, "click", {});
 
         assert.equal(calls.transferDialogRequests.length, 1);
         const [request] = calls.transferDialogRequests;
@@ -221,7 +221,7 @@ test("bookmark transfer ui: English export dialog uses English labels and counts
         const { ui, calls, controller } = createTransferHarness({ language: "en", transferDialogChoice: { action: "cancel" } });
         controller.setupTransferHandlers();
 
-        await invokeListener(ui.el.bookmarkPanelExportBtn, "click", {});
+        await invokeAsyncListener(ui.el.bookmarkPanelExportBtn, "click", {});
 
         const [request] = calls.transferDialogRequests;
         assert.equal(request.title, "Export bookmarks");
@@ -243,7 +243,7 @@ test("bookmark transfer ui: English import dialog uses English labels, badges, a
         controller.setupTransferHandlers();
 
         selectImportFile(ui.el.bookmarkPanelImportInput, "{}");
-        await invokeListener(ui.el.bookmarkPanelImportInput, "change", {});
+        await invokeAsyncListener(ui.el.bookmarkPanelImportInput, "change", {});
 
         const [request] = calls.transferDialogRequests;
         assert.equal(request.title, "Import bookmarks");
@@ -266,7 +266,7 @@ test("bookmark transfer ui: canceling the export dialog saves nothing", async ()
         const { ui, calls, controller } = createTransferHarness({ transferDialogChoice: { action: "cancel" } });
         controller.setupTransferHandlers();
 
-        await invokeListener(ui.el.bookmarkPanelExportBtn, "click", {});
+        await invokeAsyncListener(ui.el.bookmarkPanelExportBtn, "click", {});
 
         assert.equal(calls.transferDialogRequests.length, 1);
         assert.deepEqual(calls.exportBookmarkArgs, []);
@@ -283,7 +283,7 @@ test("bookmark transfer ui: export without bookmarks shows an error instead of t
         const { ui, calls, controller } = createTransferHarness({ bookmarks: {} });
         controller.setupTransferHandlers();
 
-        await invokeListener(ui.el.bookmarkPanelExportBtn, "click", {});
+        await invokeAsyncListener(ui.el.bookmarkPanelExportBtn, "click", {});
 
         assert.equal(calls.transferDialogRequests.length, 0);
         assert.deepEqual(calls.savedFiles, []);
@@ -309,7 +309,7 @@ test("bookmark transfer ui: import dialog lists file bookmarks and imports the c
 
         const importText = "{\"version\":3,\"bookmarks\":{}}";
         selectImportFile(ui.el.bookmarkPanelImportInput, importText);
-        await invokeListener(ui.el.bookmarkPanelImportInput, "change", {});
+        await invokeAsyncListener(ui.el.bookmarkPanelImportInput, "change", {});
 
         assert.deepEqual(calls.previewImportArgs, [importText]);
         assert.equal(calls.transferDialogRequests.length, 1);
@@ -363,7 +363,7 @@ for (const accepted of [true, false]) {
             const importText = "{\"version\":3,\"bookmarks\":{}}";
             selectImportFile(ui.el.bookmarkPanelImportInput, importText);
 
-            await invokeListener(ui.el.bookmarkPanelImportInput, "change", {});
+            await invokeAsyncListener(ui.el.bookmarkPanelImportInput, "change", {});
 
             assert.equal(calls.confirmRequests.length, 1);
             const [confirmRequest] = calls.confirmRequests;
@@ -400,7 +400,7 @@ test("bookmark transfer ui: import dialog explains stored data that blocks addin
         controller.setupTransferHandlers();
         selectImportFile(ui.el.bookmarkPanelImportInput, "{}");
 
-        await invokeListener(ui.el.bookmarkPanelImportInput, "change", {});
+        await invokeAsyncListener(ui.el.bookmarkPanelImportInput, "change", {});
 
         const [request] = calls.transferDialogRequests;
         assert.equal(
@@ -426,7 +426,7 @@ test("bookmark transfer ui: import of a file without bookmarks shows an error in
         controller.setupTransferHandlers();
         selectImportFile(ui.el.bookmarkPanelImportInput, "{\"version\":3,\"bookmarks\":{}}");
 
-        await invokeListener(ui.el.bookmarkPanelImportInput, "change", {});
+        await invokeAsyncListener(ui.el.bookmarkPanelImportInput, "change", {});
 
         assert.equal(calls.transferDialogRequests.length, 0);
         assert.equal(ui.el.bookmarkPanelError.hidden, false);
@@ -446,7 +446,7 @@ test("bookmark transfer ui: import error is shown without replacing bookmarks", 
 
         const importText = "{";
         selectImportFile(ui.el.bookmarkPanelImportInput, importText);
-        await invokeListener(ui.el.bookmarkPanelImportInput, "change", {});
+        await invokeAsyncListener(ui.el.bookmarkPanelImportInput, "change", {});
 
         assert.deepEqual(calls.previewImportArgs, [importText]);
         assert.equal(calls.transferDialogRequests.length, 0);
@@ -479,7 +479,7 @@ for (const { result, importMessage } of [
         try {
             const { ui, calls, controller } = createTransferHarness({ onExportBookmarksResult: result });
             controller.setupTransferHandlers();
-            await invokeListener(ui.el.bookmarkPanelExportBtn, "click", {});
+            await invokeAsyncListener(ui.el.bookmarkPanelExportBtn, "click", {});
 
             assert.deepEqual(calls.exportBookmarkArgs, [["bookmark-1", "bookmark-2"]]);
             assert.deepEqual(calls.savedFiles, []);
@@ -504,7 +504,7 @@ for (const { result, importMessage } of [
                 controller.setupTransferHandlers();
                 const importText = '{"version":3,"bookmarks":{}}';
                 selectImportFile(ui.el.bookmarkPanelImportInput, importText);
-                await invokeListener(ui.el.bookmarkPanelImportInput, "change", {});
+                await invokeAsyncListener(ui.el.bookmarkPanelImportInput, "change", {});
 
                 assert.deepEqual(calls.previewImportArgs, [importText]);
                 assert.deepEqual(calls.importSelectedArgs, phase === "merge" ? [[importText, ["imported-1"]]] : []);
@@ -535,7 +535,7 @@ test("bookmark transfer ui: the open dialog is rebuilt in the new language with 
         const { ui, data, calls, controller } = createTransferHarness({ transferDialogChoice: { action: "cancel" } });
         controller.setupTransferHandlers();
 
-        await invokeListener(ui.el.bookmarkPanelExportBtn, "click", {});
+        await invokeAsyncListener(ui.el.bookmarkPanelExportBtn, "click", {});
         // 開いた後にブックマークが変わっても、書き直すのは開いた時点の一覧。
         delete data.bookmarks["bookmark-2"];
         const [buildRequest] = calls.transferDialogBuilders;
@@ -564,7 +564,7 @@ test("bookmark transfer ui: import failures and panel errors can be rewritten in
         controller.setupTransferHandlers();
 
         selectImportFile(ui.el.bookmarkPanelImportInput, "{}");
-        await invokeListener(ui.el.bookmarkPanelImportInput, "change", {});
+        await invokeAsyncListener(ui.el.bookmarkPanelImportInput, "change", {});
         assert.deepEqual(calls.transferDialogErrors, [getBookmarkImportErrorMessage(failure, "ja")]);
 
         // ダイアログは、失敗の理由を言語が変わったときに書き直せる形で受け取る。
@@ -585,7 +585,7 @@ test("bookmark transfer ui: import failures and panel errors can be rewritten in
         controller.setupTransferHandlers();
 
         selectImportFile(ui.el.bookmarkPanelImportInput, "{");
-        await invokeListener(ui.el.bookmarkPanelImportInput, "change", {});
+        await invokeAsyncListener(ui.el.bookmarkPanelImportInput, "change", {});
         assert.equal(ui.el.bookmarkPanelError.textContent, "JSONとして読み込めないファイルです。");
 
         refreshBookmarkPanelError(ui.el.bookmarkPanelError, "en");

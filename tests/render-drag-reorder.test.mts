@@ -6,6 +6,7 @@ import {
     getFakeElement,
     installFakeAnimationFrames,
     installFakeDom,
+    invokeListener,
     makeRenderRow
 } from "./test-helpers.mts";
 
@@ -215,7 +216,7 @@ function pointerAt(y: number, options: { pointerId?: number; x?: number } = {}) 
  * @param key 押したキー
  */
 function pressKey(dom: ReturnType<typeof installFakeDom>, key: string) {
-    void dom.document.dispatchListeners("keydown", { key });
+    invokeListener(dom.document, "keydown", { key });
 }
 
 /**
@@ -225,7 +226,8 @@ function pressKey(dom: ReturnType<typeof installFakeDom>, key: string) {
  */
 function openContextMenu(dom: ReturnType<typeof installFakeDom>) {
     const event = { prevented: false, preventDefault() { event.prevented = true; } };
-    void dom.document.dispatchListeners("contextmenu", event);
+    // ドラッグしていない間は listener を登録していないので、誰も既定の動作を止めない。
+    if (dom.document._events.has("contextmenu")) invokeListener(dom.document, "contextmenu", event);
     return event.prevented;
 }
 
@@ -577,7 +579,7 @@ test("render drag reorder: holding the pointer near the bottom edge scrolls the 
                 scrolls.push(step);
                 // ブラウザと同じく、ページが動いたら scroll イベントを送る。
                 setListTop(list, list.getBoundingClientRect().top - step);
-                void dom.document.dispatchListeners("scroll", {});
+                invokeListener(dom.document, "scroll", {});
             }
         });
         startDragFrom(controller, cards.get("a"));
@@ -641,7 +643,7 @@ test("render drag reorder: scrolling the page without moving the pointer shows t
 
         // ホイールで 30px スクロールすると、止めたポインタの下に c が来る。
         setListTop(list, -30);
-        void dom.document.dispatchListeners("scroll", {});
+        invokeListener(dom.document, "scroll", {});
         assert.deepEqual(readListOrder(list), ["b", "c", "a"]);
 
         controller.onListPointerUp(pointerAt(215));

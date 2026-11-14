@@ -349,7 +349,7 @@ test("youtube: embed autoplay is enabled for continuation playback", async () =>
         const thumb = document.createElement("div");
         document.body.appendChild(thumb);
 
-        controller.playThumbnail(thumb, {
+        void controller.playThumbnail(thumb, {
             isVertical: false,
             videoId: "video1",
             startSeconds: 45
@@ -639,7 +639,7 @@ test("youtube: old Player events do not settle the pending same-thumb replay", a
     const { ui, controller, thumb, oldPlayer, newPlayer, replayPromise } = await prepareSameThumbReplay();
     const settled = t.mock.fn();
     const failed = t.mock.fn();
-    replayPromise.then(settled);
+    void replayPromise.then(settled);
     controller.setPlaybackStartFailedHook(failed);
 
     oldPlayer.player.currentState = YOUTUBE_PLAYER_STATE.ENDED;
@@ -660,7 +660,7 @@ test("youtube: current Player ignores ended notification when its state still re
     t.after(installFakeDom());
     const { ui, thumb, newPlayer, replayPromise } = await prepareSameThumbReplay();
     const settled = t.mock.fn();
-    replayPromise.then(settled);
+    void replayPromise.then(settled);
     newPlayer.player.currentState = YOUTUBE_PLAYER_STATE.PLAYING;
     newPlayer.emitStateChange(YOUTUBE_PLAYER_STATE.ENDED);
     await setImmediate();
@@ -1383,7 +1383,7 @@ test("youtube: ended playback waits for layout refresh before notifying", async 
         document.body.appendChild(card);
         const thumb = document.createElement("div");
         card.appendChild(thumb);
-        controller.playThumbnail(thumb, { isVertical: false, videoId: "video-wait", startSeconds: 0 });
+        void controller.playThumbnail(thumb, { isVertical: false, videoId: "video-wait", startSeconds: 0 });
         await setImmediate();
 
         players[0].emitStateChange(globalThis.window.YT.PlayerState.PLAYING);
@@ -1434,7 +1434,7 @@ test("youtube: ended playback does not continue after a newer playback starts", 
         secondCard.appendChild(secondThumb);
 
         players[0].emitStateChange(globalThis.window.YT.PlayerState.ENDED);
-        controller.playThumbnail(secondThumb, { isVertical: false, videoId: "video-second", startSeconds: 0 });
+        void controller.playThumbnail(secondThumb, { isVertical: false, videoId: "video-second", startSeconds: 0 });
         await setImmediate();
 
         while (fakeFrames.pendingCount > 0) fakeFrames.advanceFrame();
@@ -1595,7 +1595,7 @@ test("youtube: playback start failure does not notify after a newer playback sta
 
         players[0].emitError(150);
         assertPlaybackStartStatus(await failedPlayback, YOUTUBE_PLAYBACK_START_STATUS.FAILED);
-        controller.playThumbnail(nextThumb, { isVertical: false, videoId: "video-next", startSeconds: 0 });
+        void controller.playThumbnail(nextThumb, { isVertical: false, videoId: "video-next", startSeconds: 0 });
         await setImmediate();
 
         while (fakeFrames.pendingCount > 0) fakeFrames.advanceFrame();
@@ -1698,7 +1698,7 @@ test("youtube: recreating the shared player does not fail the newer playback att
 
         let secondResult: YoutubePlaybackStartResult | "pending" = "pending";
         const secondPromise = controller.playThumbnail(secondThumb, { isVertical: false, videoId: "video-second", startSeconds: 0 });
-        secondPromise.then((didStart) => {
+        void secondPromise.then((didStart) => {
             secondResult = didStart;
         });
         await setImmediate();

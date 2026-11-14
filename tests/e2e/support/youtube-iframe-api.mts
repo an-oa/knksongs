@@ -45,7 +45,7 @@ class MockPlayer implements YoutubePlayerLike {
         this.videoId = getVideoIdFromIframe(this.iframe);
         players.push(this);
         const onReady = options.events?.onReady;
-        if (onReady) Promise.resolve().then(() => onReady({ target: this }));
+        if (onReady) void Promise.resolve().then(() => onReady({ target: this }));
         const behavior = behaviorMap.get(this.videoId) || "manual";
         if (behavior === "auto-playing") {
             setTimeout(() => this.emitStateChange(playerState.PLAYING), 0);
