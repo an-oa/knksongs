@@ -1,4 +1,4 @@
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect, type CDPSession, type Page } from "@playwright/test";
 import { normalizeForSearch } from "../../app/lib/search-normalization.mts";
 import { installNetworkMocks } from "./support/network-mocks.mts";
 import { routeSongsJsonFixture } from "./support/songs-network.mts";
@@ -36,11 +36,27 @@ function createEnglishNamedSongs() {
 }
 
 /**
- * 保存済みの設定を消し、英語表記のある曲を読み込んで検索する。
+ * 表示中のカードがすべて英語表記を持つよう、曲名とアーティスト名の両方に英語表記のある曲を用意する。
+ * @param count 曲の数
  */
-async function openWithEnglishNamedSongs(page: Page, query: string) {
+function createSongsNamedInBothLanguages(count: number) {
+    return createScrollableResultSongs(count).map((song, index) => withSongNames(song, {
+        title: `表記テスト ${index + 1}`,
+        artist: "歌手",
+        titleEn: `Name Test ${index + 1}`,
+        artistEn: "Singer"
+    }));
+}
+
+/**
+ * 保存済みの設定を消し、英語表記のある曲を読み込んで検索する。
+ * @param page 検証するページ
+ * @param query 検索窓に入れる語
+ * @param songs 読み込む曲。省略すると、英語表記のある曲とない曲を 1 件ずつ読み込む
+ */
+async function openWithEnglishNamedSongs(page: Page, query: string, songs: Song[] = createEnglishNamedSongs()) {
     await installNetworkMocks(page);
-    await routeSongsJsonFixture(page, createEnglishNamedSongs());
+    await routeSongsJsonFixture(page, songs);
     await page.goto("/");
     await page.evaluate(() => localStorage.clear());
     await page.reload();
@@ -51,6 +67,18 @@ async function openWithEnglishNamedSongs(page: Page, query: string) {
 /** 言語ボタンで見えている文言。ボタンには両方の文言を重ねてあり、切り替え先の言語だけが見える。 */
 function getVisibleLanguageLabel(page: Page) {
     return page.locator("#site-language-btn .language-btn-label:visible");
+}
+
+/**
+ * ページがスタイルを計算し直した回数の累計を読む。Chromium の DevTools Protocol でだけ読める。
+ * @param client ページにつないだ DevTools Protocol のセッション
+ * @returns スタイルを計算し直した回数の累計
+ */
+async function readStyleRecalcCount(client: CDPSession): Promise<number> {
+    const { metrics } = await client.send("Performance.getMetrics");
+    const metric = metrics.find(({ name }) => name === "RecalcStyleCount");
+    if (!metric) throw new Error("The browser did not report RecalcStyleCount");
+    return metric.value;
 }
 
 /** 英語表記のある曲のカードの曲名。表記が変わっても同じカードを指す。 */
@@ -95,6 +123,29 @@ test.describe("Japanese browsers", () => {
         await page.locator("#searchBox").fill("Eine Kleine");
         await expect(englishCardTitle).toHaveText("Eine Kleine");
         await expect(getVisibleLanguageLabel(page)).toHaveText("日本語");
+    });
+
+    test("switching the language does not recalculate styles once per card", async ({ page, browserName }) => {
+        test.skip(browserName !== "chromium", "The style recalculation count is read through the Chromium DevTools Protocol");
+        const cardCount = 48;
+        await openWithEnglishNamedSongs(page, "表記テスト", createSongsNamedInBothLanguages(cardCount));
+        const titles = page.locator("#resultList .song-card .title");
+        const artists = page.locator("#resultList .song-card .artist");
+        await expect(titles.filter({ hasText: /^表記テスト \d+$/ })).toHaveCount(cardCount);
+        const client = await page.context().newCDPSession(page);
+        await client.send("Performance.enable");
+        const countBeforeSwitch = await readStyleRecalcCount(client);
+
+        await page.locator("#site-language-btn").click();
+
+        await expect(titles.filter({ hasText: /^Name Test \d+$/ })).toHaveCount(cardCount);
+        await expect(artists.filter({ hasText: "Singer" })).toHaveCount(cardCount);
+        // 名前を書き換えるたびにスタイルを計算し直すと、回数はカードの枚数の 2 倍(曲名とアーティスト名)になり、
+        // 計算のたびに一覧全体が対象になるので、カードの枚数の 2 乗で遅くなる。
+        // ボタンのホバーや描画などの分は 10 回ほどで、カードの枚数によらない。
+        // カードの枚数より少なければ、カードごとには計算していない。
+        expect(await readStyleRecalcCount(client) - countBeforeSwitch).toBeLessThan(cardCount);
+        await client.detach();
     });
 });
 

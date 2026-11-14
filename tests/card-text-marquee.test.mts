@@ -380,3 +380,23 @@ test("card text marquee: stopping works where Web Animations are not available",
         cleanup();
     }
 });
+
+test("card text marquee: stopping a name that is not scrolling does not ask the browser for its animations", () => {
+    const cleanup = installFakeDom();
+    try {
+        // getAnimations() は、未反映のスタイルをその場でブラウザに計算させる。
+        // 言語の切り替えは表示中の全カードの名前を止めてから書き換えるので、流していない名前では呼ばない。
+        const { target } = createTextTarget(280);
+        let queryCount = 0;
+        target.text.getAnimations = () => {
+            queryCount++;
+            return [];
+        };
+
+        stopCardTextMarquee(target);
+
+        assert.equal(queryCount, 0);
+    } finally {
+        cleanup();
+    }
+});
