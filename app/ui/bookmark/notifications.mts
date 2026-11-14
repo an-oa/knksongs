@@ -3,9 +3,11 @@ import { getBookmarkText } from "./text.mjs";
 import type { LocalizedText } from "./text.mjs";
 import type { SiteLanguage } from "../../lib/site-language.mjs";
 import { resolveSongRef } from "../../lib/song-lookup.mjs";
-import type { AppDataState, AppUiState } from "../../state.types";
+import type { AppDataState, AppUiState } from "../../state.types.mjs";
 
 export const BOOKMARK_NOTIFICATION_TIMEOUT_MS = 4000;
+/** 失敗の通知は、理由と次にすることを読む時間が要るので長く出す。 */
+export const BOOKMARK_ERROR_NOTIFICATION_TIMEOUT_MS = 10000;
 
 /**
  * timeout handle が Node 互換の unref を持つ場合だけ解放する。
@@ -42,13 +44,15 @@ function removeToastElement(toast: HTMLElement | null): void {
 export function createBookmarkNotificationController({
     data,
     ui,
-    timeoutMs = BOOKMARK_NOTIFICATION_TIMEOUT_MS
+    timeoutMs = BOOKMARK_NOTIFICATION_TIMEOUT_MS,
+    errorTimeoutMs = BOOKMARK_ERROR_NOTIFICATION_TIMEOUT_MS
 }: {
     data: Pick<AppDataState, "allSongsRaw">;
     ui: Pick<AppUiState, "lookup" | "language"> & {
         el: Pick<AppUiState["el"], "bookmarkNotificationRegion">;
     };
     timeoutMs?: number;
+    errorTimeoutMs?: number;
 }) {
     const lookupUi = ui.lookup;
     let currentToast: HTMLElement | null = null;
@@ -77,10 +81,13 @@ export function createBookmarkNotificationController({
     }
 
     /**
-     * ブックマーク操作の成功を toast と polite live region で通知する。
+     * ブックマーク操作の結果を toast と polite live region で通知する。
+     * 失敗の通知は注意の色で長めに出し、role="alert" ですぐ読み上げさせる。
      * @param message 通知する文言の作り方
+     * @param options isError が true なら、失敗の通知として出す
      */
-    function showBookmarkNotification(message: LocalizedText): void {
+    function showBookmarkNotification(message: LocalizedText, options?: { isError?: boolean }): void {
+        const isError = Boolean(options?.isError);
         const region = ui.el.bookmarkNotificationRegion;
         const language = ui.language.current;
         const messageText = message(language);
@@ -92,7 +99,8 @@ export function createBookmarkNotificationController({
         const toast = document.createElement("div");
         const toastId = `bookmark-toast-${Date.now()}-${++nextToastSequence}`;
         toast.id = toastId;
-        toast.className = "bookmark-toast";
+        toast.className = isError ? "bookmark-toast bookmark-toast-error" : "bookmark-toast";
+        if (isError) toast.setAttribute("role", "alert");
         toast.setAttribute("popover", "manual");
 
         const messageEl = document.createElement("span");
@@ -121,8 +129,25 @@ export function createBookmarkNotificationController({
             }
         }
 
-        currentTimerId = setTimeout(dismissBookmarkNotification, timeoutMs);
+        currentTimerId = setTimeout(dismissBookmarkNotification, isError ? errorTimeoutMs : timeoutMs);
         unrefTimer(currentTimerId);
+    }
+
+    /**
+     * ブックマーク操作の失敗をユーザーへ通知する。
+     * ブラウザ標準の alert と違い、操作を止めずに画面の隅へ出す。
+     * @param message 失敗の理由と、利用者にできることを伝える文言の作り方
+     */
+    function notifyError(message: LocalizedText): void {
+        showBookmarkNotification(message, { isError: true });
+    }
+
+    /**
+     * 呼び出し元が組み立てた文言で、操作の成功をユーザーへ通知する。インポートの結果などに使う。
+     * @param message 通知する文言の作り方
+     */
+    function notifyMessage(message: LocalizedText): void {
+        showBookmarkNotification(message);
     }
 
     /**
@@ -203,6 +228,8 @@ export function createBookmarkNotificationController({
     return {
         dismissBookmarkNotification,
         refreshText,
+        notifyError,
+        notifyMessage,
         notifyBookmarkCreated,
         notifyBookmarkDeleted,
         notifySongSavedToBookmark,

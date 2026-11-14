@@ -69,7 +69,7 @@ test("matching public meta reuses cached songs without requesting the body", asy
     expect(requests).toEqual(["/data/songs-meta.json"]);
 });
 
-test("timed out public json keeps the cache through later search operations", async ({ page }) => {
+test("timed out public json keeps showing the cache and is saved for the next visit", async ({ page }) => {
     await installNetworkMocks(page);
     await page.goto("/");
     await waitForInitialLoad(page);
@@ -82,14 +82,25 @@ test("timed out public json keeps the cache through later search operations", as
     await page.reload();
     await deferred.requestStarted;
     try {
+        // 公開JSONの応答を待つ期限が過ぎると、キャッシュで表示する。
         await waitForInitialLoad(page);
+        expect(await readCachedSongTitles(page)).toContain("Manual Song");
     } finally {
         deferred.releaseResponse();
     }
+    // 遅れて届いた公開JSONは、表示中の曲とは差し替えない。
     await openSidebar(page);
     await filterBySongTitle(page, "Manual Song");
     await expect(getSongCard(page, "Manual Song")).toBeVisible();
     await expect(getSongCard(page, "Scroll Song 01")).toHaveCount(0);
-    expect(await readCachedSongTitles(page)).toContain("Manual Song");
     expect(requests).toEqual(["/data/songs-meta.json", "/data/songs.json"]);
+
+    // 取得は中断せずに続けていて、届いた内容を次回の表示用に保存する。
+    await expect.poll(() => readCachedSongTitles(page)).toEqual(["Scroll Song 01"]);
+    requests.length = 0;
+    await page.reload();
+    await waitForInitialLoad(page);
+    await filterBySongTitle(page, "Scroll Song 01");
+    await expect(getSongCard(page, "Scroll Song 01")).toBeVisible();
+    expect(requests, "the refreshed cache matches the public meta").toEqual(["/data/songs-meta.json"]);
 });

@@ -1,82 +1,102 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
-    applySearchBooleanFilterState,
-    collectSearchBooleanFilterState,
-    getSearchBooleanFilterElements,
-    hasEnabledSearchBooleanFilter,
-    hasSelectedSearchBooleanFilterState,
-    resetSearchBooleanFilters,
-    SEARCH_BOOLEAN_FILTER_KEYS
+    createDefaultSearchBooleanFilters,
+    getSearchBooleanFilterElement,
+    hasSelectedSearchBooleanFilter,
+    renderSearchBooleanFilters,
+    SEARCH_BOOLEAN_FILTER_KEYS,
+    toSearchBooleanFilterState
 } from "../app/lib/search-boolean-filters.mts";
 
-/** 検索の真偽値フィルターに必要な checked 状態を持つモックを作る。 */
+/**
+ * 検索の真偽値フィルターのチェックボックスのモックを作る。checked への書き込み回数を数える。
+ */
 function createBooleanFilterUi() {
+    const writes: string[] = [];
+    /** checked を持ち、書き込まれたキーを記録する要素を作る。 */
+    const createCheckbox = (key: string, initial: boolean) => {
+        let checked = initial;
+        return {
+            get checked() { return checked; },
+            set checked(value: boolean) {
+                writes.push(key);
+                checked = value;
+            }
+        };
+    };
     return {
-        el: {
-            collabHostOnly: { checked: true },
-            collabGuestOnly: { checked: false },
-            relayOnly: { checked: true },
-            harmonyOnly: { checked: false }
+        writes,
+        ui: {
+            el: {
+                collabHostOnly: createCheckbox("collabHostOnly", true),
+                collabGuestOnly: createCheckbox("collabGuestOnly", false),
+                relayOnly: createCheckbox("relayOnly", true),
+                harmonyOnly: createCheckbox("harmonyOnly", false)
+            }
         }
     };
 }
 
-test("search boolean filters: collects checked UI state by shared keys", () => {
-    const ui = createBooleanFilterUi();
-
+test("search boolean filters: the default state leaves every shared key unselected", () => {
     assert.deepEqual(SEARCH_BOOLEAN_FILTER_KEYS, [
         "collabHostOnly",
         "collabGuestOnly",
         "relayOnly",
         "harmonyOnly"
     ]);
-    assert.deepEqual(collectSearchBooleanFilterState(ui), {
-        collabHostOnly: true,
+    const filters = createDefaultSearchBooleanFilters();
+    assert.deepEqual(filters, {
+        collabHostOnly: false,
+        collabGuestOnly: false,
+        relayOnly: false,
+        harmonyOnly: false
+    });
+    assert.equal(hasSelectedSearchBooleanFilter(filters), false);
+    assert.notEqual(createDefaultSearchBooleanFilters(), filters, "each state gets its own object");
+});
+
+test("search boolean filters: a state is built from stored values of unknown shape", () => {
+    assert.deepEqual(toSearchBooleanFilterState({ relayOnly: true, harmonyOnly: 1, collabHostOnly: "", collabGuestOnly: null }), {
+        collabHostOnly: false,
         collabGuestOnly: false,
         relayOnly: true,
-        harmonyOnly: false
+        harmonyOnly: true
     });
+    assert.deepEqual(toSearchBooleanFilterState({}), createDefaultSearchBooleanFilters());
+    assert.equal(hasSelectedSearchBooleanFilter(toSearchBooleanFilterState({ collabGuestOnly: true })), true);
 });
 
-test("search boolean filters: applies and resets UI state", () => {
-    const ui = createBooleanFilterUi();
+test("search boolean filters: rendering writes the state to the checkboxes that differ", () => {
+    const { ui, writes } = createBooleanFilterUi();
 
-    applySearchBooleanFilterState(ui, {
-        collabHostOnly: false,
-        collabGuestOnly: true,
-        relayOnly: false,
-        harmonyOnly: true
-    });
-
-    assert.deepEqual(collectSearchBooleanFilterState(ui), {
-        collabHostOnly: false,
-        collabGuestOnly: true,
-        relayOnly: false,
-        harmonyOnly: true
-    });
-    assert.equal(hasEnabledSearchBooleanFilter(ui), true);
-
-    resetSearchBooleanFilters(ui);
-
-    assert.deepEqual(collectSearchBooleanFilterState(ui), {
+    renderSearchBooleanFilters(ui, {
         collabHostOnly: false,
         collabGuestOnly: false,
-        relayOnly: false,
-        harmonyOnly: false
+        relayOnly: true,
+        harmonyOnly: true
     });
-    assert.equal(hasEnabledSearchBooleanFilter(ui), false);
+
+    assert.equal(ui.el.collabHostOnly.checked, false);
+    assert.equal(ui.el.collabGuestOnly.checked, false);
+    assert.equal(ui.el.relayOnly.checked, true);
+    assert.equal(ui.el.harmonyOnly.checked, true);
+    // すでに同じ値の入力欄には書き込まない。
+    assert.deepEqual(writes, ["collabHostOnly", "harmonyOnly"]);
 });
 
-test("search boolean filters: returns existing UI elements and detects state object selections", () => {
-    const ui = createBooleanFilterUi();
+test("search boolean filters: missing elements are skipped", () => {
+    const partialUi = { el: { relayOnly: { checked: false }, harmonyOnly: null } };
+    assert.equal(getSearchBooleanFilterElement(partialUi, "relayOnly"), partialUi.el.relayOnly);
+    assert.equal(getSearchBooleanFilterElement(partialUi, "harmonyOnly"), null);
+    assert.equal(getSearchBooleanFilterElement(partialUi, "collabHostOnly"), null);
+    assert.equal(getSearchBooleanFilterElement(null, "relayOnly"), null);
 
-    assert.deepEqual(getSearchBooleanFilterElements(ui), [
-        ui.el.collabHostOnly,
-        ui.el.collabGuestOnly,
-        ui.el.relayOnly,
-        ui.el.harmonyOnly
-    ]);
-    assert.equal(hasSelectedSearchBooleanFilterState({ collabGuestOnly: true }), true);
-    assert.equal(hasSelectedSearchBooleanFilterState({ queryRaw: "群青" }), false);
+    assert.doesNotThrow(() => renderSearchBooleanFilters(partialUi, {
+        ...createDefaultSearchBooleanFilters(),
+        relayOnly: true,
+        harmonyOnly: true
+    }));
+    assert.equal(partialUi.el.relayOnly.checked, true);
+    assert.doesNotThrow(() => renderSearchBooleanFilters(undefined, createDefaultSearchBooleanFilters()));
 });

@@ -558,3 +558,36 @@ for (const language of ["ja", "en"] as const) {
         }
     });
 }
+
+test("showing more results leaves the cards already shown untouched", async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await installNetworkMocks(page);
+    await routeSongsJsonFixture(page, createScrollableResultSongs(120));
+    await page.goto("/");
+    await waitForInitialLoad(page);
+    await enablePlaybackSettings(page);
+    await closeSidebar(page);
+    await page.locator("#searchBox").fill("Scroll Artist");
+    await expect(page.locator("#resultCount")).toHaveText("120 件がヒット");
+    const cards = page.locator("#resultList .song-card");
+    const initialCount = await cards.count();
+    expect(initialCount).toBeLessThan(120);
+
+    // 最初のカードの画像とタグに印を付け、続きを読み込んだ後も同じ要素かを確かめる。
+    await cards.first().evaluate((card) => {
+        card.querySelector(".thumb img")?.setAttribute("data-kept", "image");
+        card.querySelector(".tag")?.setAttribute("data-kept", "tag");
+    });
+    const imageRequests: string[] = [];
+    page.on("request", (request) => {
+        if (request.url().startsWith("https://i.ytimg.com/")) imageRequests.push(request.url());
+    });
+
+    await showAllResults(page, 120);
+
+    // 追加表示のたびに全カードの画像とタグを作り直すと、件数に比例して描画が重くなる。
+    await expect(cards.first().locator(".thumb img")).toHaveAttribute("data-kept", "image");
+    await expect(cards.first().locator(".tag").first()).toHaveAttribute("data-kept", "tag");
+    const firstCardImage = await cards.first().locator(".thumb img").getAttribute("src");
+    expect(imageRequests.filter((url) => url === firstCardImage), "the first thumbnail is not requested again").toEqual([]);
+});

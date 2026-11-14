@@ -32,17 +32,16 @@ function createSearchFiltersUiState() {
         },
         search: {
             selectedFormats: new Set(["ショート"]),
-            userTouchedFilters: true
-        },
-        date: {
-            pendingValues: { from: "2024-01-01", to: "2024-12-31" }
+            conditions: {
+                booleanFilters: { collabHostOnly: true, collabGuestOnly: true, relayOnly: true, harmonyOnly: true }
+            }
         },
         formatCheckboxes,
         language: { current: "ja" as SiteLanguage }
     };
 }
 
-test("createSearchFiltersController: resets filter UI state to defaults", () => {
+test("createSearchFiltersController: resets the filter state to defaults and shows it in the inputs", () => {
     const ui = createSearchFiltersUiState();
     const controller = createSearchFiltersController({
         ui,
@@ -57,44 +56,23 @@ test("createSearchFiltersController: resets filter UI state to defaults", () => 
         }
     });
 
+    assert.deepEqual(ui.search.conditions.booleanFilters, {
+        collabHostOnly: false,
+        collabGuestOnly: false,
+        relayOnly: false,
+        harmonyOnly: false
+    });
     assert.equal(ui.el.collabHostOnly.checked, false);
     assert.equal(ui.el.collabGuestOnly.checked, false);
     assert.equal(ui.el.relayOnly.checked, false);
     assert.equal(ui.el.harmonyOnly.checked, false);
     assert.deepEqual(Array.from(ui.search.selectedFormats), ["配信", "歌みた"]);
     assert.deepEqual(ui.formatCheckboxes.map((checkbox) => checkbox.checked), [true, true, false]);
-    assert.equal(ui.date.pendingValues, null);
-    assert.equal(ui.search.userTouchedFilters, false);
+    // 日付範囲は日付 controller が状態と選択欄の両方を戻すので、処理を任せるだけにする。
     assert.equal(resetDateCallCount, 1);
 });
 
-test("createSearchFiltersController: detects non-default filter states", () => {
-    const ui = createSearchFiltersUiState();
-    const controller = createSearchFiltersController({
-        ui,
-        defaultFormats: ["配信", "歌みた"]
-    });
-    controller.renderFilterOptions();
-    controller.resetFiltersToDefault();
-
-    assert.equal(controller.needsFilterReset({ hasDateSelection: () => false }), false);
-
-    ui.el.relayOnly.checked = true;
-    assert.equal(controller.needsFilterReset({ hasDateSelection: () => false }), true);
-    ui.el.relayOnly.checked = false;
-
-    ui.search.selectedFormats.delete("歌みた");
-    assert.equal(controller.needsFilterReset({ hasDateSelection: () => false }), true);
-    controller.setSelectedFormatsToDefault();
-
-    ui.el.collabGuestOnly.checked = true;
-    assert.equal(controller.needsFilterReset({ hasDateSelection: () => false }), true);
-    ui.el.collabGuestOnly.checked = false;
-
-    assert.equal(controller.needsFilterReset({ hasDateSelection: () => true }), true);
-});
-
-test("createSearchFiltersController: applies normalized stored filter state through the facade", () => {
+test("createSearchFiltersController: restores stored formats, dropping unknown and duplicate values", () => {
     const ui = createSearchFiltersUiState();
     const controller = createSearchFiltersController({
         ui,
@@ -102,20 +80,19 @@ test("createSearchFiltersController: applies normalized stored filter state thro
     });
     controller.renderFilterOptions();
 
-    controller.applyStoredFilterState({
-        collabHostOnly: true,
-        collabGuestOnly: false,
-        relayOnly: true,
-        harmonyOnly: false,
-        formats: ["配信", "歌みた", "ショート", "切り抜き", "収録"]
-    });
+    controller.applySelectedFormats(["歌みた", "未知の形態", "歌みた", "配信"]);
+    assert.deepEqual(controller.getSelectedFormatValues(), ["歌みた", "配信"]);
+    assert.deepEqual(ui.formatCheckboxes.map((checkbox) => checkbox.checked), [true, true, false]);
+    assert.equal(controller.areAllFormatsSelected(), false);
 
-    assert.equal(ui.el.collabHostOnly.checked, true);
-    assert.equal(ui.el.collabGuestOnly.checked, false);
-    assert.equal(ui.el.relayOnly.checked, true);
-    assert.equal(ui.el.harmonyOnly.checked, false);
+    // 選べる形態が 1 つも残らない保存値と、配列でない保存値は、既定 (すべて) に戻す。
+    controller.applySelectedFormats(["未知の形態"]);
     assert.deepEqual(controller.getSelectedFormatValues(), ["配信", "歌みた", "ショート", "切り抜き", "収録"]);
+    controller.applySelectedFormats(null);
+    assert.equal(controller.areAllFormatsSelected(), true);
     assert.deepEqual(ui.formatCheckboxes.map((checkbox) => checkbox.checked), [true, true, true]);
+    // 動画の種類の復元は、真偽値フィルターの状態に触らない。
+    assert.equal(ui.search.conditions.booleanFilters.relayOnly, true);
 });
 
 test("createSearchFiltersController: sets up format filter options", () => {
@@ -132,10 +109,9 @@ test("createSearchFiltersController: sets up format filter options", () => {
             },
             search: {
                 selectedFormats: new Set<string>(),
-                userTouchedFilters: false
-            },
-            date: {
-                pendingValues: null
+                conditions: {
+                    booleanFilters: { collabHostOnly: false, collabGuestOnly: false, relayOnly: false, harmonyOnly: false }
+                }
             },
             language: { current: "ja" as SiteLanguage }
         };
@@ -162,6 +138,11 @@ test("createSearchFiltersController: sets up format filter options", () => {
         assert.equal(firstFormatCheckbox.id, "format-filter-0");
         assert.equal(labels[1].htmlFor, "format-filter-1");
         assert.equal(secondFormatCheckbox.id, "format-filter-1");
+        assert.equal(
+            firstFormatCheckbox.getAttribute("autocomplete"),
+            "off",
+            "the browser must not restore the checkbox against the state"
+        );
 
         secondFormatCheckbox.checked = false;
         invokeListener(secondFormatCheckbox, "change", { target: secondFormatCheckbox });

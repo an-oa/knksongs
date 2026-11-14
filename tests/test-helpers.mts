@@ -7,6 +7,10 @@ type FakeEvent = {
     currentTarget?: FakeElement | EventTarget | null;
     relatedTarget?: FakeElement | EventTarget | null;
     key?: string;
+    /** かな漢字変換の途中のキー操作かどうか。 */
+    isComposing?: boolean;
+    /** かな漢字変換の途中のキー操作に付く 229 を渡すために使う。 */
+    keyCode?: number;
     shiftKey?: boolean;
     clientX?: number;
     clientY?: number;
@@ -127,6 +131,8 @@ class FakeElement extends FakeEventTarget {
     _innerHTML = "";
     hidden = false;
     type = "";
+    /** dialog 要素が開いているか。モーダルとしての挙動は扱わず、開閉だけを記録する。 */
+    open = false;
     _scrollHeight?: number;
     _clientHeight?: number;
     _clientWidth?: number;
@@ -355,25 +361,31 @@ class FakeElement extends FakeEventTarget {
         this.attributes.delete(name);
     }
 
-    /** 登録済み listener へイベントを通知する。既定動作の取り消しは扱わない。 */
+    /**
+     * 登録済み listener へイベントを通知する。既定動作の取り消しは扱わない。
+     * ブラウザと同じく、listener の戻り値は使わず、非同期の listener の完了は待たない。
+     */
     dispatchEvent(event: Pick<Event, "type">): boolean {
         void this.dispatchListeners(event.type, { target: this, currentTarget: this });
         return true;
     }
 
-    /** 記録されたクリック listener と onclick を呼ぶ。 */
-    click() {
+    /**
+     * 記録されたクリック listener と onclick を呼ぶ。
+     * ブラウザと同じく、listener の戻り値は使わず、非同期の listener の完了は待たない。
+     * 完了を確かめるテストは、invokeAsyncListener で呼ぶか、結果が出るまで待つ仕組みを使う。
+     */
+    click(): void {
         const event = {
             target: this,
             currentTarget: this,
             preventDefault() {},
             stopPropagation() {}
         };
-        const pending = this.dispatchListeners("click", event);
+        void this.dispatchListeners("click", event);
         if (typeof this.onclick === "function") {
             this.onclick(event);
         }
-        return pending;
     }
 
     /** グローバルに設置したモック document のフォーカスを更新する。 */
@@ -383,6 +395,21 @@ class FakeElement extends FakeEventTarget {
             document.activeElement = this;
         }
     }
+
+    /** dialog 要素を開いたことを記録する。背面を操作できなくする挙動は扱わない。 */
+    showModal(): void {
+        this.open = true;
+    }
+
+    /** 開いている dialog 要素を閉じ、ブラウザと同じく close を通知する。 */
+    close(): void {
+        if (!this.open) return;
+        this.open = false;
+        void this.dispatchListeners("close", { target: this, currentTarget: this });
+    }
+
+    /** 入力欄の文字の全選択。選択範囲は扱わない。 */
+    select(): void {}
 
     /** 自身がフォーカスされている場合だけ解除する。 */
     blur(): void {
@@ -565,7 +592,9 @@ export function installFakeDom() {
         innerHeight: 720 as number | undefined,
         scrollBy() {},
         scrollTo(options?: ScrollToOptions) { void options; },
-        matchMedia() {
+        /** メディアクエリは既定ではどれも一致しない。一致させるテストでは差し替える。 */
+        matchMedia(query?: string) {
+            void query;
             return { matches: false };
         },
         getComputedStyle(element: Element) {
@@ -635,15 +664,58 @@ export function makeRenderRow(input: Pick<Song, "songKey"> & Partial<Pick<Song,
     });
 }
 
-/** listener の存在を確認して呼び、非同期 handler の完了も待てるよう戻り値を返す。 */
+/**
+ * listener の存在を確認して、登録順に呼ぶ。
+ * @param element イベントを届ける DOM モック
+ * @param type イベントの種類
+ * @param event listener へ渡すイベント
+ * @returns 非同期の listener があれば、そのすべての完了。すべて同期なら undefined
+ */
+function dispatchRequiredListeners(
+    element: Element | FakeEventTarget | null | undefined,
+    type: string,
+    event: FakeEvent
+): void | Promise<void> {
+    assert.ok(element instanceof FakeEventTarget, "event target is not a DOM mock");
+    assert.ok(element._events.get(type)?.size, `${type} listener is missing`);
+    return element.dispatchListeners(type, event);
+}
+
+/**
+ * 同期の listener を呼ぶ。listener が Promise を返したら、その場で失敗にする。
+ * 完了を待たずに次の確認へ進むと、「〜されていない」の確認が処理の途中で通ってしまうため。
+ * 非同期の listener には invokeAsyncListener を使い、完了を待つ。
+ * @param element イベントを届ける DOM モック
+ * @param type イベントの種類
+ * @param event listener へ渡すイベント
+ */
 export function invokeListener(
     element: Element | FakeEventTarget | null | undefined,
     type: string,
     event: FakeEvent
-) {
-    assert.ok(element instanceof FakeEventTarget, "event target is not a DOM mock");
-    assert.ok(element._events.get(type)?.size, `${type} listener is missing`);
-    return element.dispatchListeners(type, event);
+): void {
+    const pending = dispatchRequiredListeners(element, type, event);
+    assert.equal(
+        pending,
+        undefined,
+        `${type} listener is asynchronous; use "await invokeAsyncListener(...)" so that the test waits for it`
+    );
+}
+
+/**
+ * 非同期の listener を呼び、Promise を返した listener すべての完了を待てるようにする。
+ * listener は呼び出した時点で同期的に始まり、返す Promise はその完了を表す。
+ * @param element イベントを届ける DOM モック
+ * @param type イベントの種類
+ * @param event listener へ渡すイベント
+ * @returns Promise を返した listener すべての完了
+ */
+export async function invokeAsyncListener(
+    element: Element | FakeEventTarget | null | undefined,
+    type: string,
+    event: FakeEvent
+): Promise<void> {
+    await dispatchRequiredListeners(element, type, event);
 }
 
 /** setTimeout/clearTimeout を記録型 fake に差し替える。 */

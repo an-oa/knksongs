@@ -1,11 +1,18 @@
 import { dateKeyToParts, toDateKey } from "../../lib/date-key.mjs";
 import { isHtmlElement } from "../../lib/dom-utils.mjs";
 import {
+    formatPartialDateValue,
     getPartialDateKeyRange,
-    normalizePartialDateParts
+    normalizePartialDateParts,
+    parsePartialDateText
 } from "../../lib/partial-date.mjs";
 import type { PartialDateValue } from "../../lib/partial-date.mjs";
-import type { AppUiElements, DateUiRuntimeState, SiteLanguageUiRuntimeState } from "../../state.types";
+import type {
+    AppUiElements,
+    DateUiRuntimeState,
+    SearchConditionsState,
+    SiteLanguageUiRuntimeState
+} from "../../state.types.mjs";
 import { getUiText } from "../../lib/ui-text.mjs";
 
 /** 日付範囲の開始側と終了側。日付の入力・保存・条件表示で共通に使う。 */
@@ -38,18 +45,23 @@ type DateFilterUiElements = Pick<
 type DateFilterUiState = {
     el: DateFilterUiElements;
     date: DateUiRuntimeState;
+    /** 検索条件のうち日付範囲。選択欄で選んだ値をここへ書き、ここの値を選択欄へ映す。 */
+    search: { conditions: Pick<SearchConditionsState, "dateFrom" | "dateTo"> };
     /** 日付の選択欄の先頭(未選択)に出す文言の言語。 */
     language: SiteLanguageUiRuntimeState;
 };
 
 /**
  * 日付フィルタ UI の初期化・同期・補正を扱うコントローラーを作成する。
+ * 日付範囲の正は検索条件の状態 (ui.search.conditions) に置く。選択肢は曲データの読み込み後に決まるので、
+ * それまでは状態に持つ値を選択欄へ映せず、読み込み後に映す。選択欄を変えたときは、補正を終えた値を状態へ書く。
  */
 export function createDateFilterController({ ui, onDateSelectionChange }: {
     ui: DateFilterUiState;
     onDateSelectionChange?: () => void;
 }) {
     const dateUi = ui.date;
+    const conditions = ui.search.conditions;
 
     /**
      * 日付の選択欄の先頭(未選択)に出す文言を、サイトの言語で返す。
@@ -75,22 +87,6 @@ export function createDateFilterController({ ui, onDateSelectionChange }: {
             const empty = select?.querySelector('option[value=""]');
             if (empty) empty.textContent = placeholder;
         });
-    }
-
-    /**
-     * 開始/終了いずれかの日付選択があるか判定する。
-     */
-    function hasDateSelection(): boolean {
-        return hasPartialDateSelection("from") || hasPartialDateSelection("to");
-    }
-
-    /**
-     * 指定側の日付セレクトに部分入力があるか判定する。
-     * @param {DateSelectKind} kind
-     */
-    function hasPartialDateSelection(kind: DateSelectKind): boolean {
-        const parts = getDateSelectParts(kind);
-        return parts.year !== "" || parts.month !== "" || parts.day !== "";
     }
 
     /**
@@ -120,43 +116,31 @@ export function createDateFilterController({ ui, onDateSelectionChange }: {
     }
 
     /**
-     * 日付セレクトの値を精度に応じた文字列で取得する。
+     * 検索条件の状態に持つ日付を返す。
      * @param kind 値を読む側
      * @returns YYYY・YYYY-MM・YYYY-MM-DD のいずれか。未選択なら空文字列
      */
     function getDateSelectValue(kind: DateSelectKind): string {
-        return formatDateSelectValue(normalizePartialDateParts(getDateSelectParts(kind)));
+        return kind === "from" ? conditions.dateFrom : conditions.dateTo;
     }
 
     /**
-     * 年・年月・年月日の日付文字列を解析する。
-     * @param {string | null | undefined} value
-     * @returns {PartialDateValue | null}
+     * 日付セレクトで選んでいる値を、精度に応じた文字列で読む。
+     * @param kind 値を読む側
+     * @returns YYYY・YYYY-MM・YYYY-MM-DD のいずれか。未選択なら空文字列
      */
-    function parseDateSelectValue(value: string | null | undefined): PartialDateValue | null {
-        if (!value) return null;
-        const trimmed = value.trim();
-        const match = /^(\d{4})(?:[/-](\d{1,2})(?:[/-](\d{1,2}))?)?$/.exec(trimmed);
-        if (!match) return null;
-        return normalizePartialDateParts({
-            year: match[1],
-            month: match[2] ?? "",
-            day: match[3] ?? ""
-        });
+    function readDateSelectValue(kind: DateSelectKind): string {
+        return formatPartialDateValue(normalizePartialDateParts(getDateSelectParts(kind)));
     }
 
     /**
-     * 部分日付値を保存用の文字列へ整形する。
-     * @param {PartialDateValue | null} value
-     * @returns {string}
+     * 日付セレクトで選んでいる値を、検索条件の状態へ書く。
+     * 選択肢がまだない (曲データの読み込み前) ときは、選択欄が状態を表せないので書かない。
      */
-    function formatDateSelectValue(value: PartialDateValue | null): string {
-        if (!value) return "";
-        const year = String(value.year).padStart(4, "0");
-        if (value.precision === "year" || value.month === null) return year;
-        const month = String(value.month).padStart(2, "0");
-        if (value.precision === "month" || value.day === null) return `${year}-${month}`;
-        return `${year}-${month}-${String(value.day).padStart(2, "0")}`;
+    function storeDateSelection(): void {
+        if (!dateUi.bounds) return;
+        conditions.dateFrom = readDateSelectValue("from");
+        conditions.dateTo = readDateSelectValue("to");
     }
 
     /**
@@ -175,7 +159,7 @@ export function createDateFilterController({ ui, onDateSelectionChange }: {
      * @param value YYYY・YYYY-MM・YYYY-MM-DD のいずれかの日付文字列
      */
     function applyDateSelectValue(kind: DateSelectKind, value: string | null | undefined): void {
-        const dateValue = parseDateSelectValue(value);
+        const dateValue = parsePartialDateText(value);
         if (!dateValue) return;
         const {
             year: yearSelect,
@@ -197,9 +181,11 @@ export function createDateFilterController({ ui, onDateSelectionChange }: {
     }
 
     /**
-     * 日付セレクトを全クリアして選択肢を同期する。
+     * 日付範囲を未選択に戻し、日付セレクトを全クリアして選択肢を同期する。
      */
     function resetDateSelects(): void {
+        conditions.dateFrom = "";
+        conditions.dateTo = "";
         (["from", "to"] as const).forEach((kind) => {
             clearDateSelectGroup(kind);
         });
@@ -207,12 +193,15 @@ export function createDateFilterController({ ui, onDateSelectionChange }: {
     }
 
     /**
-     * 指定側の日付セレクトをクリアして選択肢を同期する。
+     * 指定側の日付を未選択に戻し、日付セレクトをクリアして選択肢を同期する。
      * @param kind クリアする側
      */
     function resetDateSelectGroup(kind: DateSelectKind): void {
+        if (kind === "from") conditions.dateFrom = "";
+        else conditions.dateTo = "";
         clearDateSelectGroup(kind);
         syncDateSelectOptions();
+        storeDateSelection();
     }
 
     /**
@@ -279,7 +268,7 @@ export function createDateFilterController({ ui, onDateSelectionChange }: {
         buildSelectOptions(ui.el.dateFromDay, [], getDateSelectText().day);
         buildSelectOptions(ui.el.dateToDay, [], getDateSelectText().day);
         syncDateSelectOptions();
-        applyPendingDateValues();
+        renderDateSelection();
     }
 
     /**
@@ -399,14 +388,20 @@ export function createDateFilterController({ ui, onDateSelectionChange }: {
     }
 
     /**
-     * 保留していた日付復元値をセレクトへ適用する。
+     * 検索条件の状態に持つ日付範囲を、日付セレクトへ映す。
+     * 選択肢がまだない (曲データの読み込み前) ときは何もせず、読み込み後に映す。
+     * 選択肢にない値は選べないので、映した後に選択欄の値を状態へ書き戻して揃える。
      */
-    function applyPendingDateValues(): void {
-        if (!dateUi.pendingValues) return;
-        const { from, to } = dateUi.pendingValues;
-        if (from) applyDateSelectValue("from", from);
-        if (to) applyDateSelectValue("to", to);
-        dateUi.pendingValues = null;
+    function renderDateSelection(): void {
+        if (!dateUi.bounds) return;
+        const { dateFrom, dateTo } = conditions;
+        (["from", "to"] as const).forEach((kind) => {
+            clearDateSelectGroup(kind);
+        });
+        syncDateSelectOptions();
+        if (dateFrom) applyDateSelectValue("from", dateFrom);
+        if (dateTo) applyDateSelectValue("to", dateTo);
+        storeDateSelection();
     }
 
     /**
@@ -426,21 +421,18 @@ export function createDateFilterController({ ui, onDateSelectionChange }: {
      * @param key 整形する日付キー
      */
     function formatDateKeyForInput(key: number): string {
-        return formatDateSelectValue({ ...dateKeyToParts(key), precision: "day" });
+        return formatPartialDateValue({ ...dateKeyToParts(key), precision: "day" });
     }
 
     /**
-     * 曲一覧から日付境界を計算し、日付 UI へ反映する。
-     * @param {Song[]} songs
-     * @returns {SearchDateRange | null}
+     * 曲一覧から日付境界を計算し、日付 UI へ反映する。検索条件の状態に持つ日付範囲も選択欄へ映す。
+     * @param songs 読み込んだ曲一覧
+     * @returns 選択可能な日付範囲。日付を持つ曲がなければ null
      */
     function applyDateInputRange(songs: Song[]): SearchDateRange | null {
         const fromElements = getDateSelectElements("from");
         const toElements = getDateSelectElements("to");
         if (!hasCompleteDateSelectElements(fromElements) || !hasCompleteDateSelectElements(toElements)) return null;
-        const currentFromValue = getDateSelectValue("from");
-        const currentToValue = getDateSelectValue("to");
-        const hasPendingValues = Boolean(dateUi.pendingValues);
         let minKey: number | null = null;
         let maxKey: number | null = null;
         for (const row of songs) {
@@ -453,17 +445,13 @@ export function createDateFilterController({ ui, onDateSelectionChange }: {
         dateUi.bounds = bounds;
         dateUi.index = buildDateIndex(songs);
         initDateSelects(bounds);
-        if (!hasPendingValues) {
-            if (currentFromValue) applyDateSelectValue("from", currentFromValue);
-            if (currentToValue) applyDateSelectValue("to", currentToValue);
-        }
         return bounds;
     }
 
     /**
-     * 日付入力を許容範囲内に収め、完全日付同士の前後関係を補正する。
-     * @param {number} minKey
-     * @param {number} maxKey
+     * 日付入力を許容範囲内に収め、完全日付同士の前後関係を補正する。補正した値は検索条件の状態へ書く。
+     * @param minKey 選択できる最小の日付キー
+     * @param maxKey 選択できる最大の日付キー
      */
     function clampDateInputsToBounds(minKey: number, maxKey: number): void {
         const fromElements = getDateSelectElements("from");
@@ -486,6 +474,7 @@ export function createDateFilterController({ ui, onDateSelectionChange }: {
         }
         if (fromKey !== null && fromKey !== currentFromKey) applyDateSelectValue("from", formatDateKeyForInput(fromKey));
         if (toKey !== null && toKey !== currentToKey) applyDateSelectValue("to", formatDateKeyForInput(toKey));
+        storeDateSelection();
     }
 
     /**
@@ -504,7 +493,7 @@ export function createDateFilterController({ ui, onDateSelectionChange }: {
         clampDateInputsToBounds(dateUi.bounds.minKey, dateUi.bounds.maxKey);
     }
 
-    /** 入力変更に伴う下位値・上下限・候補の補正を終えてから確定を通知する。 */
+    /** 入力変更に伴う下位値・上下限・候補の補正を終え、検索条件の状態へ書いてから確定を通知する。 */
     function commitDateInputChange(target: HTMLSelectElement, options?: { resetDependentValues?: boolean }): void {
         if (!isHtmlElement(target) || !Object.values(ui.el).includes(target)) return;
         if (options?.resetDependentValues) {
@@ -516,6 +505,7 @@ export function createDateFilterController({ ui, onDateSelectionChange }: {
         }
         clampDateInputsIfNeeded();
         syncDateSelectOptions();
+        storeDateSelection();
         onDateSelectionChange?.();
     }
 
@@ -582,7 +572,6 @@ export function createDateFilterController({ ui, onDateSelectionChange }: {
     }
 
     return {
-        hasDateSelection,
         refreshDateSelectPlaceholders,
         getDateSelectValue,
         applyDateSelectValue,
@@ -590,7 +579,7 @@ export function createDateFilterController({ ui, onDateSelectionChange }: {
         resetDateSelectGroup,
         getPartialDateRange,
         syncDateSelectOptions,
-        applyPendingDateValues,
+        renderDateSelection,
         applyDateInputRange,
         clampDateInputsToBounds,
         clampDateInputsIfNeeded,

@@ -711,7 +711,7 @@ test("songs data source: stalled json request times out before falling back to n
         publicSongsJsonUrl: "data/songs.json",
         publicCsvUrl: "https://example.test/songs.csv",
         songsJsonCache: createFakeTextCacheStore(),
-        songsJsonResponseTimeoutMs: 10,
+        uncachedSongsJsonResponseTimeoutMs: 10,
         csvResponseTimeoutMs: 50
     });
 
@@ -723,6 +723,29 @@ test("songs data source: stalled json request times out before falling back to n
         ["https://example.test/songs.csv", { cache: "no-store" }]
     ]);
     assert.equal(snapshot.songs[0].archiveId, "archive-1");
+});
+
+test("songs data source: without a cache the json response may take longer than the cached-path limit", async (t) => {
+    const tick = createNetworkClock(t);
+    const publicJson = createSongsJson("public", "sha256:public");
+    const urls: Parameters<typeof fetch>[0][] = [];
+    mockFetch(t, (url) => {
+        urls.push(url);
+        // キャッシュがあるときの response 期限 (2 秒) より遅く、キャッシュがないときの期限 (10 秒) より早く応答する。
+        return new Promise((resolve) => setTimeout(() => resolve(createResponse(publicJson)), 9000));
+    });
+    const loading = createSongsDataSource({
+        publicSongsJsonUrl: "data/songs.json",
+        publicCsvUrl: "https://example.test/songs.csv",
+        songsJsonCache: createFakeTextCacheStore()
+    }).loadInitialSnapshot();
+    await tick(0);
+    await tick(9000);
+    const snapshot = await loading;
+    assert.ok(snapshot);
+    assert.equal(snapshot.source, "network");
+    assert.equal(snapshot.songs[0].archiveId, "public");
+    assert.deepEqual(urls, ["data/songs.json"], "the csv fallback is not started while the json is still expected");
 });
 
 test("songs data source: slow json body may finish after the response timeout", async (t) => {
@@ -864,14 +887,114 @@ test("songs data source: meta and json response/body share the default five seco
     await tick(1);
     const snapshot = await loading;
     assert.ok(snapshot);
-    assert.equal(jsonSignal.aborted, true);
     assert.equal(snapshot.source, "cache");
     assert.equal(snapshot.songs[0].archiveId, "cached");
-    releaseBody(createSongsJson("public", "sha256:public"));
-    await tick(30_000);
+    // 表示はキャッシュへ切り替えるが、取得は中断しない。後から届いた本文は次回の表示用に保存する。
+    assert.equal(jsonSignal.aborted, false);
     assert.equal(songsJsonCache.peek(), cachedJson);
+    const publicJson = createSongsJson("public", "sha256:public");
+    releaseBody(publicJson);
+    await tick(0);
+    assert.equal(songsJsonCache.peek(), publicJson);
+    assert.equal(snapshot.songs[0].archiveId, "cached", "the shown data is not swapped");
     assert.deepEqual(urls, ["data/songs-meta.json", "data/songs.json"]);
 });
+
+test("songs data source: a json response slower than the cached-path limit still refreshes the cache for the next visit", async (t) => {
+    const tick = createNetworkClock(t);
+    const cachedJson = createSongsJson("cached", "sha256:cached");
+    const publicJson = createSongsJson("public", "sha256:public");
+    const songsJsonCache = createFakeTextCacheStore(cachedJson);
+    let jsonSignal: AbortSignal | null | undefined;
+    mockFetch(t, (url, options) => {
+        if (url === "data/songs-meta.json") {
+            return Promise.resolve(createResponse(createSongsMetaJson("sha256:public")));
+        }
+        jsonSignal = options?.signal;
+        // response の期限 (2 秒) にも、全体の期限 (5 秒) にも間に合わない。
+        return new Promise((resolve) => setTimeout(() => resolve(createResponse(publicJson)), 8000));
+    });
+    const loading = createSongsDataSource({
+        publicSongsJsonUrl: "data/songs.json",
+        publicSongsMetaUrl: "data/songs-meta.json",
+        publicCsvUrl: "https://example.test/songs.csv",
+        songsJsonCache
+    }).loadInitialSnapshot();
+    await tick(0);
+    await tick(2000);
+    const snapshot = await loading;
+    assert.ok(snapshot);
+    assert.equal(snapshot.source, "cache", "the cache is shown as soon as the response limit passes");
+    assert.equal(songsJsonCache.peek(), cachedJson);
+
+    await tick(6000);
+    assert.ok(jsonSignal);
+    assert.equal(jsonSignal.aborted, false);
+    assert.equal(songsJsonCache.peek(), publicJson);
+});
+
+test("songs data source: the background json download is given up after its own limit", async (t) => {
+    const tick = createNetworkClock(t);
+    const cachedJson = createSongsJson("cached", "sha256:cached");
+    const songsJsonCache = createFakeTextCacheStore(cachedJson);
+    let jsonSignal: AbortSignal | null | undefined;
+    mockFetch(t, (url, options) => {
+        if (url === "data/songs-meta.json") {
+            return Promise.resolve(createResponse(createSongsMetaJson("sha256:public")));
+        }
+        jsonSignal = options?.signal;
+        return createPendingFetch()(url, options);
+    });
+    const loading = createSongsDataSource({
+        publicSongsJsonUrl: "data/songs.json",
+        publicSongsMetaUrl: "data/songs-meta.json",
+        publicCsvUrl: "https://example.test/songs.csv",
+        songsJsonCache
+    }).loadInitialSnapshot();
+    await tick(0);
+    await tick(2000);
+    const snapshot = await loading;
+    assert.ok(snapshot);
+    assert.equal(snapshot.source, "cache");
+
+    await tick(57_999);
+    assert.ok(jsonSignal);
+    assert.equal(jsonSignal.aborted, false);
+    await tick(1);
+    assert.equal(jsonSignal.aborted, true);
+    assert.equal(songsJsonCache.peek(), cachedJson);
+});
+
+for (const invalidKind of ["malformed", "older-than-meta"]) {
+    test(`songs data source: a late ${invalidKind} json does not replace the cache`, async (t) => {
+        const tick = createNetworkClock(t);
+        const cachedJson = createSongsJson("cached", "sha256:cached");
+        const songsJsonCache = createFakeTextCacheStore(cachedJson);
+        const lateJson = invalidKind === "malformed"
+            ? "not json"
+            : createSongsJson("public", "sha256:public", "2026-08-13T00:00:00.000Z");
+        mockFetch(t, (url) => {
+            if (url === "data/songs-meta.json") {
+                return Promise.resolve(createResponse(createSongsMetaJson("sha256:meta")));
+            }
+            return new Promise((resolve) => setTimeout(() => resolve(createResponse(lateJson)), 8000));
+        });
+        const loading = createSongsDataSource({
+            publicSongsJsonUrl: "data/songs.json",
+            publicSongsMetaUrl: "data/songs-meta.json",
+            publicCsvUrl: "https://example.test/songs.csv",
+            songsJsonCache
+        }).loadInitialSnapshot();
+        await tick(0);
+        await tick(2000);
+        const snapshot = await loading;
+        assert.ok(snapshot);
+        assert.equal(snapshot.source, "cache");
+
+        await tick(6000);
+        assert.equal(songsJsonCache.peek(), cachedJson);
+    });
+}
 
 for (const phase of ["response", "body"]) {
     test(`songs data source: meta ${phase} exhausting the deadline prevents a json request`, async (t) => {
@@ -904,17 +1027,16 @@ for (const phase of ["response", "body"]) {
     });
 }
 
-test("songs data source: late successful body is rejected even before the timeout callback runs", async (t) => {
+test("songs data source: a body that arrives after the deadline is not shown even before the timeout callback runs", async (t) => {
     let now = 0;
     t.mock.method(performance, "now", () => now);
     const cachedJson = createSongsJson("cached", "sha256:cached");
+    const publicJson = createSongsJson("public", "sha256:public");
     const songsJsonCache = createFakeTextCacheStore(cachedJson);
-    let signal: AbortSignal | null | undefined;
-    mockFetch(t, async (_url, options) => {
-        signal = options?.signal;
+    mockFetch(t, async () => {
         return createResponse(async () => {
             now = 5001;
-            return createSongsJson("public", "sha256:public");
+            return publicJson;
         });
     });
     const snapshot = await createSongsDataSource({
@@ -924,9 +1046,10 @@ test("songs data source: late successful body is rejected even before the timeou
     }).loadInitialSnapshot();
     assert.ok(snapshot);
     assert.equal(snapshot.source, "cache");
-    assert.ok(signal);
-    assert.equal(signal.aborted, true);
-    assert.equal(songsJsonCache.peek(), cachedJson);
+    assert.equal(snapshot.songs[0].archiveId, "cached");
+    // 表示には使わないが、届いた本文は次回の表示用に保存する。
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(songsJsonCache.peek(), publicJson);
 });
 
 test("songs data source: no cache keeps parallel requests and allows a body beyond five seconds", async (t) => {

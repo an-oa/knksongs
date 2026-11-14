@@ -3,7 +3,7 @@ import { normalizeForSearch } from "../../app/lib/search-normalization.mts";
 import { installNetworkMocks } from "./support/network-mocks.mts";
 import { routeSongsJsonFixture } from "./support/songs-network.mts";
 import { createScrollableResultSongs } from "./support/song-fixtures.mts";
-import { openBookmarkPanel, openSidebar, waitForInitialLoad } from "./support/ui-helpers.mts";
+import { expectBookmarkToast, openBookmarkPanel, openSidebar, waitForInitialLoad } from "./support/ui-helpers.mts";
 
 /**
  * 曲名・アーティスト名を差し替え、検索に使う正規化済みの値も同じ名前から作り直す。
@@ -297,11 +297,6 @@ test.describe("language changed in another tab", () => {
 
     test("an open import dialog is rewritten in English and keeps the selection and focus", async ({ page }) => {
         await openWithEnglishNamedSongs(page, "");
-        const alerts: string[] = [];
-        page.on("dialog", async (nativeDialog) => {
-            alerts.push(nativeDialog.message());
-            await nativeDialog.accept();
-        });
         await openBookmarkPanel(page);
         await page.locator("#bookmark-panel-import-input").setInputFiles(TWO_NEW_BOOKMARKS_FILE);
         const dialog = page.locator("#bookmark-transfer-dialog");
@@ -322,7 +317,7 @@ test.describe("language changed in another tab", () => {
 
         await dialog.getByRole("button", { name: "Import", exact: true }).click();
         await expect(dialog).toBeHidden();
-        await expect.poll(() => alerts).toEqual(["Added 1 bookmark."]);
+        await expectBookmarkToast(page, "Added 1 bookmark.");
     });
 
     test("a failure shown in the dialog and the panel error are rewritten in English", async ({ page }) => {

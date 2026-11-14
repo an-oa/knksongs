@@ -1,7 +1,7 @@
 import { SEARCH_BOOLEAN_FILTER_KEYS } from "../../lib/search-boolean-filters.mjs";
 import type { SearchBooleanFilterKey } from "../../lib/search-boolean-filters.mjs";
 import { getUiText } from "../../lib/ui-text.mjs";
-import type { AppUiElements, SiteLanguageUiRuntimeState } from "../../state.types";
+import type { AppUiElements, SiteLanguageUiRuntimeState } from "../../state.types.mjs";
 import type { DateSelectKind } from "../date/filter.mjs";
 
 /** 概要行に表示する適用中の条件 1 件。 */

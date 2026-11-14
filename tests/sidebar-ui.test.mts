@@ -7,7 +7,7 @@ import { installFakeDom, invokeListener } from "./test-helpers.mts";
  * サイドバーUIテスト用の最小状態を作る。
  */
 function createSidebarUiState() {
-    const sidebar = document.createElement("aside");
+    const sidebar = document.createElement("div");
     sidebar.setAttribute("id", "sidebar");
     const mainContent = document.createElement("main");
     mainContent.className = "main-content";
@@ -158,6 +158,49 @@ test("sidebar: escape closes settings panel, removes inert, and restores focus",
         assert.equal(ui.el.sidebarHeader.hasAttribute("inert"), false);
         assert.equal(ui.el.sidebarScrollArea.hasAttribute("inert"), false);
         assert.equal(document.activeElement, ui.el.openSettingsPanelBtn);
+    } finally {
+        restoreDom();
+    }
+});
+
+test("sidebar: Escape that cancels a kana-kanji conversion closes neither the panel nor the sidebar", () => {
+    const restoreDom = installFakeDom();
+    try {
+        const { ui, openSidebarBtn } = createSidebarUiState();
+        const controller = createSidebarController({
+            ui,
+            ...createSidebarDependencies()
+        });
+
+        controller.setupUIHandlers();
+        invokeListener(openSidebarBtn, "click", {});
+        assert.equal(controller.isOpen(), true);
+
+        // サイドバーの入力欄で変換を取り消す Esc。isComposing を付けるブラウザと、キーコード 229 だけを付けるブラウザがある。
+        let prevented = false;
+        const pressComposingEscape = () => {
+            for (const composing of [{ isComposing: true }, { keyCode: 229 }]) {
+                invokeListener(restoreDom.document, "keydown", {
+                    key: "Escape",
+                    ...composing,
+                    preventDefault() {
+                        prevented = true;
+                    }
+                });
+            }
+        };
+        pressComposingEscape();
+        assert.equal(controller.isOpen(), true);
+
+        invokeListener(ui.el.openSettingsPanelBtn, "click", {});
+        pressComposingEscape();
+        assert.equal(ui.el.settingsSidebarPanel.hidden, false);
+        assert.equal(prevented, false);
+
+        // 変換が終わった後の Esc は、開いているパネルを閉じる。
+        invokeListener(restoreDom.document, "keydown", { key: "Escape", preventDefault() {} });
+        assert.equal(ui.el.settingsSidebarPanel.hidden, true);
+        assert.equal(controller.isOpen(), true);
     } finally {
         restoreDom();
     }

@@ -143,6 +143,151 @@ test("youtube: vertical videos stay landscape in thumbnail mode and switch on if
     }
 });
 
+test("youtube: an idle thumbnail keeps its play button until its video or the thumbnail setting changes", () => {
+    const cleanup = installFakeDom();
+    try {
+        const ui = createYoutubeUiState({});
+        const { controller } = createYoutubeControllerHarness({ ui });
+        const thumb = document.createElement("div");
+        document.body.appendChild(thumb);
+        const target = { isVertical: false, videoId: "video1", startSeconds: 5, endSeconds: 25 };
+
+        controller.updateThumbnail(thumb, target);
+        const playButton = thumb.querySelector(".thumb-play-btn");
+        const clickHandler = thumb.onclick;
+        assert.ok(playButton);
+        assert.ok(playButton.querySelector("img"));
+
+        // 結果一覧の描き直しで同じ内容を渡されても、画像とボタンを作り直さない。
+        controller.updateThumbnail(thumb, { ...target });
+        assert.equal(thumb.querySelector(".thumb-play-btn"), playButton);
+        assert.equal(thumb.onclick, clickHandler);
+
+        // 再生する範囲が変わる設定では、同じ曲でも再生対象と押したときの処理を入れ直す。
+        // 同じ動画の再生ボタンは作り直さない。作り直すと、ボタンが持っているフォーカスを失う。
+        const playbackKey = thumb.dataset.playbackKey;
+        ui.playback.playArchiveToEnd = true;
+        controller.updateThumbnail(thumb, { ...target });
+        assert.notEqual(thumb.dataset.playbackKey, playbackKey);
+        assert.notEqual(thumb.onclick, clickHandler);
+        assert.equal(thumb.querySelector(".thumb-play-btn"), playButton);
+        assert.equal(thumb.children.length, 1);
+
+        // 別の動画の曲を表示するときは、その動画の画像を入れたボタンに作り直す。
+        controller.updateThumbnail(thumb, { ...target, videoId: "video2" });
+        const otherVideoButton = thumb.querySelector(".thumb-play-btn");
+        assert.ok(otherVideoButton);
+        assert.notEqual(otherVideoButton, playButton);
+        assert.equal(otherVideoButton.querySelector("img")?.src, "https://i.ytimg.com/vi/video2/mqdefault.jpg");
+        assert.equal(thumb.children.length, 1);
+        controller.updateThumbnail(thumb, { ...target });
+
+        // サムネイルを非表示にすると画像を外し、同じ設定のままなら外した状態を保つ。
+        ui.playback.showThumbnails = false;
+        controller.updateThumbnail(thumb, { ...target });
+        assert.equal(thumb.querySelector(".thumb-play-btn"), null);
+        controller.updateThumbnail(thumb, { ...target });
+        assert.equal(thumb.querySelector(".thumb-play-btn"), null);
+
+        ui.playback.showThumbnails = true;
+        controller.updateThumbnail(thumb, { ...target });
+        assert.ok(thumb.querySelector(".thumb-play-btn"));
+    } finally {
+        cleanup();
+    }
+});
+
+test("youtube: after playback was closed, the next update keeps the play button and it can be played again", () => {
+    const cleanup = installFakeDom();
+    try {
+        const ui = createYoutubeUiState({});
+        const { controller } = createYoutubeControllerHarness({ ui });
+        const thumb = document.createElement("div");
+        document.body.appendChild(thumb);
+        const target = { isVertical: false, videoId: "video1", startSeconds: 5 };
+
+        controller.updateThumbnail(thumb, target);
+        clickThumbnail(thumb);
+        requireIframe(thumb);
+
+        // 再生中に同じ内容を渡されても、再生を止めない。
+        controller.updateThumbnail(thumb, { ...target });
+        requireIframe(thumb);
+
+        controller.restoreActivePlayback();
+        const restoredButton = thumb.querySelector<HTMLElement>(".thumb-play-btn");
+        assert.ok(restoredButton);
+        assert.equal(thumb.dataset.playbackKey, "", "closing clears the playback target");
+        restoredButton.focus();
+
+        // 閉じた後の最初の反映では、再生対象を入れ直す。閉じたときに置いた再生ボタンは、
+        // キーボードで閉じた人のフォーカスを持っているので、作り直さずにそのまま使う。
+        controller.updateThumbnail(thumb, { ...target });
+        assert.notEqual(thumb.dataset.playbackKey, "");
+        assert.equal(thumb.querySelector(".thumb-play-btn"), restoredButton);
+        assert.equal(restoredButton.parentElement, thumb, "the button never leaves the page");
+        assert.equal(thumb.children.length, 1);
+        assert.equal(document.activeElement, restoredButton);
+
+        // 同じ動画の別の曲 (開始位置が違う) を表示するときも、同じ再生ボタンを使い、その曲を再生する。
+        controller.updateThumbnail(thumb, { ...target, startSeconds: 90 });
+        assert.equal(thumb.querySelector(".thumb-play-btn"), restoredButton);
+        clickThumbnail(thumb);
+        assert.match(requireIframe(thumb).src, /[?&]start=90(&|$)/);
+    } finally {
+        cleanup();
+    }
+});
+
+test("youtube: keyboard focus follows the play button into the player and back", () => {
+    const cleanup = installFakeDom();
+    try {
+        const ui = createYoutubeUiState({});
+        const { controller } = createYoutubeControllerHarness({ ui });
+        const thumb = document.createElement("div");
+        document.body.appendChild(thumb);
+        controller.updateThumbnail(thumb, { isVertical: false, videoId: "video1", startSeconds: 5 });
+
+        const playButton = thumb.querySelector(".thumb-play-btn");
+        assert.ok(playButton instanceof HTMLElement);
+        playButton.focus();
+        clickThumbnail(thumb);
+
+        // 再生ボタンは動画と入れ替わって消えるので、フォーカスを閉じるボタンへ移す。
+        const closeButton = thumb.querySelector(".thumb-close-btn");
+        assert.ok(closeButton);
+        assert.equal(document.activeElement, closeButton);
+
+        invokeListener(closeButton, "click", { stopPropagation() {} });
+        const restoredButton = thumb.querySelector(".thumb-play-btn");
+        assert.ok(restoredButton);
+        assert.equal(document.activeElement, restoredButton, "focus returns to the rebuilt play button");
+    } finally {
+        cleanup();
+    }
+});
+
+test("youtube: starting playback with the pointer does not move focus into the thumbnail", () => {
+    const cleanup = installFakeDom();
+    try {
+        const ui = createYoutubeUiState({});
+        const { controller } = createYoutubeControllerHarness({ ui });
+        const thumb = document.createElement("div");
+        const outside = document.createElement("button");
+        document.body.append(thumb, outside);
+        controller.updateThumbnail(thumb, { isVertical: false, videoId: "video1", startSeconds: 5 });
+
+        outside.focus();
+        clickThumbnail(thumb);
+        assert.equal(document.activeElement, outside);
+
+        controller.restoreActivePlayback();
+        assert.equal(document.activeElement, outside);
+    } finally {
+        cleanup();
+    }
+});
+
 test("youtube: player init uses prebuilt iframe src and binds YT.Player to it", async () => {
     const cleanup = installFakeDom();
     try {
@@ -177,6 +322,8 @@ test("youtube: player init uses prebuilt iframe src and binds YT.Player to it", 
         assert.equal(iframe.allow, "autoplay; encrypted-media");
         assert.equal(iframe.referrerPolicy, "strict-origin-when-cross-origin");
         assert.equal(iframe.allowFullscreen, true);
+        // 動画の情報が届く前から、読み上げ環境が枠の中身を伝えられる。
+        assert.equal(iframe.title, "YouTube 動画プレーヤー");
     } finally {
         cleanup();
     }
@@ -222,7 +369,7 @@ test("youtube: embed autoplay is enabled for continuation playback", async () =>
         const thumb = document.createElement("div");
         document.body.appendChild(thumb);
 
-        controller.playThumbnail(thumb, {
+        void controller.playThumbnail(thumb, {
             isVertical: false,
             videoId: "video1",
             startSeconds: 45
@@ -512,7 +659,7 @@ test("youtube: old Player events do not settle the pending same-thumb replay", a
     const { ui, controller, thumb, oldPlayer, newPlayer, replayPromise } = await prepareSameThumbReplay();
     const settled = t.mock.fn();
     const failed = t.mock.fn();
-    replayPromise.then(settled);
+    void replayPromise.then(settled);
     controller.setPlaybackStartFailedHook(failed);
 
     oldPlayer.player.currentState = YOUTUBE_PLAYER_STATE.ENDED;
@@ -533,7 +680,7 @@ test("youtube: current Player ignores ended notification when its state still re
     t.after(installFakeDom());
     const { ui, thumb, newPlayer, replayPromise } = await prepareSameThumbReplay();
     const settled = t.mock.fn();
-    replayPromise.then(settled);
+    void replayPromise.then(settled);
     newPlayer.player.currentState = YOUTUBE_PLAYER_STATE.PLAYING;
     newPlayer.emitStateChange(YOUTUBE_PLAYER_STATE.ENDED);
     await setImmediate();
@@ -969,6 +1116,78 @@ test("youtube: updating another thumbnail preserves the active player's ended ha
     }
 });
 
+test("youtube: an exception in the ended hook is recorded after the thumbnail is restored", async (t) => {
+    const cleanup = installFakeDom();
+    const unhandledRejections: unknown[] = [];
+    const recordUnhandledRejection = (reason: unknown) => { unhandledRejections.push(reason); };
+    process.on("unhandledRejection", recordUnhandledRejection);
+    try {
+        const { ui, controller } = createYoutubeControllerHarness();
+        const players = installYoutubePlayerFixture();
+        const consoleError = t.mock.method(console, "error", () => {});
+        const hookError = new Error("continuation failed");
+        controller.setPlaybackEndedHook(() => { throw hookError; });
+        const { thumbA } = createTwoYoutubePlaybackThumbs(controller);
+        const cardA = thumbA.closest(".song-card");
+        assert.ok(cardA instanceof HTMLElement);
+        cardA.dataset.songKey = "song:a";
+        clickThumbnail(thumbA);
+        await setImmediate();
+        players[0].emitStateChange(globalThis.window.YT.PlayerState.PLAYING);
+
+        players[0].emitStateChange(globalThis.window.YT.PlayerState.ENDED);
+        await setImmediate();
+        await setImmediate();
+
+        // 通知先の例外は、理由の分からない未処理の rejection にせず、どこで起きたかを添えて記録する。
+        assert.deepEqual(consoleError.mock.calls.map((call) => call.arguments), [
+            ["YouTube playback hook failed", hookError]
+        ]);
+        assert.deepEqual(unhandledRejections, []);
+        assert.ok(thumbA.querySelector("img"));
+        assert.equal(ui.playback.activeThumb, null);
+    } finally {
+        process.off("unhandledRejection", recordUnhandledRejection);
+        cleanup();
+    }
+});
+
+test("youtube: an exception in the start-failed hook is recorded after the thumbnail is restored", async (t) => {
+    const cleanup = installFakeDom();
+    const unhandledRejections: unknown[] = [];
+    const recordUnhandledRejection = (reason: unknown) => { unhandledRejections.push(reason); };
+    process.on("unhandledRejection", recordUnhandledRejection);
+    try {
+        const { ui, controller } = createYoutubeControllerHarness();
+        const players = installYoutubePlayerFixture();
+        const consoleError = t.mock.method(console, "error", () => {});
+        const hookError = new Error("continuation failed");
+        controller.setPlaybackStartFailedHook(() => { throw hookError; });
+        const { thumbA } = createTwoYoutubePlaybackThumbs(controller);
+        const cardA = thumbA.closest(".song-card");
+        assert.ok(cardA instanceof HTMLElement);
+        cardA.dataset.songKey = "song:a";
+        const playbackPromise = controller.playThumbnail(thumbA, { videoId: "video1", startSeconds: 5, isVertical: false });
+        await setImmediate();
+
+        // 埋め込みを許可していない動画などで、プレーヤーが再生を始められない。
+        players[0].emitError(150);
+        await setImmediate();
+        await setImmediate();
+
+        assertPlaybackStartStatus(await playbackPromise, YOUTUBE_PLAYBACK_START_STATUS.FAILED);
+        assert.deepEqual(consoleError.mock.calls.map((call) => call.arguments), [
+            ["YouTube playback hook failed", hookError]
+        ]);
+        assert.deepEqual(unhandledRejections, []);
+        assert.ok(thumbA.querySelector("img"));
+        assert.equal(ui.playback.activeThumb, null);
+    } finally {
+        process.off("unhandledRejection", recordUnhandledRejection);
+        cleanup();
+    }
+});
+
 test("youtube: updating another thumbnail keeps playback start pending until PLAYING", async () => {
     const cleanup = installFakeDom();
     const fakeTimeouts = installFakeTimeouts();
@@ -1184,7 +1403,7 @@ test("youtube: ended playback waits for layout refresh before notifying", async 
         document.body.appendChild(card);
         const thumb = document.createElement("div");
         card.appendChild(thumb);
-        controller.playThumbnail(thumb, { isVertical: false, videoId: "video-wait", startSeconds: 0 });
+        void controller.playThumbnail(thumb, { isVertical: false, videoId: "video-wait", startSeconds: 0 });
         await setImmediate();
 
         players[0].emitStateChange(globalThis.window.YT.PlayerState.PLAYING);
@@ -1235,7 +1454,7 @@ test("youtube: ended playback does not continue after a newer playback starts", 
         secondCard.appendChild(secondThumb);
 
         players[0].emitStateChange(globalThis.window.YT.PlayerState.ENDED);
-        controller.playThumbnail(secondThumb, { isVertical: false, videoId: "video-second", startSeconds: 0 });
+        void controller.playThumbnail(secondThumb, { isVertical: false, videoId: "video-second", startSeconds: 0 });
         await setImmediate();
 
         while (fakeFrames.pendingCount > 0) fakeFrames.advanceFrame();
@@ -1396,7 +1615,7 @@ test("youtube: playback start failure does not notify after a newer playback sta
 
         players[0].emitError(150);
         assertPlaybackStartStatus(await failedPlayback, YOUTUBE_PLAYBACK_START_STATUS.FAILED);
-        controller.playThumbnail(nextThumb, { isVertical: false, videoId: "video-next", startSeconds: 0 });
+        void controller.playThumbnail(nextThumb, { isVertical: false, videoId: "video-next", startSeconds: 0 });
         await setImmediate();
 
         while (fakeFrames.pendingCount > 0) fakeFrames.advanceFrame();
@@ -1499,7 +1718,7 @@ test("youtube: recreating the shared player does not fail the newer playback att
 
         let secondResult: YoutubePlaybackStartResult | "pending" = "pending";
         const secondPromise = controller.playThumbnail(secondThumb, { isVertical: false, videoId: "video-second", startSeconds: 0 });
-        secondPromise.then((didStart) => {
+        void secondPromise.then((didStart) => {
             secondResult = didStart;
         });
         await setImmediate();

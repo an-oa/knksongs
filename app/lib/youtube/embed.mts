@@ -19,7 +19,7 @@ export function createYoutubeIframeApiLoader({
     iframeApiSelector,
     readyPollMs
 }: {
-    youtube: Pick<import("../../state.types").AppYoutubeRuntimeState, "apiPromise">;
+    youtube: Pick<import("../../state.types.mjs").AppYoutubeRuntimeState, "apiPromise">;
     iframeApiSrc: string;
     iframeApiSelector: string;
     readyPollMs: number;

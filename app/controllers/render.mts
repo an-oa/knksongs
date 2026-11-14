@@ -2,9 +2,10 @@
  * 検索結果カードの描画を担う controller。
  *
  * data.currentResults を、カード要素を再利用しながら一覧へ差分反映する。
+ * 前回と同じ内容のカードは中身を書き直さず、追加表示のたびに全カードを作り直さない。
  * 再生中のカードは位置を保ち、表示から外れたら再生を止める。
  * masonry レイアウト (../lib/render)、末尾到達での追加表示、ブックマーク内のドラッグ並べ替え、
- * 指したカードで収まらない曲名を流す動き、空結果の表示、言語切り替え時の文言の書き直しもここで行う。
+ * 指したカードで収まらない曲名を流す動き、空結果と読み込み失敗の表示、言語切り替え時の文言の書き直しもここで行う。
  *
  * 表示する結果の決定は ./search.mts が行い、ここは受け取って描くだけにする。
  * 再生は ./youtube.mts、並べ替えの保存は ./storage.mts、ブックマークへの追加と削除は
@@ -22,13 +23,14 @@ import { createResultTailObserver } from "../lib/render/result-tail-observer.mjs
 import { getSongDisplayArtist, getSongDisplayTitle, type SongDisplayName } from "../lib/song-display-name.mjs";
 import type { SiteLanguage } from "../lib/site-language.mjs";
 import { getUiText, type UiText } from "../lib/ui-text.mjs";
+import { createLoadErrorElement } from "../lib/load-error-view.mjs";
 import {
     createYoutubePlaybackStartResult,
     YOUTUBE_PLAYBACK_START_STATUS
 } from "../lib/youtube/playback-start-attempt.mjs";
 import type { YoutubePlaybackMode, YoutubePlaybackStartResult } from "../lib/youtube/playback-start-attempt.mjs";
 import type { YoutubeTarget } from "../lib/youtube/embed.mjs";
-import { suppressYoutubeThumbnailContextMenu } from "../lib/youtube/thumbnail.mjs";
+import { setYoutubeThumbnailPlayLabel, suppressYoutubeThumbnailContextMenu } from "../lib/youtube/thumbnail.mjs";
 import type {
     AppDataState,
     PlaybackUiRuntimeState,
@@ -36,13 +38,15 @@ import type {
     RenderUiRuntimeState,
     SearchUiRuntimeState,
     SiteLanguageUiRuntimeState
-} from "../state.types";
+} from "../state.types.mjs";
 
 const DEFAULT_RESULT_DISPLAY_BATCH_SIZE = 48;
 
 type RenderUiElements = {
     resultList?: HTMLElement | null;
     resultTailSentinel?: HTMLElement | null;
+    /** 画面には出さず、読み上げだけで伝える内容を書く要素。 */
+    resultAnnouncement?: HTMLElement | null;
 };
 
 type RenderUiState = {
@@ -61,8 +65,16 @@ type ActiveCardRenderState = {
 };
 
 type EmptyStateDescriptor = {
-    kind: "loading" | "error" | "empty";
+    kind: "loading" | "error" | "empty" | "loadError";
     message: string;
+};
+
+/** カードへ最後に書いた内容。同じ内容のときに書き直しを省くために覚える。 */
+type RenderedCardState = {
+    row: Song;
+    resultIndex: number;
+    isBookmarkActive: boolean;
+    language: SiteLanguage;
 };
 
 type DisplayState = {
@@ -83,6 +95,8 @@ type RenderCallbacks = {
     removeSongFromActiveBookmark: (songKey: string) => void;
     moveSongInActiveBookmark: (fromSongKey: string, toSongKey: string) => StorageActionResult<{ ok: true; changed: boolean }>;
     notifyBookmarkSaveError: (result: StorageActionFailure) => void;
+    /** ページを読み込み直す。曲データを取得できなかったときに出すボタンから呼ぶ。 */
+    reloadPage: () => void;
 };
 
 type RenderControllerInput = {
@@ -123,10 +137,18 @@ export function createRenderController({
         moveSongInActiveBookmark,
         onSaveFailure: notifyBookmarkSaveError,
         refreshDisplay: () => updateDisplay(),
-        getResultList: () => ui.el.resultList ?? null
+        getResultList: () => ui.el.resultList ?? null,
+        showResultAt: (index) => ensureResultVisible(index),
+        onKeyboardMove: (songKey, toIndex) => handleKeyboardReorder(songKey, toIndex)
     });
+    /** カードごとの、最後に書いた内容。カードの要素が捨てられれば一緒に消える。 */
+    const renderedCardStates = new WeakMap<RenderCardEntry, RenderedCardState>();
+    /** 曲ごとの再生対象。曲データは読み込み後に変わらないので、URL の解析結果を使い回す。 */
+    const youtubeTargetsByRow = new WeakMap<Song, YoutubeTarget>();
     /** 並べ替えのドラッグを受けるように設定した一覧。描き直すたびに設定し直さないよう覚えておく。 */
     let reorderListenerTarget: HTMLElement | null = null;
+    /** 曲データを取得できず、結果一覧に読み込み失敗を出しているか。読み込み直すまで変わらない。 */
+    let hasLoadError = false;
     const resultTailObservationController = createResultTailObserver({
         getSentinel: () => ui.el.resultTailSentinel,
         hasMoreResults,
@@ -181,12 +203,15 @@ export function createRenderController({
         const actionBtn = document.createElement("button");
         actionBtn.type = "button";
 
-        const dragHandle = document.createElement("div");
+        // キーボードでもフォーカスして矢印キーで並べ替えられるよう、button にする。
+        const dragHandle = document.createElement("button");
+        dragHandle.type = "button";
         dragHandle.className = "drag-handle";
-        dragHandle.innerHTML = "⠿";
+        dragHandle.textContent = "⠿";
         dragHandle.hidden = true;
 
         dragHandle.addEventListener("pointerdown", dragReorderController.onHandlePointerDown);
+        dragHandle.addEventListener("keydown", dragReorderController.onHandleKeyDown);
         bindCardTextMarquee(card, [{ box: title, text: titleText }, { box: artist, text: artistText }]);
 
         rightGroup.append(tags, actionBtn);
@@ -214,20 +239,36 @@ export function createRenderController({
     /**
      * 曲データをカード要素へ反映し、アクションボタンの挙動を設定する。
      * 曲名などの文言は updateCardText で、今の言語で書く。
+     * 結果一覧を描き直すたびに表示中の全カードについて呼ばれるので、曲・位置・ブックマーク表示・言語が
+     * 前回と同じカードは書き直さない。サムネイルは表示設定でも変わるため毎回渡し、変わっていなければ再生側が何もしない。
      * @param entry 反映先のカード要素
      * @param row 表示する曲
      * @param resultIndex 結果一覧での位置
      */
     function updateCardFromRow(entry: RenderCardEntry, row: Song, resultIndex: number) {
-        const yt = buildYoutubeTarget(row);
+        updateThumbnail(entry.thumbDiv, getYoutubeTarget(row));
+        const isBookmarkActive = Boolean(data.activeBookmark);
+        const language = ui.language.current;
+        const rendered = renderedCardStates.get(entry);
+        if (
+            rendered &&
+            rendered.row === row &&
+            rendered.resultIndex === resultIndex &&
+            rendered.isBookmarkActive === isBookmarkActive &&
+            rendered.language === language
+        ) {
+            return;
+        }
+        renderedCardStates.set(entry, { row, resultIndex, isBookmarkActive, language });
+
         const titleId = `result-title-${resultIndex + 1}`;
+        entry.dragHandle.hidden = !isBookmarkActive;
         entry.titleHeading.setAttribute("id", titleId);
         entry.content.setAttribute("aria-labelledby", titleId);
-        updateThumbnail(entry.thumbDiv, yt);
         updateTitleLinkTarget(entry.titleEl, row);
 
         const btn = entry.actionBtn;
-        if (data.activeBookmark) {
+        if (isBookmarkActive) {
             btn.textContent = "×";
             btn.className = "remove-from-bookmark-btn";
             btn.onclick = () => {
@@ -252,12 +293,15 @@ export function createRenderController({
     function updateCardText(entry: RenderCardEntry, row: Song) {
         const language = ui.language.current;
         const text = getUiText(language);
+        const title = getSongDisplayTitle(row, language);
         applyDisplayName(
             { box: entry.titleEl, text: entry.titleTextEl },
-            getSongDisplayTitle(row, language),
+            title,
             text.card.untitled,
             language
         );
+        setYoutubeThumbnailPlayLabel(entry.thumbDiv, text.card.play(title.text || text.card.untitled));
+        entry.dragHandle.setAttribute("aria-label", text.card.reorderHandle);
         applyDisplayName(
             { box: entry.artistEl, text: entry.artistTextEl },
             getSongDisplayArtist(row, language),
@@ -272,9 +316,23 @@ export function createRenderController({
     }
 
     /**
+     * 曲行の再生対象を返す。同じ曲行は、最初に組み立てた結果を使い回す。
+     * @param row 表示する曲
+     * @returns サムネイルと埋め込み再生に使う YouTube 情報
+     */
+    function getYoutubeTarget(row: Song): YoutubeTarget {
+        let target = youtubeTargetsByRow.get(row);
+        if (!target) {
+            target = buildYoutubeTarget(row);
+            youtubeTargetsByRow.set(row, target);
+        }
+        return target;
+    }
+
+    /**
      * 曲行からサムネイル/埋め込み再生に必要な YouTube 情報を組み立てる。
-     * @param {Song} row
-     * @returns {YoutubeTarget}
+     * @param row 表示する曲
+     * @returns サムネイルと埋め込み再生に使う YouTube 情報
      */
     function buildYoutubeTarget(row: Song): YoutubeTarget {
         const extracted = extractYoutubeInfo(row.url);
@@ -369,6 +427,12 @@ export function createRenderController({
      * @returns 結果一覧に置く空結果の項目
      */
     function createEmptyStateElement(descriptor: EmptyStateDescriptor) {
+        if (descriptor.kind === "loadError") {
+            return createLoadErrorElement({
+                detail: descriptor.message,
+                reload: getUiText(ui.language.current).results.reload
+            }, callbacks.reloadPage);
+        }
         const empty = document.createElement("li");
         empty.className = "result-empty-state";
         if (descriptor.kind !== "empty") {
@@ -395,6 +459,9 @@ export function createRenderController({
      */
     function getEmptyStateDescriptor(): EmptyStateDescriptor {
         const results = getUiText(ui.language.current).results;
+        if (hasLoadError) {
+            return { kind: "loadError", message: results.loadErrorDetail };
+        }
         if (!searchUiState.dataReady) {
             return { kind: "loading", message: results.loading };
         }
@@ -483,7 +550,7 @@ export function createRenderController({
         if (!entry) {
             return Promise.resolve(createYoutubePlaybackStartResult(YOUTUBE_PLAYBACK_START_STATUS.FAILED));
         }
-        return Promise.resolve(playThumbnail(entry.thumbDiv, buildYoutubeTarget(data.currentResults[index]), {
+        return Promise.resolve(playThumbnail(entry.thumbDiv, getYoutubeTarget(data.currentResults[index]), {
             playbackMode: "autoplay"
         }));
     }
@@ -495,7 +562,7 @@ export function createRenderController({
     function scrollSongIntoView(songKey: string) {
         const entry = getCardEntryBySongKey(songKey);
         if (!entry) return;
-        scheduleScrollElementIntoView(entry.card, {
+        void scheduleScrollElementIntoView(entry.card, {
             topOffset: getHeaderHeight(),
             behavior: "smooth",
             force: true
@@ -562,14 +629,14 @@ export function createRenderController({
             let entry = renderUi.cardEntriesBySongKey.get(rowKey);
             if (!entry) entry = createCardElements();
 
-            entry.card.dataset.songKey = row.songKey;
-            const isBookmarkActive = Boolean(data.activeBookmark);
-            entry.card.draggable = false;
+            if (entry.card.dataset.songKey !== rowKey) entry.card.dataset.songKey = rowKey;
             // ドラッグ中に並べ替えのプレビューや続きの読み込みで描き直しても、移動元の半透明は保つ。
-            entry.card.classList.toggle("dragging", isBookmarkActive && dragReorderController.isDraggingSong(rowKey));
-            entry.dragHandle.hidden = !isBookmarkActive;
+            entry.card.classList.toggle(
+                "dragging",
+                Boolean(data.activeBookmark) && dragReorderController.isDraggingSong(rowKey)
+            );
 
-            updateCardFromRow(entry, results[i], i);
+            updateCardFromRow(entry, row, i);
             nextEntriesBySongKey.set(rowKey, entry);
             nodes.push(entry.card);
         }
@@ -734,17 +801,65 @@ export function createRenderController({
             container.replaceChildren(createEmptyStateElement(getEmptyStateDescriptor()));
             return;
         }
+        const language = ui.language.current;
         for (const row of data.currentResults.slice(0, data.displayLimit)) {
             const entry = renderUi.cardEntriesBySongKey.get(row.songKey);
-            if (entry) updateCardText(entry, row);
+            if (!entry) continue;
+            updateCardText(entry, row);
+            const rendered = renderedCardStates.get(entry);
+            if (rendered) renderedCardStates.set(entry, { ...rendered, language });
         }
         refreshLayout();
+    }
+
+    /**
+     * 曲データを取得できなかったことを結果一覧に出す。説明と、ページを読み込み直すボタンを置く。
+     * 件数表示の「読込エラー」だけでは、利用者に待つべきか読み込み直すべきかが伝わらない。
+     */
+    function showLoadError(): void {
+        hasLoadError = true;
+        const container = ui.el.resultList;
+        if (container) renderEmptyResults(container);
+    }
+
+    /**
+     * 画面には出さず、読み上げだけで伝える内容を書く。
+     * @param message 読み上げる文言
+     */
+    function announce(message: string): void {
+        const region = ui.el.resultAnnouncement;
+        if (region) region.textContent = message;
+    }
+
+    /**
+     * キーボードで並べ替えた後に、動かしたカードのハンドルへフォーカスを戻し、移動先を読み上げで伝える。
+     * 並べ替えでカードの要素を移すとフォーカスが外れるので、続けて矢印キーで動かせるよう戻す。
+     * @param songKey 動かした曲のキー
+     * @param toIndex 保存した後の表示順での位置
+     */
+    function handleKeyboardReorder(songKey: string, toIndex: number): void {
+        const entry = getCardEntryBySongKey(songKey);
+        const row = data.currentResults[toIndex];
+        if (!entry || !row) return;
+        entry.dragHandle.focus({ preventScroll: true });
+        void scheduleScrollElementIntoView(entry.card, {
+            topOffset: getHeaderHeight(),
+            behavior: "smooth"
+        });
+        const language = ui.language.current;
+        const text = getUiText(language);
+        announce(text.card.reordered(
+            getSongDisplayTitle(row, language).text || text.card.untitled,
+            toIndex + 1,
+            data.currentResults.length
+        ));
     }
 
     return {
         playSongByKey,
         scrollSongIntoView,
         updateDisplay,
+        showLoadError,
         refreshText,
         refreshLayout
     };

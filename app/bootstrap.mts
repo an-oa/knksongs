@@ -8,6 +8,7 @@
  *
  * 検索・描画・再生の実処理は各 controller 側にあり、ここでは持たない。
  * 曲データの取得もここでは始めず、./startup-data.mjs が先に始めた取得の結果を受け取る。
+ * 初期化が例外で止まったときは、./startup-error.mjs で読み込みの失敗を画面に出す。
  * controller 同士の循環参照は、getXxxController のような遅延 getter や null 初期化の let 変数で解く。
  */
 import {
@@ -29,6 +30,7 @@ import {
     appState
 } from "./state.mjs";
 import { initialSongsSnapshot } from "./startup-data.mjs";
+import { showStartupLoadError } from "./startup-error.mjs";
 import { createSearchController } from "./controllers/search.mjs";
 import { createSearchCoordinator } from "./controllers/search-coordinator.mjs";
 import { createRenderController } from "./controllers/render.mjs";
@@ -39,8 +41,10 @@ import { createBookmarkPersistenceController } from "./controllers/bookmark-pers
 import { createStorageController } from "./controllers/storage.mjs";
 import { createBookmarkUiController } from "./ui/bookmark/ui.mjs";
 import { createBookmarkTransferController } from "./ui/bookmark/transfer.mjs";
+import { createBookmarkPromptDialogController } from "./ui/bookmark/prompt-dialog.mjs";
 import { isIOSWebKit } from "./lib/dom-utils.mjs";
 import { scrollResultListToTop } from "./lib/results-scroll.mjs";
+import { reloadPage } from "./lib/page-reload.mjs";
 import {
     countSongCardsScrolledPast,
     countSongCardsToKeep,
@@ -70,7 +74,7 @@ import type {
     AppDataState,
     AppUiState,
     AppYoutubeRuntimeState
-} from "./state.types";
+} from "./state.types.mjs";
 
 type SearchCallbacksInput = {
     getRenderController: () => ReturnType<typeof createRenderController>;
@@ -88,7 +92,7 @@ type RenderCallbacksInput = {
 
 type StorageCallbacksInput = {
     getRenderController: () => ReturnType<typeof createRenderController>;
-    dateFilterController: ReturnType<typeof createDateFilterController>;
+    getSearchUiActions: () => ReturnType<typeof createSearchUiActions>;
     searchCoordinator: ReturnType<typeof createSearchCoordinator>;
     getBookmarkUiController: () => ReturnType<typeof createBookmarkUiController> | null;
 };
@@ -96,6 +100,7 @@ type StorageCallbacksInput = {
 type BookmarkUiCallbacksInput = {
     storageController: ReturnType<typeof createStorageController>;
     getSidebarController: () => ReturnType<typeof createSidebarController>;
+    promptDialog: ReturnType<typeof createBookmarkPromptDialogController>;
 };
 
 type YoutubePlaybackHooksInput = {
@@ -162,22 +167,23 @@ function createRenderCallbacks({
         notifyBookmarkSaveError: (result) => {
             const bookmarkUiController = getBookmarkUiController();
             if (bookmarkUiController) bookmarkUiController.notifyBookmarkSaveError(result);
-        }
+        },
+        reloadPage: () => { void reloadPage(); }
     };
 }
 
 /**
- * storage controller から日付・検索実行・ブックマーク UI へ委譲する callback 群を作成する。
+ * storage controller から検索条件の入力欄・検索実行・ブックマーク UI へ委譲する callback 群を作成する。
+ * 検索 UI 操作は storage controller より後に作るので、呼び出し時に getter で解決する。
  */
 function createStorageCallbacks({
     getRenderController,
-    dateFilterController,
+    getSearchUiActions,
     searchCoordinator,
     getBookmarkUiController
 }: StorageCallbacksInput): Parameters<typeof createStorageController>[0]["callbacks"] {
     return {
-        getDateSelectValue: (kind) => dateFilterController.getDateSelectValue(kind),
-        applyPendingDateValues: () => dateFilterController.applyPendingDateValues(),
+        renderSearchConditions: () => getSearchUiActions().renderConditions(),
         updateDisplay: () => getRenderController().updateDisplay(),
         renderBookmarks: () => {
             const bookmarkUiController = getBookmarkUiController();
@@ -193,7 +199,8 @@ function createStorageCallbacks({
  */
 function createBookmarkUiCallbacks({
     storageController,
-    getSidebarController
+    getSidebarController,
+    promptDialog
 }: BookmarkUiCallbacksInput): Parameters<typeof createBookmarkUiController>[0]["callbacks"] {
     return {
         onSelectActiveBookmark: (bookmarkId) => storageController.selectActiveBookmark(bookmarkId),
@@ -204,13 +211,23 @@ function createBookmarkUiCallbacks({
         onDeleteBookmark: (bookmarkId) => storageController.deleteBookmark(bookmarkId),
         onRenameBookmark: (bookmarkId, newName) => storageController.renameBookmark(bookmarkId, newName),
         onRemoveSongFromBookmark: (bookmarkId, songKey) => storageController.removeSongFromBookmark(bookmarkId, songKey),
-        onRequestCloseSidebar: () => getSidebarController().closeSidebarMenu()
+        onRequestCloseSidebar: () => getSidebarController().closeSidebarMenu(),
+        promptDialog
     };
 }
 
 /**
  * YouTube 再生イベントを描画更新と連続再生セッションへ接続する。
  */
+/**
+ * 次の曲へ進む処理の失敗を記録する。
+ * 再生の終了や開始失敗の通知から始める処理で、完了を待つ呼び出し元がないため、ここで受ける。
+ * @param error 継続再生の途中で起きた例外
+ */
+function reportContinuePlaybackError(error: unknown): void {
+    console.error("continuePlayback failed", error);
+}
+
 function wireYoutubePlaybackHooks({
     youtubeController,
     renderController,
@@ -221,7 +238,7 @@ function wireYoutubePlaybackHooks({
         debugPlayback("script", "continuePlayback requested from playback ended", {
             songKey
         });
-        playbackSessionController.continuePlayback(songKey);
+        playbackSessionController.continuePlayback(songKey).catch(reportContinuePlaybackError);
     });
     youtubeController.setPlaybackStartFailedHook(({ songKey, playbackMode, wasPlaybackStartUnconfirmed }) => {
         debugPlayback("script", "playback start failed hook received", {
@@ -235,7 +252,7 @@ function wireYoutubePlaybackHooks({
             : "continuePlayback requested from manual playback start failure", {
             songKey
         });
-        playbackSessionController.continuePlayback(songKey);
+        playbackSessionController.continuePlayback(songKey).catch(reportContinuePlaybackError);
     });
 }
 
@@ -253,11 +270,11 @@ function createAppControllers() {
     });
 
     /**
-     * 日付選択肢と選択中の期間を、検索処理とデータ更新処理から共有する controller。
+     * 日付の選択肢を作り、選んだ期間を検索条件の状態 (appUiState.search.conditions) と同期する controller。
      */
     const dateFilterController = createDateFilterController({
         ui: appUiState,
-        onDateSelectionChange: () => searchUiActions.markFilterTouched({ immediate: true })
+        onDateSelectionChange: () => searchUiActions.commitFilterChange({ immediate: true })
     });
 
     /**
@@ -266,14 +283,13 @@ function createAppControllers() {
     const resultCountController = createResultCountController({ ui: appUiState });
 
     /**
-     * 検索 UI から条件を読み取り、表示対象の曲配列を appDataState.currentResults へ反映する controller。
+     * 検索条件の状態を読み取り、表示対象の曲配列を appDataState.currentResults へ反映する controller。
      * 描画更新は renderController へ委譲し、結果リストのスクロール位置もここで揃える。
      */
     const searchController = createSearchController({
         data: appDataState,
         ui: appUiState,
         searchFiltersController,
-        dateFilterController,
         constants: {
             RANDOM_DISPLAY_COUNT,
             MIN_PERFORMANCE_FOR_RANDOM,
@@ -399,24 +415,32 @@ function createAppControllers() {
         },
         callbacks: createStorageCallbacks({
             getRenderController: () => renderController,
-            dateFilterController,
+            getSearchUiActions: () => searchUiActions,
             searchCoordinator,
             getBookmarkUiController: () => bookmarkUiController
         })
     });
 
     /**
+     * ブックマークの名前の変更・削除・全体の置換を確かめるダイアログ。
+     * 一覧と入出力の controller で 1 つを共有し、開いている間の言語の切り替えは一覧の controller が書き直す。
+     */
+    const bookmarkPromptDialog = createBookmarkPromptDialogController();
+
+    /**
      * ブックマークパネルの表示、一覧の選択・作成・名前の変更・削除などのユーザー操作を扱う controller。
      * 永続化の実処理は storageController へ委譲する。
      */
-    bookmarkUiController = createBookmarkUiController({
+    const createdBookmarkUiController = createBookmarkUiController({
         data: appDataState,
         ui: appUiState,
         callbacks: createBookmarkUiCallbacks({
             storageController,
-            getSidebarController: () => sidebarController
+            getSidebarController: () => sidebarController,
+            promptDialog: bookmarkPromptDialog
         })
     });
+    bookmarkUiController = createdBookmarkUiController;
 
     /**
      * ブックマークパネルのエクスポート・インポートを扱う controller。
@@ -430,7 +454,9 @@ function createAppControllers() {
             onPreviewBookmarkImport: (text) => storageController.previewBookmarkImport(text),
             onImportSelectedBookmarks: (text, bookmarkIds) =>
                 storageController.importSelectedBookmarksFromJsonText(text, bookmarkIds),
-            onReplaceAllBookmarks: (text) => storageController.replaceAllBookmarksFromJsonText(text)
+            onReplaceAllBookmarks: (text) => storageController.replaceAllBookmarksFromJsonText(text),
+            promptDialog: bookmarkPromptDialog,
+            onNotify: (message) => createdBookmarkUiController.notifyMessage(message)
         }
     });
 
@@ -443,9 +469,10 @@ function createAppControllers() {
     });
 
     /**
-     * 日付入力、検索実行、保存を明示的な依存として受け取り、検索 UI 操作を束ねる。
+     * 検索窓と絞り込みの操作を検索条件の状態へ書き、検索実行と保存につなぐ。
+     * 日付入力、検索実行、保存を明示的な依存として受け取る。
      */
-    const searchUiActions = createSearchUiActions({
+    const searchUiActions: ReturnType<typeof createSearchUiActions> = createSearchUiActions({
         ui: appUiState,
         search: searchUiState,
         searchFiltersController,
@@ -459,7 +486,7 @@ function createAppControllers() {
      */
     const sidebarController: ReturnType<typeof createSidebarController> = createSidebarController({
         ui: appUiState,
-        bookmarkUiController,
+        bookmarkUiController: createdBookmarkUiController,
         callbacks: {
             onOpenChange: autoHideHeaderController.handleSidebarOpenChange
         }
@@ -471,11 +498,11 @@ function createAppControllers() {
     const resultSummaryController = createResultSummaryController({
         ui: appUiState,
         conditions: {
-            getQuery: () => appUiState.el.searchBox?.value ?? "",
+            getQuery: () => searchUiState.conditions.query,
             getDateValue: (kind) => dateFilterController.getDateSelectValue(kind),
             getSelectedFormats: () => DEFAULT_FORMATS.filter((format) => searchUiState.selectedFormats.has(format)),
             areAllFormatsSelected: () => searchFiltersController.areAllFormatsSelected(),
-            isBooleanFilterEnabled: (key) => appUiState.el[key]?.checked === true,
+            isBooleanFilterEnabled: (key) => searchUiState.conditions.booleanFilters[key],
             isBookmarkActive: () => appDataState.activeBookmark !== null
         },
         actions: {
@@ -520,11 +547,11 @@ function createAppControllers() {
     });
 
     /**
-     * bfcache 復帰やフォーカス復帰時に、保存済み設定と検索 UI を再同期する controller。
+     * bfcache 復帰やフォーカス復帰時に、保存済み設定を読み直し、検索条件の入力欄を状態へ揃え直す controller。
      */
     const uiSyncController = createUiSyncController({
         uiSyncPasses: UI_SYNC_PASSES,
-        syncSearchUI: searchUiActions.syncSearchUI,
+        refreshConditionInputs: searchUiActions.refreshConditionInputs,
         applyThemeFromStorage: () => applyThemeFromStorage({ ui: appUiState }),
         applyPlaybackSettingsFromStorage: () => playbackSettingsController.applyPlaybackSettingsFromStorage(),
         applySiteLanguageFromStorage: () => {
@@ -591,7 +618,7 @@ async function initUI(): Promise<void> {
     siteLanguageController.setup();
 
     searchFiltersController.setupFilterOptions({
-        onFilterChange: searchUiActions.markFilterTouched
+        onFilterChange: searchUiActions.commitFilterChange
     });
     autoHideHeaderController.setup();
     sidebarController.setupUIHandlers();
@@ -612,11 +639,11 @@ async function initUI(): Promise<void> {
         onReadingPositionRestored: () => autoHideHeaderController.resetScrollBaseline()
     });
     const initialData = await dataLoader.loadInitialData();
-    if (!initialData.loaded) return;
-    bookmarkPersistenceController.migrateLegacyBookmarkSongRefs();
-    if (initialData.shouldResetConditions) {
-        searchUiActions.resetSearchConditions(false);
+    if (!initialData.loaded) {
+        renderController.showLoadError();
+        return;
     }
+    bookmarkPersistenceController.migrateLegacyBookmarkSongRefs();
     searchCoordinator.search();
 }
 
@@ -628,10 +655,12 @@ function boot(): void {
 }
 
 /**
- * 初期化失敗時のエラーを記録する。
+ * 初期化失敗時のエラーを記録し、読み込みに失敗したことを画面に出す。
+ * どの段階で止まったか分からないので、controller を使わず要素の id だけで表示する。
  */
 function reportInitError(error: unknown): void {
     console.error("initUI failed", error);
+    showStartupLoadError();
 }
 
 // startup からの dynamic import が DOMContentLoaded 後に完了した場合も起動する。

@@ -1,10 +1,15 @@
+import { getBookmarkActionErrorMessage } from "./action-errors.mjs";
 import { createBookmarkNotificationController } from "./notifications.mjs";
 import { getBookmarkIdsInListOrder, refreshBookmarkPanelError, setBookmarkPanelError } from "./panel.mjs";
+import { createBookmarkPromptDialogController } from "./prompt-dialog.mjs";
+import type { BookmarkPromptDialogResult, OpenBookmarkPromptDialog } from "./prompt-dialog.mjs";
 import { createSidebarSubpanelController } from "../sidebar/subpanel.mjs";
 import { isHtmlElement } from "../../lib/dom-utils.mjs";
+import { isImeComposingKeyEvent } from "../../lib/ime-key-event.mjs";
 import { getBookmarkText } from "./text.mjs";
 import type { LocalizedText } from "./text.mjs";
-import type { AppDataState, AppUiState } from "../../state.types";
+import type { SiteLanguage } from "../../lib/site-language.mjs";
+import type { AppDataState, AppUiState } from "../../state.types.mjs";
 import type { StorageActionResult } from "../../controllers/storage.mjs";
 
 /** 一覧項目内で、再描画後もフォーカスを戻す対象にする操作ボタン。 */
@@ -41,6 +46,15 @@ export type BookmarkUiCallbacks = {
         songKey: string
     ) => StorageActionResult;
     onRequestCloseSidebar: () => void;
+    /**
+     * 名前の変更と削除の確認に使うダイアログ。省略時は body に作るモーダルダイアログを使う。
+     * エクスポート・インポートの controller と同じものを渡すと、ダイアログの要素を 1 つだけ作る。
+     * refreshText は、開いている間に言語が変わったときに文言を書き直す。
+     */
+    promptDialog?: {
+        open: OpenBookmarkPromptDialog;
+        refreshText: (language: SiteLanguage) => void;
+    };
 };
 
 type BookmarkUiControllerInput = {
@@ -51,6 +65,8 @@ type BookmarkUiControllerInput = {
 
 /**
  * ブックマークUIのイベント処理・描画・選択状態管理をまとめたコントローラーを作成する。
+ * 名前の変更と削除の確認はページ内のダイアログで、失敗は画面の隅の通知で伝える。
+ * ブラウザ標準の prompt / confirm / alert は、見た目と操作が揃わず、言語の切り替えにも追従できないので使わない。
  */
 export function createBookmarkUiController({ data, ui, callbacks }: BookmarkUiControllerInput) {
     const bookmarkPanelUi = ui.bookmarkPanel;
@@ -79,113 +95,43 @@ export function createBookmarkUiController({ data, ui, callbacks }: BookmarkUiCo
         onDeleteBookmark,
         onRenameBookmark,
         onRemoveSongFromBookmark,
-        onRequestCloseSidebar
+        onRequestCloseSidebar,
+        promptDialog = createBookmarkPromptDialogController()
     } = callbacks;
 
     /**
-     * 上限エラー時に理由別のメッセージを表示し、通知したかどうかを返す。
+     * ブックマーク操作の失敗を、画面の隅の通知で伝える。操作は止めず、通知は時間が経つと消える。
+     * 利用者に伝える内容がない理由 (削除しようとした曲がすでにない、など) では何も出さない。
      * @param result 保存・変更の結果
      * @returns 通知した場合は true
      */
-    function notifyIfLimitError(result: StorageActionResult): boolean {
+    function notifyActionError(result: StorageActionResult): boolean {
         if (result.ok === true) return false;
-        if (result.reason === "max_bookmark_count") {
-            const limit = Number.isFinite(result.limit) ? result.limit : null;
-            if (limit === null) {
-                alert(getText().bookmarkLimitReached);
-            } else {
-                alert(getText().maxBookmarks(limit));
-            }
-            return true;
-        }
-        if (result.reason === "max_songs_per_bookmark") {
-            const limit = Number.isFinite(result.limit) ? result.limit : null;
-            if (limit === null) {
-                alert(getText().songLimitReached);
-            } else {
-                alert(getText().maxSongs(limit));
-            }
-            return true;
-        }
-        return false;
-    }
-
-    /**
-     * ブックマークが見つからない失敗を共通文言で通知する。
-     * @param result 保存・変更の結果
-     * @returns 通知した場合は true
-     */
-    function notifyIfBookmarkNotFoundError(result: StorageActionResult): boolean {
-        if (result.ok === true || result.reason !== "bookmark_not_found") return false;
-        alert(getText().notFound);
+        const message = getBookmarkActionErrorMessage(result);
+        if (!message) return false;
+        bookmarkNotifications.notifyError(message);
         return true;
     }
 
     /**
-     * ブックマーク永続化の失敗を理由別のメッセージで通知する。
-     * @param result 保存・変更の結果
-     * @returns 通知した場合は true
-     */
-    function notifyIfBookmarkSaveError(result: StorageActionResult): boolean {
-        if (result.ok === true) return false;
-        if (result.reason === "unsupported_storage_version") {
-            alert(getText().newerStorage);
-            return true;
-        }
-        if (result.reason === "storage_reload_required") {
-            alert(getText().reloadRequired);
-            return true;
-        }
-        if (result.reason === "storage_write_failed") {
-            alert(getText().saveFailed);
-            return true;
-        }
-        return false;
-    }
-
-    /**
-     * 外部操作から受け取ったブックマーク保存失敗を共通文言で通知する。
+     * 外部操作 (カードの並べ替えなど) から受け取ったブックマーク保存失敗を通知する。
      */
     function notifyBookmarkSaveError(result: StorageActionResult): boolean {
-        return notifyIfBookmarkSaveError(result);
+        return notifyActionError(result);
     }
 
     /**
-     * リネーム失敗時に理由別メッセージを表示し、通知したかどうかを返す。
+     * ブックマーク操作の結果を、確認・入力ダイアログの決定の結果へ変換する。
+     * 失敗したときはダイアログを開いたまま理由を出す。文言にできない理由は、保存の失敗として伝える。
      * @param result 保存・変更の結果
-     * @returns 通知した場合は true
+     * @returns ダイアログの決定の結果
      */
-    function notifyIfRenameError(result: StorageActionResult): boolean {
-        if (result.ok === true) return false;
-        if (notifyIfBookmarkSaveError(result)) return true;
-        if (result.reason === "empty_name") {
-            alert(getText().nameRequired);
-            return true;
-        }
-        if (result.reason === "max_bookmark_name_length") {
-            const limit = Number.isFinite(result.limit) ? result.limit : null;
-            alert(limit === null ? getText().nameTooLong : getText().maxNameLength(limit));
-            return true;
-        }
-        if (notifyIfBookmarkNotFoundError(result)) return true;
-        return false;
-    }
-
-    /**
-     * 曲追加失敗時に理由別メッセージを表示し、通知したかどうかを返す。
-     * @param result 保存・変更の結果
-     * @returns 通知した場合は true
-     */
-    function notifyIfAddSongError(result: StorageActionResult): boolean {
-        if (result.ok === true) return false;
-        if (notifyIfBookmarkSaveError(result)) return true;
-        if (notifyIfLimitError(result)) return true;
-        if (result.reason === "duplicate_song") {
-            alert(getText().alreadyAdded);
-            return true;
-        }
-        if (notifyIfBookmarkNotFoundError(result)) return true;
-        return false;
+    function toPromptDialogResult(result: StorageActionResult): BookmarkPromptDialogResult {
+        if (result.ok === true) return { ok: true };
+        return {
+            ok: false,
+            message: getBookmarkActionErrorMessage(result) ?? ((language) => getBookmarkText(language).saveFailed)
+        };
     }
 
     /**
@@ -343,33 +289,21 @@ export function createBookmarkUiController({ data, ui, callbacks }: BookmarkUiCo
                 closeBookmarkModal({ restoreFocus: true });
                 return;
             }
-            notifyIfAddSongError(result);
+            notifyActionError(result);
             return;
         }
 
         const renameBtn = target.closest(".bookmark-rename-btn");
         if (renameBtn) {
             e.stopPropagation();
-            const newName = prompt(getText().renamePrompt, bookmarkName);
-            if (newName === null) return;
-            const result = onRenameBookmark(bookmarkId, newName);
-            notifyIfRenameError(result);
+            requestBookmarkRename(bookmarkId, bookmarkName);
             return;
         }
 
         const deleteBtn = target.closest(".bookmark-delete-btn");
         if (deleteBtn) {
             e.stopPropagation();
-            if (confirm(getText().deleteConfirm(bookmarkName))) {
-                const result = onDeleteBookmark(bookmarkId);
-                if (result.ok === true) {
-                    bookmarkNotifications.notifyBookmarkDeleted(bookmarkName);
-                } else {
-                    if (!notifyIfBookmarkSaveError(result)) {
-                        notifyIfBookmarkNotFoundError(result);
-                    }
-                }
-            }
+            requestBookmarkDelete(bookmarkId, bookmarkName);
             return;
         }
 
@@ -378,6 +312,79 @@ export function createBookmarkUiController({ data, ui, callbacks }: BookmarkUiCo
         } else {
             setActiveBookmark(bookmarkId);
         }
+    }
+
+    /**
+     * ダイアログを開く前に、押した操作ボタンの位置を記録する。
+     * ダイアログで保存すると一覧を作り直すので、閉じた後に同じブックマークの同じ操作へフォーカスを戻すために使う。
+     * @param bookmarkId 操作対象のブックマーク ID
+     * @param controlSelector 押した操作ボタン
+     * @returns 記録したフォーカス
+     */
+    function describeBookmarkListFocus(
+        bookmarkId: string,
+        controlSelector: BookmarkListFocus["controlSelector"]
+    ): BookmarkListFocus {
+        return { bookmarkId, controlSelector, index: getSortedBookmarkIds().indexOf(bookmarkId) };
+    }
+
+    /**
+     * 確認・入力ダイアログを開き、閉じた後に一覧の操作ボタンへフォーカスを戻す。
+     * @param buildRequest 言語を受け取り、ダイアログの表示内容と決定時の処理を返す関数
+     * @param listFocus ダイアログを開く前に押した操作ボタンの位置
+     */
+    function openBookmarkPromptDialog(
+        buildRequest: Parameters<OpenBookmarkPromptDialog>[0],
+        listFocus: BookmarkListFocus
+    ): void {
+        void promptDialog.open(buildRequest, ui.language.current).then(() => {
+            const container = ui.el.bookmarkList;
+            if (container) restoreBookmarkListFocus(container, listFocus);
+        });
+    }
+
+    /**
+     * ブックマークの新しい名前をダイアログで入力させ、決定されたら保存する。
+     * 保存に失敗したときは、ダイアログを開いたまま理由を出して入力し直せるようにする。
+     * @param bookmarkId 名前を変えるブックマークの ID
+     * @param bookmarkName 今の名前。入力欄に入れておく
+     */
+    function requestBookmarkRename(bookmarkId: string, bookmarkName: string): void {
+        const maxLength = ui.el.bookmarkPanelNewName?.maxLength ?? 0;
+        openBookmarkPromptDialog((language) => {
+            const text = getBookmarkText(language);
+            return {
+                title: text.renameTitle,
+                message: text.renamePrompt,
+                input: { value: bookmarkName, maxLength: maxLength > 0 ? maxLength : undefined },
+                submitLabel: text.renameSubmit,
+                cancelLabel: text.cancel,
+                onSubmit: (newName) => toPromptDialogResult(onRenameBookmark(bookmarkId, newName))
+            };
+        }, describeBookmarkListFocus(bookmarkId, ".bookmark-rename-btn"));
+    }
+
+    /**
+     * ブックマークの削除をダイアログで確認し、決定されたら削除して通知する。
+     * @param bookmarkId 削除するブックマークの ID
+     * @param bookmarkName 確認と通知に出すブックマーク名
+     */
+    function requestBookmarkDelete(bookmarkId: string, bookmarkName: string): void {
+        openBookmarkPromptDialog((language) => {
+            const text = getBookmarkText(language);
+            return {
+                title: text.deleteTitle,
+                message: text.deleteConfirm(bookmarkName),
+                submitLabel: text.deleteSubmit,
+                cancelLabel: text.cancel,
+                isDestructive: true,
+                onSubmit: () => {
+                    const result = onDeleteBookmark(bookmarkId);
+                    if (result.ok === true) bookmarkNotifications.notifyBookmarkDeleted(bookmarkName);
+                    return toPromptDialogResult(result);
+                }
+            };
+        }, describeBookmarkListFocus(bookmarkId, ".bookmark-delete-btn"));
     }
 
     /**
@@ -464,9 +471,7 @@ export function createBookmarkUiController({ data, ui, callbacks }: BookmarkUiCo
             nameInput.focus();
             return;
         }
-        if (!notifyIfBookmarkSaveError(result)) {
-            notifyIfLimitError(result);
-        }
+        notifyActionError(result);
     }
 
     /**
@@ -482,7 +487,8 @@ export function createBookmarkUiController({ data, ui, callbacks }: BookmarkUiCo
         if (nameInput) {
             nameInput.addEventListener("input", clearBookmarkPanelError);
             nameInput.addEventListener("keydown", (e) => {
-                if (e.key === "Enter") {
+                // かな漢字変換を確定する Enter は、入力の途中なので作成しない。
+                if (e.key === "Enter" && !isImeComposingKeyEvent(e)) {
                     e.preventDefault();
                     createBookmarkFromPanel();
                 }
@@ -566,8 +572,8 @@ export function createBookmarkUiController({ data, ui, callbacks }: BookmarkUiCo
     }
 
     /**
-     * 現在アクティブなブックマークから指定曲を削除する。
-     * @param {string} songKey
+     * 現在アクティブなブックマークから指定曲を削除する。成功は通知で伝え、失敗も通知で理由を伝える。
+     * @param songKey 削除する曲の参照キー
      */
     function removeSongFromActiveBookmark(songKey: string) {
         if (!data.activeBookmark) return;
@@ -579,16 +585,26 @@ export function createBookmarkUiController({ data, ui, callbacks }: BookmarkUiCo
             bookmarkNotifications.notifySongRemovedFromBookmark(bookmarkName, songKey);
             return;
         }
-        notifyIfBookmarkSaveError(result);
+        notifyActionError(result);
     }
 
     /**
-     * 一覧と、パネル上部のエラー欄・表示中の通知の文言を、今の言語で書き直す。言語の切り替えで使う。
+     * 呼び出し元が組み立てた文言で、操作の成功を通知する。インポートの結果を伝えるために使う。
+     * @param message 通知する文言の作り方
+     */
+    function notifyMessage(message: LocalizedText): void {
+        bookmarkNotifications.notifyMessage(message);
+    }
+
+    /**
+     * 一覧と、パネル上部のエラー欄・表示中の通知・開いている確認ダイアログの文言を、今の言語で書き直す。
+     * 言語の切り替えで使う。
      */
     function refreshText(): void {
         renderBookmarks();
         refreshBookmarkPanelError(ui.el.bookmarkPanelError, ui.language.current);
         bookmarkNotifications.refreshText();
+        promptDialog.refreshText(ui.language.current);
     }
 
     return {
@@ -601,6 +617,7 @@ export function createBookmarkUiController({ data, ui, callbacks }: BookmarkUiCo
         setActiveBookmark,
         clearActiveBookmark,
         notifyBookmarkSaveError,
+        notifyMessage,
         removeSongFromActiveBookmark
     };
 }

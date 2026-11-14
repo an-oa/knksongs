@@ -5,7 +5,7 @@ import {
     readYoutubePlayerState,
     YOUTUBE_PLAYER_STATE
 } from "./player-state.mjs";
-import type { YoutubePlayerLike } from "./iframe-api.types";
+import type { YoutubePlayerLike } from "./iframe-api.types.mjs";
 
 export const YOUTUBE_POST_PLAYBACK_AD_RESTORE_POLL_MS = 500;
 export const YOUTUBE_POST_PLAYBACK_AD_RESTORE_TIMEOUT_MS = 5 * 60 * 1000;

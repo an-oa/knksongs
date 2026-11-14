@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { getFakeElement, installFakeDom, invokeListener } from "./test-helpers.mts";
+import { getFakeElement, installFakeDom, invokeAsyncListener, invokeListener } from "./test-helpers.mts";
 
 for (const kind of ["element", "document", "window"] as const) {
     test(`DOM mock: ${kind} keeps multiple listeners and removes only the requested listener`, () => {
@@ -44,11 +44,79 @@ test("DOM mock: dispatch starts all listeners synchronously and awaits asynchron
         });
         cleanup.window.addEventListener("resize", () => { calls.push("second"); });
 
-        const pending = invokeListener(cleanup.window, "resize", {});
+        const pending = invokeAsyncListener(cleanup.window, "resize", {});
         assert.deepEqual(calls, ["first", "second"]);
         gate.resolve();
         await pending;
         assert.deepEqual(calls, ["first", "second", "finished"]);
+    } finally {
+        cleanup();
+    }
+});
+
+test("DOM mock: the synchronous helper refuses a listener whose work it cannot wait for", async () => {
+    const cleanup = installFakeDom();
+    try {
+        const calls: string[] = [];
+        const gate = Promise.withResolvers<void>();
+        cleanup.window.addEventListener("resize", async () => {
+            await gate.promise;
+            calls.push("finished");
+        });
+
+        // 完了を待たずに先へ進むと、「まだ起きていない」ことを確かめる assert が、処理の途中で通ってしまう。
+        assert.throws(
+            () => invokeListener(cleanup.window, "resize", {}),
+            /resize listener is asynchronous; use "await invokeAsyncListener\(\.\.\.\)"/
+        );
+        assert.deepEqual(calls, []);
+        gate.resolve();
+        await gate.promise;
+    } finally {
+        cleanup();
+    }
+});
+
+test("DOM mock: the asynchronous helper also accepts synchronous listeners and reports a missing one", async () => {
+    const cleanup = installFakeDom();
+    try {
+        const calls: string[] = [];
+        cleanup.window.addEventListener("resize", () => { calls.push("called"); });
+
+        const pending = invokeAsyncListener(cleanup.window, "resize", {});
+        assert.deepEqual(calls, ["called"], "listeners start before the returned promise is awaited");
+        assert.equal(await pending, undefined);
+
+        await assert.rejects(invokeAsyncListener(cleanup.window, "scroll", {}), /scroll listener is missing/);
+    } finally {
+        cleanup();
+    }
+});
+
+test("DOM mock: click and dispatchEvent start asynchronous listeners without waiting, as a browser does", async () => {
+    const cleanup = installFakeDom();
+    try {
+        const button = getFakeElement(document.createElement("button"));
+        const calls: string[] = [];
+        const gate = Promise.withResolvers<void>();
+        const finished = Promise.withResolvers<void>();
+        const listener = async () => {
+            calls.push("started");
+            await gate.promise;
+            calls.push("finished");
+            finished.resolve();
+        };
+        button.addEventListener("click", listener);
+        button.addEventListener("change", listener);
+
+        // listener の戻り値は受け取れないので、完了はテストが別の方法で待つ。
+        assert.equal(button.click(), undefined);
+        assert.equal(button.dispatchEvent({ type: "change" }), true);
+        assert.deepEqual(calls, ["started", "started"]);
+
+        gate.resolve();
+        await finished.promise;
+        assert.deepEqual(calls, ["started", "started", "finished", "finished"]);
     } finally {
         cleanup();
     }

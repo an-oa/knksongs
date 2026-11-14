@@ -313,6 +313,8 @@ body.hide-thumbs .thumb {
 }
 
 .header-search {
+  /* search 要素を知らないブラウザでは inline になり、幅の指定が効かなくなるので、明示する。 */
+  display: block;
   position: relative;
   width: 100%;
   max-width: 520px;
@@ -336,7 +338,10 @@ body.hide-thumbs .thumb {
   pointer-events: none;
 }
 
-/* 検索窓はどちらのテーマでも白地にし、文字色をテーマに依存させない。 */
+/*
+ * 検索窓はどちらのテーマでも白地にし、文字色をテーマに依存させない。
+ * 文字は 16px 以上にする。iOS の Safari は、16px 未満の入力欄にフォーカスするとページを拡大する。
+ */
 .header-search input[type="text"] {
   height: 40px;
   padding: 0 16px 0 42px;
@@ -344,7 +349,7 @@ body.hide-thumbs .thumb {
   border-radius: 999px;
   background: #ffffff;
   color: #1b1b1b;
-  font-size: 15px;
+  font-size: 16px;
 }
 .header-search input[type="text"]::placeholder { color: #6b665c; }
 .header-search input[type="text"]:focus-visible {
@@ -513,10 +518,10 @@ body.hide-thumbs .thumb {
 .sidebar.active .sidebar-sheet { transform: translateX(0); }
 .sidebar-header { padding: 12px 16px 8px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-color); }
 .sidebar-title-group h2 { margin: 0; font-size: 18px; }
+/* 「条件をクリア」は押せる高さを 32px 取るので、その分だけ下の余白を詰める。 */
 .sidebar-actions {
   display: flex;
   justify-content: flex-end;
-  margin-bottom: 8px;
 }
 .sidebar-scroll-area {
   padding: 8px 16px 16px;
@@ -566,9 +571,9 @@ body.hide-thumbs .thumb {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   column-gap: 10px;
-  row-gap: 8px;
+  row-gap: 2px;
   margin-bottom: 0;
-  padding-top: 12px;
+  padding-top: 8px;
   border-top: 1px solid var(--border-color);
 }
 .sidebar-setting-item {
@@ -1008,6 +1013,36 @@ body.hide-thumbs .thumb {
   font-size: 12px;
 }
 
+/*
+ * ブックマークの名前の変更・削除の確認・全体の置換の確認に使う、小さいダイアログ。
+ * 枠とボタンはエクスポート・インポートのダイアログと同じクラスで描き、幅と本文だけを変える。
+ */
+.bookmark-prompt-dialog {
+  width: min(360px, calc(100vw - 32px));
+}
+
+/* 確かめる内容そのものなので、補足の色ではなく本文の色で出す。件数を並べた確認文の改行はそのまま見せる。 */
+.bookmark-prompt-message {
+  display: block;
+  color: var(--text-color);
+  font-size: 14px;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+
+.bookmark-prompt-body {
+  padding: 4px 16px 12px;
+}
+
+.bookmark-prompt-body[hidden] {
+  display: none;
+}
+
+/* 失敗の理由がないときは、決定ボタンの上に空きを残さない。 */
+.bookmark-prompt-footer .bookmark-transfer-status[hidden] {
+  display: none;
+}
+
 .bookmark-toast-region {
   position: fixed;
   right: max(16px, env(safe-area-inset-right));
@@ -1049,6 +1084,12 @@ body.hide-thumbs .thumb {
   border-left: 4px solid var(--primary-color);
 }
 
+/* 失敗の通知は、左の線を入力エラーと同じ色にして成功の通知と見分ける。 */
+.bookmark-toast-error,
+.bookmark-toast-error:popover-open {
+  border-left-color: var(--validation-error-color);
+}
+
 .bookmark-toast-message {
   flex: 1;
   min-width: 0;
@@ -1078,7 +1119,8 @@ body.hide-thumbs .thumb {
 
 .section-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
 .section-label { display: block; font-size: 11px; font-weight: bold; color: var(--text-mute); }
-.text-clear-btn { background: none; border: none; color: var(--primary-color); font-size: 11px; cursor: pointer; padding: 0; text-decoration: underline; }
+/* 文字は小さくても、指で押せるよう高さと左右の余白を取る。 */
+.text-clear-btn { min-height: 32px; background: none; border: none; color: var(--primary-color); font-size: 12px; cursor: pointer; padding: 0 4px; text-decoration: underline; }
 .search-query-error {
   margin: 6px 0 0;
   color: var(--validation-error-color);
@@ -1100,7 +1142,7 @@ input[type="text"][aria-invalid="true"] {
   display: grid !important;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   column-gap: 12px;
-  row-gap: 8px;
+  row-gap: 2px;
   width: 100%;
 }
 #formatsList .checkbox-item {
@@ -1113,7 +1155,8 @@ input[type="text"][aria-invalid="true"] {
 }
 /* 英語の形態名(Originals & Covers など)は列の幅に収まらないので、折り返して枠からはみ出さないようにする。 */
 :root[lang="en"] #formatsList .checkbox-item { white-space: normal; }
-.checkbox-item { display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 13px; margin-bottom: 8px; }
+/* 行そのものを押せる高さ (28px) にし、行の間の余白はその分だけ詰める。 */
+.checkbox-item { display: flex; align-items: center; gap: 8px; min-height: 28px; cursor: pointer; font-size: 13px; margin-bottom: 2px; }
 
 .checkbox-item input[type="checkbox"] {
   -webkit-appearance: none;
@@ -1206,6 +1249,7 @@ input[type="text"][aria-invalid="true"] {
 .date-select {
   flex: 1 1 0;
   min-width: 0;
+  min-height: 32px;
   padding: 4px 6px;
   border: 1px solid var(--border-color);
   border-radius: 6px;
@@ -1215,6 +1259,10 @@ input[type="text"][aria-invalid="true"] {
   font-family: inherit;
   outline: none;
   appearance: none;
+}
+/* 指で操作する端末では 16px にする。iOS の Safari は、16px 未満の選択欄にフォーカスするとページを拡大する。 */
+@media (pointer: coarse) {
+  .date-select { font-size: 16px; }
 }
 .date-select.year { flex: 1.5 1 0; }
 .date-select.month,
@@ -1228,7 +1276,7 @@ input[type="text"][aria-invalid="true"] {
 .date-clear-btn {
   flex-shrink: 0;
   width: 28px;
-  height: 28px;
+  height: 32px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1437,6 +1485,21 @@ body.hide-thumbs .song-card { border-radius: 12px; }
   font-size: 13px;
 }
 
+/* 読み込みに失敗したときに、説明の下に出す再読み込みボタン。絞り込みボタンと同じ塗りにする。 */
+.result-reload-btn {
+  min-height: 40px;
+  margin-top: 16px;
+  padding: 0 20px;
+  border: 2px solid var(--accent-fill-border);
+  border-radius: 999px;
+  background: var(--accent-fill);
+  color: var(--on-accent-fill);
+  font-size: 14px;
+  font-weight: 800;
+  cursor: pointer;
+}
+.result-reload-btn:hover { background: var(--accent-fill-hover); }
+
 .song-card-expanded {
   z-index: 5;
 }
@@ -1478,20 +1541,26 @@ body.hide-thumbs .song-card { border-radius: 12px; }
   inset: 0;
   transform: none;
   z-index: 2;
+  pointer-events: auto;
 }
 
+/* キーボードでもフォーカスして矢印キーで並べ替えられるよう button にしてあるので、ボタンの既定の見た目を消す。 */
 .drag-handle {
   position: absolute;
   top: 6px;
   right: 6px;
   width: 24px;
   height: 24px;
+  padding: 0;
+  border: 0;
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: grab;
   color: var(--text-mute);
+  font-family: inherit;
   font-size: 16px;
+  line-height: 1;
   background-color: rgba(255, 255, 255, 0.5);
   border-radius: 4px;
   z-index: 2;
@@ -1507,11 +1576,54 @@ body.hide-thumbs .song-card { border-radius: 12px; }
   display: none !important;
 }
 
+/*
+ * カードは枠の外を切り取るので、フォーカスの枠はカードの中に収まる幅にする。
+ * 共通のフォーカスの指定 (:is(...):focus-visible) より後に効くよう、同じ詳細度になるまで親のクラスを重ねる。
+ */
+.song-card .drag-handle:focus-visible {
+  outline-offset: 1px;
+  box-shadow: none;
+}
+
 
 .thumb { width: 100%; aspect-ratio: 16/9; background: #000; position: relative; cursor: pointer; -webkit-touch-callout: none; }
 .thumb[data-video-orientation="vertical"] { aspect-ratio: 9/16; }
 .thumb img { display: block; width: 100%; height: 100%; object-fit: cover; user-select: none; -webkit-user-drag: none; }
-.thumb::after { content: '▶'; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: white; font-size: 24px; opacity: 0.5; }
+/*
+ * サムネイルの画像は再生ボタンの中に置き、キーボードでもフォーカスして再生できるようにする。
+ * カードは枠の外を切り取るので、フォーカスの枠は内側に描く。
+ */
+.thumb-play-btn {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+}
+/*
+ * フォーカスの枠は、画像の上に重ねた擬似要素で描く。ボタン自身の内側の影は、中の画像の下に隠れる。
+ * 明るい画像でも暗い画像でも見えるよう、金色の線の内側に濃い線を重ねる。
+ * 共通のフォーカスの指定より後に効くよう、同じ詳細度になるまで親のクラスを重ねる。
+ */
+.thumb .thumb-play-btn:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+.thumb .thumb-play-btn:focus-visible::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border: 3px solid var(--accent-fill);
+  outline: 3px solid #1b1b1b;
+  outline-offset: -6px;
+  pointer-events: none;
+}
+/* 再生の印は飾りなので、押した操作は下の再生ボタンへ通す。 */
+.thumb::after { content: '▶'; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: white; font-size: 24px; opacity: 0.5; pointer-events: none; }
 .thumb.playing::after { content: ""; }
 .thumb iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; z-index: 1; }
 .thumb-close-btn {
@@ -1670,15 +1782,22 @@ body.hide-thumbs .song-card { border-radius: 12px; }
 .overlay { position: fixed; inset: 0; background: var(--overlay-color); z-index: 900; opacity: 0; pointer-events: none; transition: opacity 0.3s; }
 .overlay.show { opacity: 1; pointer-events: auto; }
 
+/*
+ * スイッチの行は全体が label で、項目名を押しても切り替わる。スイッチ自体は 34×18px と小さいので、
+ * 行に押せる高さを持たせる。
+ */
 .menu-item-toggle {
   display: flex;
   justify-content: space-between;
   align-items: center;
   width: 100%;
+  min-height: 32px;
   gap: 8px;
   min-width: 0;
+  cursor: pointer;
 }
-.menu-item-toggle span { flex: 1; min-width: 0; }
+/* 項目名だけを伸ばす。スイッチとつまみも span なので、子孫の span すべてには指定しない。 */
+.menu-item-toggle > span:first-child { flex: 1; min-width: 0; }
 .setting-item-copy {
   display: flex;
   flex-direction: column;

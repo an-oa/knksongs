@@ -1,27 +1,25 @@
 import {
-    applySearchBooleanFilterState,
-    hasEnabledSearchBooleanFilter,
-    resetSearchBooleanFilters
+    createDefaultSearchBooleanFilters,
+    renderSearchBooleanFilters
 } from "../../lib/search-boolean-filters.mjs";
 import type { SearchBooleanFilterElements } from "../../lib/search-boolean-filters.mjs";
 import { renderSearchFormatOptions, syncSearchFormatCheckboxes, updateSearchFormatLabels } from "./formats.mjs";
 import type { SearchFormatOptionsList } from "./formats.mjs";
 import { getUiText } from "../../lib/ui-text.mjs";
 import type {
-    DateUiRuntimeState,
+    SearchConditionsState,
     SearchUiRuntimeState,
     SiteLanguageUiRuntimeState
-} from "../../state.types";
+} from "../../state.types.mjs";
 
-type SearchFiltersSearchState = Pick<SearchUiRuntimeState, "selectedFormats" | "userTouchedFilters"> &
-    Partial<SearchUiRuntimeState>;
-
-type SearchFiltersDateState = Pick<DateUiRuntimeState, "pendingValues"> & Partial<DateUiRuntimeState>;
+type SearchFiltersSearchState = Pick<SearchUiRuntimeState, "selectedFormats"> & {
+    /** 検索条件のうち真偽値フィルター。既定へ戻すときに書き換える。 */
+    conditions: Pick<SearchConditionsState, "booleanFilters">;
+};
 
 type SearchFiltersUiState = {
     el: { formatsList?: SearchFormatOptionsList | null } & SearchBooleanFilterElements;
     search: SearchFiltersSearchState;
-    date?: SearchFiltersDateState | null;
     /** 形態の選択肢の名前に使う言語。 */
     language: SiteLanguageUiRuntimeState;
 };
@@ -38,10 +36,6 @@ type SearchFilterResetOptions = {
     resetDateSelects?: () => void;
 };
 
-type SearchFilterResetCheckOptions = {
-    hasDateSelection?: () => boolean;
-};
-
 type SearchFiltersControllerInput = {
     ui: SearchFiltersUiState;
     defaultFormats?: string[];
@@ -49,10 +43,10 @@ type SearchFiltersControllerInput = {
 
 /**
  * 検索条件 UI の個別 filter controller を束ねる facade を作成する。
+ * 動画の種類の選択肢の描画と選択状態、絞り込み全体を既定へ戻す処理を受け持つ。
  */
 export function createSearchFiltersController({ ui, defaultFormats = [] }: SearchFiltersControllerInput) {
     const searchUiState = ui.search;
-    const dateUi = ui.date ?? null;
 
     /**
      * フォーマット選択 state を Set として取得する。
@@ -122,8 +116,8 @@ export function createSearchFiltersController({ ui, defaultFormats = [] }: Searc
     }
 
     /**
-     * 正規化済みの保存値からフォーマット選択を復元する。
-     * @param {unknown} formats
+     * 正規化済みの保存値からフォーマット選択を復元し、チェックボックスへ映す。
+     * @param formats 保存値の形態の一覧。配列でなければ既定の選択にする
      */
     function applySelectedFormats(formats: unknown): void {
         const selectedFormats = getSelectedFormats();
@@ -160,53 +154,18 @@ export function createSearchFiltersController({ ui, defaultFormats = [] }: Searc
     }
 
     /**
-     * フォーマット選択が既定状態と一致するか判定する。
-     * @returns {boolean}
-     */
-    function areFormatsDefault(): boolean {
-        return getSelectedFormats().size === defaultFormats.length && areAllFormatsSelected();
-    }
-
-    /**
-     * 保存済み payload のうち検索フィルタ UI が所有する値を反映する。
-     * @param {Record<string, unknown>} payload
-     */
-    function applyStoredFilterState(payload: Record<string, unknown>): void {
-        applySelectedFormats(payload.formats);
-        applySearchBooleanFilterState(ui, payload);
-    }
-
-    /**
-     * コラボ種別・リレー・ハモリフィルタを既定状態へ戻す。
-     */
-    function resetBooleanFiltersToDefault(): void {
-        resetSearchBooleanFilters(ui);
-    }
-
-    /**
-     * 検索フィルタ UI を既定状態へ戻す。
-     * @param {{ resetDateSelects?: () => void } | undefined} options
+     * 検索フィルタを既定状態へ戻す。真偽値フィルターと動画の種類は状態を戻して入力欄へ映し、
+     * 日付範囲は渡された処理 (日付 controller) に任せる。
+     * @param options 日付範囲を未選択へ戻す処理
      */
     function resetFiltersToDefault(options?: SearchFilterResetOptions): void {
-        resetBooleanFiltersToDefault();
+        searchUiState.conditions.booleanFilters = createDefaultSearchBooleanFilters();
+        renderSearchBooleanFilters(ui, searchUiState.conditions.booleanFilters);
         if (options && typeof options.resetDateSelects === "function") {
             options.resetDateSelects();
         }
-        if (dateUi) dateUi.pendingValues = null;
         setSelectedFormatsToDefault();
         syncFormatCheckboxesFromState();
-        searchUiState.userTouchedFilters = false;
-    }
-
-    /**
-     * フィルタが既定状態から外れているか判定する。
-     * @param {{ hasDateSelection?: () => boolean } | undefined} options
-     * @returns {boolean}
-     */
-    function needsFilterReset(options?: SearchFilterResetCheckOptions): boolean {
-        if (hasEnabledSearchBooleanFilter(ui)) return true;
-        if (options && typeof options.hasDateSelection === "function" && options.hasDateSelection()) return true;
-        return !areFormatsDefault();
     }
 
     return {
@@ -218,9 +177,6 @@ export function createSearchFiltersController({ ui, defaultFormats = [] }: Searc
         applySelectedFormats,
         syncFormatCheckboxesFromState,
         areAllFormatsSelected,
-        areFormatsDefault,
-        applyStoredFilterState,
-        resetFiltersToDefault,
-        needsFilterReset
+        resetFiltersToDefault
     };
 }

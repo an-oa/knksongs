@@ -6,9 +6,13 @@
  *
  * UI の初期化はここで行わず、bootstrap.mts に任せる。
  * ここへ処理を足すと、そのぶん曲データの取得を始めるのが遅れる。
+ * bootstrap.mts を読み込めなかったときだけ、./startup-error.mts で失敗を画面に出す。
+ * この module やその import を読み込めなかったときは、ここのコードが動かないので、index.html の埋め込みスクリプトが出す。
  */
 import "./startup-data.mjs";
+import { showStartupLoadError } from "./startup-error.mjs";
 
 void import("./bootstrap.mjs").catch((error: unknown) => {
     console.error("アプリの読み込みに失敗しました", error);
+    showStartupLoadError();
 });

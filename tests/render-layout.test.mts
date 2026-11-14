@@ -5,8 +5,8 @@ import { createRenderController } from "../app/controllers/render.mts";
 import { createSearchController } from "../app/controllers/search.mts";
 import { extractYoutubeInfo } from "../app/lib/youtube-url.mts";
 import { createSearchFiltersController } from "../app/ui/search-filters/controller.mts";
-import { createDateFilterController } from "../app/ui/date/filter.mts";
 import { createBookmarkReorderFixture } from "./support/bookmark-reorder-fixture.mts";
+import { createInitialSearchConditions } from "../app/state.mts";
 import {
     createYoutubePlaybackStartResult,
     YOUTUBE_PLAYBACK_START_STATUS
@@ -30,7 +30,7 @@ function readCardName(parent: Element | null | undefined, selector: ".title" | "
 }
 
 /** 描画と検索の共有データに、省略した初期値を補う。 */
-function createRenderDataState(input: Partial<import("../app/state.types").AppDataState>): import("../app/state.types").AppDataState {
+function createRenderDataState(input: Partial<import("../app/state.types.mts").AppDataState>): import("../app/state.types.mts").AppDataState {
     return { allSongsRaw: [], currentResults: [], displayLimit: 48, activeBookmark: null, bookmarks: {}, ...input };
 }
 
@@ -54,29 +54,26 @@ function createRenderUiState<Elements extends {
     selectedFormats?: Set<string>;
     dataReady?: boolean;
     activeThumb?: HTMLElement | null;
-    cardEntriesBySongKey?: Map<string, import("../app/state.types").RenderCardEntry>;
+    cardEntriesBySongKey?: Map<string, import("../app/state.types.mts").RenderCardEntry>;
     language?: import("../app/lib/site-language.mts").SiteLanguage;
 }) {
     return {
         el: input.el,
         search: {
+            conditions: createInitialSearchConditions(),
             selectedFormats: input.selectedFormats ?? new Set(["配信"]),
             dataReady: input.dataReady ?? true,
-            recommendedCache: null,
-            userTouchedQuery: false,
-            userTouchedFilters: false,
-            hasRestoredSearchState: false
+            recommendedCache: null
         },
         date: {
             bounds: null,
-            index: null,
-            pendingValues: null
+            index: null
         },
         playback: {
             activeThumb: input.activeThumb ?? null
         },
         render: {
-            cardEntriesBySongKey: input.cardEntriesBySongKey ?? new Map<string, import("../app/state.types").RenderCardEntry>()
+            cardEntriesBySongKey: input.cardEntriesBySongKey ?? new Map<string, import("../app/state.types.mts").RenderCardEntry>()
         },
         language: {
             current: input.language ?? "ja"
@@ -101,7 +98,8 @@ function createRenderCallbacks(input: Partial<Parameters<typeof createRenderCont
         openBookmarkModal: callbacks.openBookmarkModal || (() => {}),
         removeSongFromActiveBookmark: callbacks.removeSongFromActiveBookmark || (() => {}),
         moveSongInActiveBookmark: callbacks.moveSongInActiveBookmark || (() => ({ ok: true, changed: false })),
-        notifyBookmarkSaveError: callbacks.notifyBookmarkSaveError || (() => {})
+        notifyBookmarkSaveError: callbacks.notifyBookmarkSaveError || (() => {}),
+        reloadPage: callbacks.reloadPage || (() => {})
     };
 }
 
@@ -127,7 +125,7 @@ function placeCardsInOneColumn(list: HTMLElement) {
  * 移動元のハンドルを押して、並べ替えのドラッグを始める。
  * @param source 移動元のカード
  */
-function pressDragHandle(source: import("../app/state.types").RenderCardEntry) {
+function pressDragHandle(source: import("../app/state.types.mts").RenderCardEntry) {
     invokeListener(source.dragHandle, "pointerdown", {
         currentTarget: source.dragHandle,
         target: source.dragHandle,
@@ -149,8 +147,8 @@ function pressDragHandle(source: import("../app/state.types").RenderCardEntry) {
  */
 function dragCardOnto(
     list: HTMLElement,
-    source: import("../app/state.types").RenderCardEntry,
-    target: import("../app/state.types").RenderCardEntry
+    source: import("../app/state.types.mts").RenderCardEntry,
+    target: import("../app/state.types.mts").RenderCardEntry
 ) {
     placeCardsInOneColumn(list);
     getFakeElement(list)._rect = { top: 0, bottom: 1000, left: 0, right: 300, width: 300, height: 1000 };
@@ -951,7 +949,6 @@ test("bookmark: observes result tail and increases by RESULT_DISPLAY_BATCH_SIZE 
                 ui,
                 defaultFormats: ["配信", "歌みた", "ショート", "切り抜き"]
             }),
-            dateFilterController: createDateFilterController({ ui }),
             constants: {
                 RANDOM_DISPLAY_COUNT: 48,
                 MIN_PERFORMANCE_FOR_RANDOM: 3,
@@ -1247,6 +1244,249 @@ test("render: active playback card can move back left without jumping to the end
             false,
             "active playback card should stay mounted to preserve current position"
         );
+    } finally {
+        cleanup();
+    }
+});
+
+test("render: showing more results does not rewrite the cards that are already shown", () => {
+    const cleanup = installFakeDom();
+    try {
+        const rowA = makeRenderRow({ songKey: "a::1", title: "A" });
+        const rowB = makeRenderRow({ songKey: "b::2", title: "B" });
+        const data = createRenderDataState({ currentResults: [rowA, rowB], displayLimit: 1 });
+        const ui = createRenderUiState({
+            el: {
+                resultList: document.createElement("ol"),
+                resultTailSentinel: document.createElement("div")
+            }
+        });
+        const thumbnailUpdates: HTMLElement[] = [];
+        const controller = createRenderController({
+            data,
+            ui,
+            isAllFormatsSelected: () => true,
+            callbacks: createRenderCallbacks({ updateThumbnail: (thumbDiv) => { thumbnailUpdates.push(thumbDiv); } })
+        });
+
+        controller.updateDisplay();
+        const entryA = ui.render.cardEntriesBySongKey.get(rowA.songKey);
+        assert.ok(entryA);
+        const tagA = entryA.tagsEl.children[0];
+        const actionHandlerA = entryA.actionBtn.onclick;
+        assert.ok(tagA);
+
+        data.displayLimit = 2;
+        controller.updateDisplay();
+
+        assert.equal(ui.el.resultList.children.length, 2);
+        assert.equal(entryA.tagsEl.children[0], tagA, "the tags of the first card are not rebuilt");
+        assert.equal(entryA.actionBtn.onclick, actionHandlerA, "the button handler is not set up again");
+        // サムネイルは表示設定でも変わるので、変わっていないカードでも毎回再生側へ渡す。
+        assert.equal(thumbnailUpdates.filter((thumbDiv) => thumbDiv === entryA.thumbDiv).length, 2);
+    } finally {
+        cleanup();
+    }
+});
+
+test("render: a shown card is rewritten when its position or the bookmark mode changes", () => {
+    const cleanup = installFakeDom();
+    try {
+        const rowA = makeRenderRow({ songKey: "a::1", title: "A" });
+        const rowB = makeRenderRow({ songKey: "b::2", title: "B" });
+        const data = createRenderDataState({
+            currentResults: [rowA, rowB],
+            bookmarks: { bm1: { name: "test", songs: [rowA.songKey, rowB.songKey] } }
+        });
+        const ui = createRenderUiState({
+            el: {
+                resultList: document.createElement("ol"),
+                resultTailSentinel: document.createElement("div")
+            }
+        });
+        const controller = createRenderController({
+            data,
+            ui,
+            isAllFormatsSelected: () => true,
+            callbacks: createRenderCallbacks()
+        });
+
+        controller.updateDisplay();
+        const entryA = ui.render.cardEntriesBySongKey.get(rowA.songKey);
+        assert.ok(entryA);
+        assert.equal(entryA.titleHeading.getAttribute("id"), "result-title-1");
+        assert.equal(entryA.actionBtn.className, "add-to-bookmark-btn");
+        assert.equal(entryA.dragHandle.hidden, true);
+
+        // 並びが変わると、見出しの id を新しい位置に合わせる。
+        data.currentResults = [rowB, rowA];
+        controller.updateDisplay();
+        assert.equal(entryA.titleHeading.getAttribute("id"), "result-title-2");
+        assert.equal(entryA.content.getAttribute("aria-labelledby"), "result-title-2");
+
+        // ブックマーク表示へ切り替わると、ボタンとハンドルを切り替える。
+        data.activeBookmark = "bm1";
+        controller.updateDisplay();
+        assert.equal(entryA.actionBtn.className, "remove-from-bookmark-btn");
+        assert.equal(entryA.actionBtn.getAttribute("aria-label"), "ブックマークから削除");
+        assert.equal(entryA.dragHandle.hidden, false);
+    } finally {
+        cleanup();
+    }
+});
+
+test("render: the play button and the reorder handle are labelled in the current language", () => {
+    const cleanup = installFakeDom();
+    try {
+        const data = createRenderDataState({
+            currentResults: [
+                makeRenderRow({ songKey: "song:label", title: "アイネクライネ", titleEn: "Eine Kleine" }),
+                makeRenderRow({ songKey: "song:untitled", title: " " })
+            ]
+        });
+        const ui = createRenderUiState({
+            el: {
+                resultList: document.createElement("ol"),
+                resultTailSentinel: document.createElement("div")
+            }
+        });
+        const controller = createRenderController({
+            data,
+            ui,
+            isAllFormatsSelected: () => true,
+            callbacks: createRenderCallbacks()
+        });
+
+        controller.updateDisplay();
+        const entry = ui.render.cardEntriesBySongKey.get("song:label");
+        assert.ok(entry);
+        assert.equal(entry.dragHandle.tagName, "BUTTON", "the handle can take keyboard focus");
+        assert.equal(entry.thumbDiv.dataset.playLabel, "「アイネクライネ」を再生");
+        assert.equal(entry.dragHandle.getAttribute("aria-label"), "並べ替え（矢印キーで前後へ移動）");
+
+        ui.language.current = "en";
+        controller.refreshText();
+        assert.equal(entry.thumbDiv.dataset.playLabel, "Play “Eine Kleine”");
+        assert.equal(entry.dragHandle.getAttribute("aria-label"), "Reorder (use the arrow keys to move)");
+    } finally {
+        cleanup();
+    }
+});
+
+test("render: a keyboard reorder keeps focus on the moved card's handle and announces the new position", () => {
+    const cleanup = installFakeDom();
+    try {
+        const rowA = makeRenderRow({ songKey: "a::1", title: "A" });
+        const rowB = makeRenderRow({ songKey: "b::2", title: "B" });
+        const rowC = makeRenderRow({ songKey: "c::3", title: "C" });
+        const data = createRenderDataState({
+            currentResults: [rowA, rowB, rowC],
+            // 2 件だけ表示し、3 件目は追加表示の範囲の外に置く。
+            displayLimit: 2,
+            activeBookmark: "bm1",
+            bookmarks: { bm1: { name: "test", songs: [rowA.songKey, rowB.songKey, rowC.songKey] } }
+        });
+        const ui = createRenderUiState({
+            el: {
+                resultList: document.createElement("ol"),
+                resultTailSentinel: document.createElement("div"),
+                resultAnnouncement: document.createElement("p")
+            }
+        });
+        document.body.appendChild(ui.el.resultList);
+        const storageController = createBookmarkReorderFixture({
+            data,
+            saveBookmarks: () => ({ ok: true }),
+            updateDisplay: () => controller.updateDisplay()
+        });
+        const controller = createRenderController({
+            data,
+            ui,
+            isAllFormatsSelected: () => true,
+            resultDisplayBatchSize: 2,
+            callbacks: createRenderCallbacks({
+                moveSongInActiveBookmark: storageController.moveSongInActiveBookmark
+            })
+        });
+
+        controller.updateDisplay();
+        const entryB = ui.render.cardEntriesBySongKey.get(rowB.songKey);
+        assert.ok(entryB);
+        /** ハンドルにフォーカスしてキーを押す。 */
+        const pressKey = (key: string) => invokeListener(entryB.dragHandle, "keydown", {
+            key,
+            currentTarget: entryB.dragHandle,
+            preventDefault() {}
+        });
+
+        entryB.dragHandle.focus();
+        pressKey("ArrowUp");
+        assert.deepEqual(data.bookmarks.bm1.songs, [rowB.songKey, rowA.songKey, rowC.songKey]);
+        assert.equal(document.activeElement, entryB.dragHandle);
+        assert.equal(ui.el.resultAnnouncement.textContent, "「B」を 3 件中 1 番目へ移動しました");
+
+        // 表示している範囲の外へ動かしても、動かしたカードを表示に残してフォーカスを保つ。
+        pressKey("ArrowDown");
+        pressKey("ArrowDown");
+        assert.deepEqual(data.bookmarks.bm1.songs, [rowA.songKey, rowC.songKey, rowB.songKey]);
+        assert.equal(ui.el.resultList.children.length, 3);
+        assert.equal(ui.el.resultList.children[2], entryB.card);
+        assert.equal(document.activeElement, entryB.dragHandle);
+        assert.equal(ui.el.resultAnnouncement.textContent, "「B」を 3 件中 3 番目へ移動しました");
+    } finally {
+        cleanup();
+    }
+});
+
+test("render: a load failure shows an explanation and a reload button in the current language", () => {
+    const cleanup = installFakeDom();
+    try {
+        const data = createRenderDataState({});
+        const ui = createRenderUiState({
+            dataReady: false,
+            el: {
+                resultList: document.createElement("ol"),
+                resultTailSentinel: document.createElement("div")
+            }
+        });
+        let reloadCount = 0;
+        let restoreCount = 0;
+        const controller = createRenderController({
+            data,
+            ui,
+            isAllFormatsSelected: () => true,
+            callbacks: createRenderCallbacks({
+                reloadPage: () => { reloadCount += 1; },
+                restoreActivePlayback: () => { restoreCount += 1; }
+            })
+        });
+
+        controller.showLoadError();
+        const item = ui.el.resultList.children[0];
+        assert.equal(ui.el.resultList.children.length, 1);
+        assert.equal(item.tagName, "LI");
+        assert.equal(item.classList.contains("result-load-error"), true);
+        assert.equal(
+            item.querySelector(".result-empty-state-title")?.textContent,
+            "曲データを読み込めませんでした。通信状況を確認して、ページを再読み込みしてください。"
+        );
+        const reloadButton = item.querySelector<HTMLButtonElement>(".result-reload-btn");
+        assert.ok(reloadButton);
+        assert.equal(reloadButton.textContent, "再読み込み");
+        assert.equal(restoreCount, 1);
+
+        reloadButton.click();
+        assert.equal(reloadCount, 1);
+
+        // 言語を切り替えても、読み込み中の表示に戻さず、失敗の説明を今の言語で出す。
+        ui.language.current = "en";
+        controller.refreshText();
+        const englishItem = ui.el.resultList.children[0];
+        assert.equal(
+            englishItem.querySelector(".result-empty-state-title")?.textContent,
+            "The song data could not be loaded. Check your connection and reload the page."
+        );
+        assert.equal(englishItem.querySelector(".result-reload-btn")?.textContent, "Reload");
     } finally {
         cleanup();
     }

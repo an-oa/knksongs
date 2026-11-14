@@ -620,3 +620,41 @@ for (const colorScheme of ["light", "dark"] as const) {
         await expect(cards.nth(3)).not.toHaveCSS("box-shadow", "none");
     });
 }
+
+test("arrow keys on the handle reorder a bookmark, keep focus on the card, and announce the new position", async ({ page }) => {
+    const songs = createScrollableResultSongs(6);
+    await openSeededBookmark(page, songs);
+    const firstCard = page.locator("#resultList > .song-card").filter({ hasText: "Scroll Song 01" });
+    const handle = firstCard.getByRole("button", { name: "並べ替え（矢印キーで前後へ移動）" });
+    const scrollYBefore = await page.evaluate(() => window.scrollY);
+
+    await handle.focus();
+    await page.keyboard.press("ArrowDown");
+    await page.keyboard.press("ArrowRight");
+
+    await expect.poll(() => readCardTitles(page)).toEqual(FIRST_TO_THIRD_TITLES);
+    expect(await readSavedSongKeys(page)).toEqual([1, 2, 0, 3, 4, 5].map((index) => songs[index].songKey));
+    // カードの要素を移してもフォーカスを保ち、続けて動かせる。移動先は読み上げで伝える。
+    await expect(handle).toBeFocused();
+    await expect(page.locator("#resultAnnouncement")).toHaveText("「Scroll Song 01」を 6 件中 3 番目へ移動しました");
+    expect(await page.evaluate(() => window.scrollY), "arrow keys must not scroll the page").toBe(scrollYBefore);
+
+    await page.keyboard.press("ArrowUp");
+    await page.keyboard.press("ArrowLeft");
+    await expect.poll(() => readCardTitles(page)).toEqual(ORIGINAL_TITLES);
+    await expect(handle).toBeFocused();
+
+    // 先頭ではそれ以上動かず、保存した順序も変わらない。
+    await page.keyboard.press("ArrowUp");
+    expect(await readCardTitles(page)).toEqual(ORIGINAL_TITLES);
+    expect(await readSavedSongKeys(page)).toEqual(songs.map((song) => song.songKey));
+
+    // 並べ替えた順序は、読み込み直しても残る。
+    await page.keyboard.press("ArrowDown");
+    await expect.poll(() => readSavedSongKeys(page)).toEqual([1, 0, 2, 3, 4, 5].map((index) => songs[index].songKey));
+    await page.reload();
+    await waitForInitialLoad(page);
+    await expect.poll(() => readCardTitles(page)).toEqual(
+        ["Scroll Song 02", "Scroll Song 01", "Scroll Song 03", "Scroll Song 04", "Scroll Song 05", "Scroll Song 06"]
+    );
+});

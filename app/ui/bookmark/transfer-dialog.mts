@@ -54,7 +54,8 @@ export type BookmarkTransferAllItemsAction<T> = {
     submitLabel: string;
     /** この操作を選んでいる間、決定ボタンの上に出す結果の説明。 */
     message: string;
-    run: () => BookmarkTransferDialogActionResult<T>;
+    /** 操作を実行する。別のダイアログで確認を取るなど、結果が後で決まるときは Promise で返す。 */
+    run: () => BookmarkTransferDialogActionResult<T> | Promise<BookmarkTransferDialogActionResult<T>>;
 };
 
 /** 選択ダイアログの表示内容と、決定時の処理。 */
@@ -556,7 +557,11 @@ export function createBookmarkTransferDialogController() {
         session.failureMessage = null;
         const allItemsAction = session.allItemsActionChosen ? session.request.allItemsAction : undefined;
         if (allItemsAction) {
-            applyActionResult(allItemsAction.run());
+            const current = session;
+            // 確認のダイアログを重ねて開く間、このダイアログは操作できない。結果が決まるまでに閉じられていれば何もしない。
+            void Promise.resolve(allItemsAction.run()).then((result) => {
+                if (session === current) applyActionResult(result);
+            });
             return;
         }
         const selectedIds = getSelectedIds();
