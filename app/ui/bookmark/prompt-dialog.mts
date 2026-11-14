@@ -213,7 +213,7 @@ export function createBookmarkPromptDialogController() {
      * 本来はブラウザが、最後に開いたモーダル以外を操作できなくする。ところが WebKit は、重ねたモーダルの
      * 下にあるダイアログを Tab の移動先から外さず、置換の確認から背面のインポートのダイアログへフォーカスが抜けて、
      * 背面だけを閉じられてしまう (Playwright の WebKit で確認)。そのため、重ねている間だけ inert を付ける。
-     * @param own このダイアログ
+     * @param own このダイアログ。開いた後に呼ぶので、開いているモーダルに含まれる。これは対象にしない
      * @returns inert を付けたダイアログ。閉じるときに外す
      */
     function blockLowerDialogs(own: HTMLDialogElement): HTMLDialogElement[] {
@@ -258,8 +258,8 @@ export function createBookmarkPromptDialogController() {
         else current.input.removeAttribute("maxlength");
 
         return new Promise<boolean>((resolve) => {
-            const blockedDialogs = blockLowerDialogs(current.dialog);
-            session = { request, buildRequest, language, failureMessage: null, blockedDialogs, resolve };
+            const opened: DialogSession = { request, buildRequest, language, failureMessage: null, blockedDialogs: [], resolve };
+            session = opened;
             renderState();
             // 今ある内容を消す操作では、Enter をそのまま押しても実行しないよう、取り消しへフォーカスを置く。
             const initialFocus = request.input ? current.input : request.isDestructive ? current.cancelBtn : current.submitBtn;
@@ -272,6 +272,9 @@ export function createBookmarkPromptDialogController() {
             current.dialog.showModal();
             initialFocus.focus();
             if (request.input) current.input.select();
+            // 背面は、開いた後で操作できなくする。ブラウザは開くときに、閉じた後のフォーカスの戻り先 (背面の中の要素) を覚える。
+            // また、開く途中で失敗しても、背面を操作できないまま残さない。
+            opened.blockedDialogs = blockLowerDialogs(current.dialog);
         });
     }
 

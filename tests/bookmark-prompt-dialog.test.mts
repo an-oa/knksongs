@@ -275,14 +275,20 @@ test("bookmark prompt dialog: a dialog under it cannot be reached while it is st
         // 背面に開いているインポートのダイアログと、開いているがモーダルではないダイアログ。
         const lowerModal = Object.assign(document.createElement("dialog"), { open: true, matches: (selector: string) => selector === ":modal" });
         const nonModal = Object.assign(document.createElement("dialog"), { open: true, matches: () => false });
-        const openDialogs: HTMLElement[] = [lowerModal, nonModal];
+        const lowerDialogs: HTMLElement[] = [lowerModal, nonModal];
         // 偽の document の一覧検索は空を返すので、開いているダイアログを返すように差し替える。
-        dom.document.querySelectorAll = ((selector: string) => (selector === "dialog[open]" ? openDialogs : [])) as never;
+        // 確認のダイアログ自身も、開いた後はモーダルとして開いているので、一覧に含める。
+        dom.document.querySelectorAll = ((selector: string) => {
+            if (selector !== "dialog[open]") return [];
+            const own = document.body.querySelector<HTMLDialogElement>('[id="bookmark-prompt-dialog"]');
+            return own?.open ? [...lowerDialogs, own] : lowerDialogs;
+        }) as never;
 
         for (const choose of ["submit", "cancel"] as const) {
             const closed = controller.open(buildConfirmRequest(true), "ja");
             const parts = getDialogParts();
-            openDialogs.push(parts.dialog);
+            // 2 回目に開くときは、偽のダイアログもモーダルとして答える。自分を対象から外していなければ、ここで inert になる。
+            Object.assign(parts.dialog, { matches: (selector: string) => selector === ":modal" });
             assert.equal(lowerModal.inert, true, "WebKit lets Tab reach the dialog under a stacked modal");
             assert.notEqual(nonModal.inert, true);
             assert.notEqual(parts.dialog.inert, true, "the dialog on top stays usable");
@@ -298,11 +304,10 @@ test("bookmark prompt dialog: a dialog under it cannot be reached while it is st
             assert.equal(await closed, choose === "submit");
             assert.equal(lowerInertWhenClosing, false);
             assert.equal(lowerModal.inert, false);
-            openDialogs.pop();
         }
 
         // 背面に別のダイアログがなければ、何も変えない。
-        openDialogs.length = 0;
+        lowerDialogs.length = 0;
         const alone = controller.open(buildConfirmRequest(false), "ja");
         getDialogParts().cancelBtn.click();
         assert.equal(await alone, false);
