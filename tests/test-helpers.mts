@@ -361,25 +361,31 @@ class FakeElement extends FakeEventTarget {
         this.attributes.delete(name);
     }
 
-    /** 登録済み listener へイベントを通知する。既定動作の取り消しは扱わない。 */
+    /**
+     * 登録済み listener へイベントを通知する。既定動作の取り消しは扱わない。
+     * ブラウザと同じく、listener の戻り値は使わず、非同期の listener の完了は待たない。
+     */
     dispatchEvent(event: Pick<Event, "type">): boolean {
         void this.dispatchListeners(event.type, { target: this, currentTarget: this });
         return true;
     }
 
-    /** 記録されたクリック listener と onclick を呼ぶ。 */
-    click() {
+    /**
+     * 記録されたクリック listener と onclick を呼ぶ。
+     * ブラウザと同じく、listener の戻り値は使わず、非同期の listener の完了は待たない。
+     * 完了を確かめるテストは、invokeAsyncListener で呼ぶか、結果が出るまで待つ仕組みを使う。
+     */
+    click(): void {
         const event = {
             target: this,
             currentTarget: this,
             preventDefault() {},
             stopPropagation() {}
         };
-        const pending = this.dispatchListeners("click", event);
+        void this.dispatchListeners("click", event);
         if (typeof this.onclick === "function") {
             this.onclick(event);
         }
-        return pending;
     }
 
     /** グローバルに設置したモック document のフォーカスを更新する。 */

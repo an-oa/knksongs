@@ -93,6 +93,35 @@ test("DOM mock: the asynchronous helper also accepts synchronous listeners and r
     }
 });
 
+test("DOM mock: click and dispatchEvent start asynchronous listeners without waiting, as a browser does", async () => {
+    const cleanup = installFakeDom();
+    try {
+        const button = getFakeElement(document.createElement("button"));
+        const calls: string[] = [];
+        const gate = Promise.withResolvers<void>();
+        const finished = Promise.withResolvers<void>();
+        const listener = async () => {
+            calls.push("started");
+            await gate.promise;
+            calls.push("finished");
+            finished.resolve();
+        };
+        button.addEventListener("click", listener);
+        button.addEventListener("change", listener);
+
+        // listener の戻り値は受け取れないので、完了はテストが別の方法で待つ。
+        assert.equal(button.click(), undefined);
+        assert.equal(button.dispatchEvent({ type: "change" }), true);
+        assert.deepEqual(calls, ["started", "started"]);
+
+        gate.resolve();
+        await finished.promise;
+        assert.deepEqual(calls, ["started", "started", "finished", "finished"]);
+    } finally {
+        cleanup();
+    }
+});
+
 test("DOM mock: click dispatches all listeners and onclick", () => {
     const cleanup = installFakeDom();
     try {

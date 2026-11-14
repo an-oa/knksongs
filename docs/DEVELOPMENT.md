@@ -149,9 +149,11 @@ flowchart LR
 
 - `npm run test:unit` は、scripts のテストが生成 module を読むため事前に `build:ts` を実行します。
   `tsx` は型検査をしないため、`npm run typecheck` も併せて実行してください。
-- DOM モックに登録された listener は、`invokeListener`（同期専用）か `invokeAsyncListener`（非同期。`await` する）で呼びます。
-  `invokeListener` は、listener が Promise を返すとその場で失敗します。完了を待たずに先へ進むと、
-  「〜されていない」ことを確かめる assert が、処理の途中で通ってしまうためです。
+- DOM モックの `click()` と `dispatchEvent()` は、ブラウザと同じく、非同期の listener の完了を待ちません。
+  非同期の処理の完了を確かめるテストでは、`invokeAsyncListener()` か、結果が出るまで待つ適切な仕組みを使います。
+  待たずに先へ進むと、「〜されていない」ことを確かめる assert が、処理の途中で通ってしまいます。
+- `invokeListener()` は同期の listener 専用で、listener が Promise を返すとその場で失敗します。
+  `invokeAsyncListener()` は、Promise を返した listener すべての完了を待てる Promise を返します。
 - テストファイル名は対象 module に揃えています（例: `app/lib/search-query.mts` → `tests/search-query.test.mts`）。
   一覧は `ls tests/` で確認してください。
 - E2E では `_site` を `python3 -m http.server 4173` でローカル配信し、曲データと YouTube Iframe API はモックに差し替えます。

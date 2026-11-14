@@ -124,7 +124,7 @@ for (const language of ["ja", "en"] as const) {
 
             const reloadButton = page.resultList.children[0].children[1];
             assert.equal(reloadButton.tagName, "BUTTON");
-            void reloadButton.click();
+            reloadButton.click();
             assert.equal(calls.reload, 1);
         } finally {
             dom();
