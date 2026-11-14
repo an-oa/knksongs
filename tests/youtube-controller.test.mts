@@ -143,7 +143,7 @@ test("youtube: vertical videos stay landscape in thumbnail mode and switch on if
     }
 });
 
-test("youtube: an idle thumbnail is not rebuilt until its target or the thumbnail setting changes", () => {
+test("youtube: an idle thumbnail keeps its play button until its video or the thumbnail setting changes", () => {
     const cleanup = installFakeDom();
     try {
         const ui = createYoutubeUiState({});
@@ -163,12 +163,24 @@ test("youtube: an idle thumbnail is not rebuilt until its target or the thumbnai
         assert.equal(thumb.querySelector(".thumb-play-btn"), playButton);
         assert.equal(thumb.onclick, clickHandler);
 
-        // 再生する範囲が変わる設定では、同じ曲でも描き直す。
+        // 再生する範囲が変わる設定では、同じ曲でも再生対象と押したときの処理を入れ直す。
+        // 同じ動画の再生ボタンは作り直さない。作り直すと、ボタンが持っているフォーカスを失う。
+        const playbackKey = thumb.dataset.playbackKey;
         ui.playback.playArchiveToEnd = true;
         controller.updateThumbnail(thumb, { ...target });
-        const rebuiltButton = thumb.querySelector(".thumb-play-btn");
-        assert.ok(rebuiltButton);
-        assert.notEqual(rebuiltButton, playButton);
+        assert.notEqual(thumb.dataset.playbackKey, playbackKey);
+        assert.notEqual(thumb.onclick, clickHandler);
+        assert.equal(thumb.querySelector(".thumb-play-btn"), playButton);
+        assert.equal(thumb.children.length, 1);
+
+        // 別の動画の曲を表示するときは、その動画の画像を入れたボタンに作り直す。
+        controller.updateThumbnail(thumb, { ...target, videoId: "video2" });
+        const otherVideoButton = thumb.querySelector(".thumb-play-btn");
+        assert.ok(otherVideoButton);
+        assert.notEqual(otherVideoButton, playButton);
+        assert.equal(otherVideoButton.querySelector("img")?.src, "https://i.ytimg.com/vi/video2/mqdefault.jpg");
+        assert.equal(thumb.children.length, 1);
+        controller.updateThumbnail(thumb, { ...target });
 
         // サムネイルを非表示にすると画像を外し、同じ設定のままなら外した状態を保つ。
         ui.playback.showThumbnails = false;
@@ -185,7 +197,7 @@ test("youtube: an idle thumbnail is not rebuilt until its target or the thumbnai
     }
 });
 
-test("youtube: a thumbnail is rebuilt after playback was closed, and can be played again", () => {
+test("youtube: after playback was closed, the next update keeps the play button and it can be played again", () => {
     const cleanup = installFakeDom();
     try {
         const ui = createYoutubeUiState({});
@@ -203,17 +215,25 @@ test("youtube: a thumbnail is rebuilt after playback was closed, and can be play
         requireIframe(thumb);
 
         controller.restoreActivePlayback();
-        const restoredButton = thumb.querySelector(".thumb-play-btn");
+        const restoredButton = thumb.querySelector<HTMLElement>(".thumb-play-btn");
         assert.ok(restoredButton);
+        assert.equal(thumb.dataset.playbackKey, "", "closing clears the playback target");
+        restoredButton.focus();
 
-        // 閉じた後の最初の反映では、再生前と同じ内容でも描き直す。
+        // 閉じた後の最初の反映では、再生対象を入れ直す。閉じたときに置いた再生ボタンは、
+        // キーボードで閉じた人のフォーカスを持っているので、作り直さずにそのまま使う。
         controller.updateThumbnail(thumb, { ...target });
-        const rebuiltButton = thumb.querySelector(".thumb-play-btn");
-        assert.ok(rebuiltButton);
-        assert.notEqual(rebuiltButton, restoredButton);
+        assert.notEqual(thumb.dataset.playbackKey, "");
+        assert.equal(thumb.querySelector(".thumb-play-btn"), restoredButton);
+        assert.equal(restoredButton.parentElement, thumb, "the button never leaves the page");
+        assert.equal(thumb.children.length, 1);
+        assert.equal(document.activeElement, restoredButton);
 
+        // 同じ動画の別の曲 (開始位置が違う) を表示するときも、同じ再生ボタンを使い、その曲を再生する。
+        controller.updateThumbnail(thumb, { ...target, startSeconds: 90 });
+        assert.equal(thumb.querySelector(".thumb-play-btn"), restoredButton);
         clickThumbnail(thumb);
-        requireIframe(thumb);
+        assert.match(requireIframe(thumb).src, /[?&]start=90(&|$)/);
     } finally {
         cleanup();
     }

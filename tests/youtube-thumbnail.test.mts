@@ -8,6 +8,7 @@ import {
     getSongKeyFromYoutubeThumb,
     getYoutubeThumbnailIdleRenderKey,
     getYoutubeThumbnailPlayButton,
+    getYoutubeThumbnailPlayButtonForVideo,
     getYoutubeThumbnailPlayLabel,
     getYoutubeThumbnailPlaybackEndSeconds,
     getYoutubeThumbnailPlaybackMode,
@@ -56,6 +57,24 @@ test("youtube thumbnail: the image sits inside a labelled play button", () => {
         const img = button.querySelector("img");
         assert.ok(img);
         assert.equal(img.alt, "", "the button label names the song, so the image is decorative");
+    } finally {
+        cleanup();
+    }
+});
+
+test("youtube thumbnail: a play button is found again only for the video whose image it holds", () => {
+    const cleanup = installFakeDom();
+    try {
+        const thumb = document.createElement("div");
+        assert.equal(getYoutubeThumbnailPlayButtonForVideo(thumb, "video1"), null);
+
+        applyYoutubeThumbnailImage(thumb, "video1");
+        const button = getYoutubeThumbnailPlayButton(thumb);
+        assert.ok(button);
+        assert.equal(getYoutubeThumbnailPlayButtonForVideo(thumb, "video1"), button);
+        // 別の動画の画像は入っていないので、使い回さない。
+        assert.equal(getYoutubeThumbnailPlayButtonForVideo(thumb, "video2"), null);
+        assert.equal(getYoutubeThumbnailPlayButtonForVideo(thumb, ""), null);
     } finally {
         cleanup();
     }

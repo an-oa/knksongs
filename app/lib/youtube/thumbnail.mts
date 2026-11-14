@@ -76,6 +76,8 @@ export function createYoutubeThumbnailPlayButton(videoId: string, label: string)
     const button = document.createElement("button");
     button.type = "button";
     button.className = YOUTUBE_THUMBNAIL_PLAY_BUTTON_CLASS;
+    // どの動画のサムネイルを入れたボタンかを持たせ、同じ動画なら作り直さずに使えるようにする。
+    button.dataset.thumbnailVideoId = videoId;
     if (label) button.setAttribute("aria-label", label);
     button.append(img);
     return button;
@@ -121,6 +123,18 @@ export function setYoutubeThumbnailPlayLabel(thumbDiv: HTMLElement, label: strin
 export function getYoutubeThumbnailPlayButton(thumbDiv: HTMLElement): HTMLElement | null {
     const button = thumbDiv.querySelector(`.${YOUTUBE_THUMBNAIL_PLAY_BUTTON_CLASS}`);
     return isHtmlElement(button) ? button : null;
+}
+
+/**
+ * サムネイルに表示中の再生ボタンが、指定した動画のサムネイルを入れたものなら返す。
+ * 同じ動画の再生ボタンは作り直さずに使う。作り直すと、ボタンが持っているフォーカスを失う。
+ * @param thumbDiv 再生ボタンを探すサムネイル要素
+ * @param videoId サムネイルを表示する YouTube 動画 ID
+ * @returns 同じ動画の再生ボタン。なければ null
+ */
+export function getYoutubeThumbnailPlayButtonForVideo(thumbDiv: HTMLElement, videoId: string): HTMLElement | null {
+    const button = getYoutubeThumbnailPlayButton(thumbDiv);
+    return button && videoId && button.dataset.thumbnailVideoId === videoId ? button : null;
 }
 
 /**

@@ -36,6 +36,7 @@ import {
     createYoutubeThumbnailPlayButton,
     getSongKeyFromYoutubeThumb,
     getYoutubeThumbnailIdleRenderKey,
+    getYoutubeThumbnailPlayButtonForVideo,
     getYoutubeThumbnailPlayButton,
     getYoutubeThumbnailPlayLabel,
     getYoutubeThumbnailPlaybackEndSeconds,
@@ -778,10 +779,14 @@ export function createYoutubeController({ ui, youtube, constants }: YoutubeContr
 
     /**
      * サムネイルコンテナを再生状態から初期表示へリセットする。
+     * @param thumbDiv リセットするサムネイル要素
+     * @param playbackTarget 次に表示する曲の再生対象
+     * @param keptPlayButton 使い続ける再生ボタン。DOM から外すとフォーカスを失うので、これだけは残す
      */
     function resetThumbnailContainer(
         thumbDiv: HTMLElement,
-        playbackTarget: YoutubePlaybackTargetMetadata
+        playbackTarget: YoutubePlaybackTargetMetadata,
+        keptPlayButton: HTMLElement | null
     ): void {
         const previousSessionId = getYoutubeThumbnailPlaybackSessionId(thumbDiv);
         playbackStartAttempts.cancelForThumb(thumbDiv);
@@ -797,7 +802,13 @@ export function createYoutubeController({ ui, youtube, constants }: YoutubeContr
         thumbDiv.classList.remove("playing");
         setYoutubeThumbnailExpandedCardState(thumbDiv, false);
         thumbDiv.onclick = null;
-        thumbDiv.replaceChildren();
+        if (!keptPlayButton) {
+            thumbDiv.replaceChildren();
+            return;
+        }
+        for (const child of Array.from(thumbDiv.children)) {
+            if (child !== keptPlayButton) thumbDiv.removeChild(child);
+        }
     }
 
     /**
@@ -858,7 +869,8 @@ export function createYoutubeController({ ui, youtube, constants }: YoutubeContr
         setYoutubeThumbnailOrientation(thumbDiv, "landscape");
         setYoutubeThumbnailPlaybackState(thumbDiv, "stopped");
         setYoutubeThumbnailExpandedCardState(thumbDiv, false);
-        // 次に曲情報を反映するときは、再生前と同じ内容でも描き直す。
+        // 次に曲情報を反映するときに、再生前と同じ曲でも、再生対象の値と押したときの処理を入れ直す。
+        // ここで置く再生ボタンは、同じ動画なら updateThumbnail が作り直さずに使う。
         setYoutubeThumbnailIdleRenderKey(thumbDiv, "");
         if (videoId) {
             applyYoutubeThumbnailImage(thumbDiv, videoId);
@@ -983,6 +995,7 @@ export function createYoutubeController({ ui, youtube, constants }: YoutubeContr
      * 曲情報に合わせてサムネイル表示内容を更新する。
      * 結果一覧を描き直すたびに表示中の全カードについて呼ばれるので、再生していないサムネイルに
      * 同じ内容を描いてあるときは何もしない。画像や再生ボタンを作り直すと、件数に比例して描画が重くなる。
+     * 描き直すときも、同じ動画の再生ボタンは作り直さずに使い、ボタンが持つフォーカスを保つ。
      * 押したときの処理はサムネイルの枠で受け、キーボードでは中の再生ボタンから同じ処理へ届く。
      */
     function updateThumbnail(thumbDiv: HTMLElement, yt: YoutubeTarget) {
@@ -994,14 +1007,20 @@ export function createYoutubeController({ ui, youtube, constants }: YoutubeContr
         }
         const renderKey = buildIdleThumbnailRenderKey(yt, playbackTarget);
         if (getYoutubeThumbnailIdleRenderKey(thumbDiv) === renderKey) return;
-        resetThumbnailContainer(thumbDiv, playbackTarget);
+        // 同じ動画の再生ボタンをすでに置いてあれば、作り直さずに使う。再生を閉じた後は、閉じたときに置いた
+        // 再生ボタンがフォーカスを持っているので、作り直すとフォーカスを失い、Tab の位置も戻ってしまう。
+        const keptPlayButton = playbackUi.showThumbnails
+            ? getYoutubeThumbnailPlayButtonForVideo(thumbDiv, yt.videoId)
+            : null;
+        resetThumbnailContainer(thumbDiv, playbackTarget, keptPlayButton);
         setYoutubeThumbnailOrientation(thumbDiv, "landscape");
         setYoutubeThumbnailIdleRenderKey(thumbDiv, renderKey);
 
         if (!playbackUi.showThumbnails) return;
         if (!yt.videoId) return;
 
-        const playButton = createYoutubeThumbnailPlayButton(yt.videoId, getYoutubeThumbnailPlayLabel(thumbDiv));
+        const playButton = keptPlayButton
+            ?? createYoutubeThumbnailPlayButton(yt.videoId, getYoutubeThumbnailPlayLabel(thumbDiv));
         if (!playButton) return;
         thumbDiv.onclick = () => {
             if (thumbDiv.classList.contains("playing")) return;
@@ -1010,7 +1029,7 @@ export function createYoutubeController({ ui, youtube, constants }: YoutubeContr
                 playbackMode: "manual"
             });
         };
-        thumbDiv.appendChild(playButton);
+        if (playButton !== keptPlayButton) thumbDiv.appendChild(playButton);
     }
 
     return {
