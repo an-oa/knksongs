@@ -1,3 +1,4 @@
+import { isImeComposingKeyEvent } from "../../lib/ime-key-event.mjs";
 import type { SiteLanguage } from "../../lib/site-language.mjs";
 import type { LocalizedText } from "./text.mjs";
 
@@ -61,9 +62,6 @@ type DialogSession = {
     failureMessage: LocalizedText | null;
     resolve: (submitted: boolean) => void;
 };
-
-/** かな漢字変換の途中のキー操作に付くキーコード。isComposing を付けないブラウザがあるため併せて見る。 */
-const IME_PROCESSING_KEY_CODE = 229;
 
 /**
  * 指定したタグ・ID・クラスの要素を作る。
@@ -149,12 +147,16 @@ export function createBookmarkPromptDialogController() {
 
     /**
      * Esc でダイアログだけを閉じ、サイドバーや下のダイアログの Esc 処理へ伝えない。
+     * かな漢字変換を取り消す Esc は、入力の途中なので閉じない。閉じると、変換だけを取り消すつもりの操作で、
+     * 入力中の名前を失う。この場合も、ブラウザ自身の Esc の処理 (cancel) と下のパネルの処理は止める。
+     * 変換の取り消しは、キー入力がページへ届く前にかな漢字変換が済ませているので、止めても影響しない。
      * @param event ダイアログ内で受け取ったキー入力
      */
     function handleKeydown(event: KeyboardEvent): void {
         if (event.key !== "Escape") return;
         event.preventDefault();
         event.stopPropagation();
+        if (isImeComposingKeyEvent(event)) return;
         finish(false);
     }
 
@@ -163,7 +165,7 @@ export function createBookmarkPromptDialogController() {
      * @param event 入力欄で受け取ったキー入力
      */
     function handleInputKeydown(event: KeyboardEvent): void {
-        if (event.key !== "Enter" || event.isComposing || event.keyCode === IME_PROCESSING_KEY_CODE) return;
+        if (event.key !== "Enter" || isImeComposingKeyEvent(event)) return;
         event.preventDefault();
         handleSubmit();
     }

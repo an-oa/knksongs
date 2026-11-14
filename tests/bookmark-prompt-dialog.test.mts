@@ -168,6 +168,49 @@ test("bookmark prompt dialog: Enter in the field submits, except while convertin
     }
 });
 
+test("bookmark prompt dialog: Escape that cancels a kana-kanji conversion keeps the dialog and the typed name", async () => {
+    const restoreDom = installFakeDom();
+    try {
+        const controller = createBookmarkPromptDialogController();
+        const submitted: string[] = [];
+        const closed = controller.open(buildRenameRequest(submitted), "ja");
+        const parts = getDialogParts();
+        const settled = { value: null as boolean | null };
+        void closed.then((value) => { settled.value = value; });
+        /** ダイアログでキーを押し、既定の動作を止めたかと、外へ伝えるのを止めたかを返す。 */
+        const pressEscape = (event: { isComposing?: boolean; keyCode?: number }) => {
+            const pressed = { prevented: false, stopped: false };
+            invokeListener(parts.dialog, "keydown", {
+                key: "Escape",
+                ...event,
+                preventDefault() { pressed.prevented = true; },
+                stopPropagation() { pressed.stopped = true; }
+            });
+            return pressed;
+        };
+
+        parts.input.value = "あさの";
+        // isComposing を付けるブラウザと、キーコード 229 だけを付けるブラウザの両方を確かめる。
+        for (const event of [{ isComposing: true }, { keyCode: 229 }]) {
+            const pressed = pressEscape(event);
+            assert.equal(parts.dialog.open, true);
+            assert.equal(parts.input.value, "あさの");
+            assert.equal(pressed.prevented, true, "the browser must not close the dialog on its own either");
+            assert.equal(pressed.stopped, true, "the panel under the dialog must not close either");
+        }
+        await Promise.resolve();
+        assert.equal(settled.value, null);
+        assert.deepEqual(submitted, []);
+
+        // 変換が終わった後の Esc は、ダイアログを閉じる。
+        assert.deepEqual(pressEscape({}), { prevented: true, stopped: true });
+        assert.equal(await closed, false);
+        assert.equal(parts.dialog.open, false);
+    } finally {
+        restoreDom();
+    }
+});
+
 test("bookmark prompt dialog: Escape and the cancel button close only this dialog without submitting", async () => {
     const restoreDom = installFakeDom();
     try {

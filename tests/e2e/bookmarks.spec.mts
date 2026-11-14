@@ -345,6 +345,33 @@ test("renaming and deleting use in-page dialogs that Escape closes without closi
     expect(nativeDialogs, "the browser's own prompt, confirm, and alert are not used").toEqual([]);
 });
 
+test("Escape that cancels a kana-kanji conversion keeps the rename dialog and the typed name", async ({ page, browserName }) => {
+    // かな漢字変換の途中の状態は、Chromium の開発者向けの通信 (CDP) でしか作れない。
+    test.skip(browserName !== "chromium", "an IME conversion can only be simulated through CDP");
+    await seedBookmarks(page, { p_1: { name: "Morning Set", songs: [], createdAt: 1 } });
+    await openBookmarkPanel(page);
+    await getBookmarkItem(page, "Morning Set").getByRole("button", { name: "ブックマーク名を変更" }).focus();
+    await page.keyboard.press("Enter");
+    const renameDialog = page.getByRole("dialog", { name: "ブックマーク名の変更" });
+    const nameInput = renameDialog.getByRole("textbox", { name: "新しいブックマーク名を入力してください。" });
+    await nameInput.fill("あさの");
+
+    // 「きょく」を変換している途中で、変換を取り消すつもりで Esc を押す。
+    const ime = await page.context().newCDPSession(page);
+    await ime.send("Input.imeSetComposition", { text: "きょく", selectionStart: 3, selectionEnd: 3 });
+    await page.keyboard.press("Escape");
+    await expect(renameDialog).toBeVisible();
+    await expect(page.locator("#bookmark-sidebar-panel")).toBeVisible();
+
+    // 変換を確定した後は、入力した名前が残っていて、Esc でダイアログだけが閉じる。
+    await ime.send("Input.insertText", { text: "曲" });
+    await expect(nameInput).toHaveValue("あさの曲");
+    await page.keyboard.press("Escape");
+    await expect(renameDialog).toBeHidden();
+    await expect(page.locator("#bookmark-sidebar-panel")).toBeVisible();
+    await expect(getBookmarkItem(page, "Morning Set")).toBeVisible();
+});
+
 test("a failed bookmark action is reported in a toast instead of a blocking alert", async ({ page }) => {
     await seedBookmarks(page, { p_1: { name: "Morning Set", songs: [], createdAt: 1 } });
     const nativeDialogs: string[] = [];
