@@ -157,6 +157,9 @@ flowchart LR
 - テストファイル名は対象 module に揃えています（例: `app/lib/search-query.mts` → `tests/search-query.test.mts`）。
   一覧は `ls tests/` で確認してください。
 - E2E では `_site` を `python3 -m http.server 4173` でローカル配信し、曲データと YouTube Iframe API はモックに差し替えます。
+- 配信するポート（既定は 4173）がすでに使われていると、E2E は開始時に失敗します。動いているサーバーは使い回しません。
+  使い回すと、同じ機械の別の作業が配信している別の `_site` を相手にテストが動き、結果が当てにならなくなるためです。
+  その場合は、`E2E_PORT=4174 npm run test:e2e` のように、空いているポートを指定します。
 - E2E は Chromium と WebKit で実行します。WebKit は Safari と同じエンジンですが、iOS の判定（`isIOSWebKit`）は真にならず、
   長押しの操作も再現できません。iOS Safari は実機または手動で確認してください。
 - WebKit では、Playwright の screenshot のたびに CSP の違反（`style-src-elem`）が 1 件記録されます。
