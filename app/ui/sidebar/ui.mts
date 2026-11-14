@@ -181,7 +181,8 @@ export function createSidebarController(input: SidebarControllerInput) {
         }
         document.addEventListener("keydown", (event) => {
             // かな漢字変換を取り消す Esc は、入力の途中なので、パネルもサイドバーも閉じない。
-            if (event.key === "Escape" && !isImeComposingKeyEvent(event)) {
+            // モーダルのダイアログが開いている間の Esc は、そのダイアログを閉じる操作なので、ここでは扱わない。
+            if (event.key === "Escape" && !isImeComposingKeyEvent(event) && !isModalDialogOpen()) {
                 if (ui.el.settingsSidebarPanel && !ui.el.settingsSidebarPanel.hidden) {
                     event.preventDefault();
                     closeSettingsPanel({ restoreFocus: true });
@@ -255,9 +256,20 @@ export function createSidebarController(input: SidebarControllerInput) {
     }
 
     /**
+     * モーダルのダイアログが開いているかを返す。
+     * 開いている間の Esc は、そのダイアログを閉じる操作なので、ブラウザとダイアログに任せる。
+     * フォーカスがダイアログの外にあると、Esc はダイアログではなく文書へ届く。そこでサイドバーが扱うと、
+     * ダイアログを残したまま、背面のパネルだけを閉じてしまう。
+     * @returns モーダルのダイアログが開いていれば true
+     */
+    function isModalDialogOpen(): boolean {
+        return Boolean(document.querySelector("dialog:modal"));
+    }
+
+    /**
      * 開いているサイドバー内で Tab フォーカスを循環させる。
-     * @param {KeyboardEvent} event
-     * @param {HTMLElement | null} sidebar
+     * @param event キー入力
+     * @param sidebar サイドバーの要素
      */
     function trapSidebarFocus(event: KeyboardEvent, sidebar: HTMLElement | null): void {
         if (!sidebar || !sidebar.classList.contains("active")) return;

@@ -206,6 +206,43 @@ test("sidebar: Escape that cancels a kana-kanji conversion closes neither the pa
     }
 });
 
+test("sidebar: Escape is left to a modal dialog that is open over the sidebar", () => {
+    const restoreDom = installFakeDom();
+    try {
+        const { ui, openSidebarBtn } = createSidebarUiState();
+        const controller = createSidebarController({
+            ui,
+            ...createSidebarDependencies()
+        });
+
+        controller.setupUIHandlers();
+        invokeListener(openSidebarBtn, "click", {});
+        invokeListener(ui.el.openSettingsPanelBtn, "click", {});
+
+        // 名前の変更やインポートのダイアログを、サイドバーの上にモーダルで開いている。
+        const modalDialog = document.createElement("dialog");
+        const querySelector = restoreDom.document.querySelector.bind(restoreDom.document);
+        restoreDom.document.querySelector = ((selector: string) => (
+            selector === "dialog:modal" ? modalDialog : querySelector(selector)
+        )) as never;
+
+        // フォーカスがダイアログの外にあると、Esc はダイアログではなく文書へ届く。
+        // ここで扱うと、ダイアログを残したまま背面のパネルだけを閉じてしまう。
+        let prevented = false;
+        invokeListener(restoreDom.document, "keydown", { key: "Escape", preventDefault() { prevented = true; } });
+        assert.equal(ui.el.settingsSidebarPanel.hidden, false);
+        assert.equal(controller.isOpen(), true);
+        assert.equal(prevented, false, "the browser must still deliver the close request to the dialog");
+
+        // ダイアログが閉じた後の Esc は、これまでどおりパネルを閉じる。
+        restoreDom.document.querySelector = querySelector as never;
+        invokeListener(restoreDom.document, "keydown", { key: "Escape", preventDefault() {} });
+        assert.equal(ui.el.settingsSidebarPanel.hidden, true);
+    } finally {
+        restoreDom();
+    }
+});
+
 test("sidebar: openBookmarkModal opens sidebar first when closed and passes closeSidebarOnExit", () => {
     const restoreDom = installFakeDom();
     try {

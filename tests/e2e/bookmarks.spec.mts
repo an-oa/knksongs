@@ -782,6 +782,66 @@ test("keyboard focus stays in the replace confirmation, and declining it by keyb
     });
 });
 
+/**
+ * Tab を押して、フォーカスを開いているダイアログの外へ出す。
+ * 実際のブラウザでは、最後の要素の次はアドレスバーなどへ移る。テストのブラウザにはそれがなく、ページそのものへ移る。
+ * @param page 操作するページ
+ */
+async function tabOutOfDialogs(page: Page) {
+    const isFocusOnPage = () => page.evaluate(() => document.activeElement === document.body);
+    for (let press = 0; press < 6 && !(await isFocusOnPage()); press += 1) {
+        await page.keyboard.press("Tab");
+    }
+    expect(await isFocusOnPage(), "focus leaves the dialog").toBe(true);
+}
+
+test("Escape closes the dialog on top even when focus has left it, and never the panel behind it", async ({ page }) => {
+    await seedBookmarks(page, KEPT_BOOKMARKS);
+    await openBookmarkPanel(page);
+    const bookmarkPanel = page.locator("#bookmark-sidebar-panel");
+
+    // 名前の変更のダイアログ。Esc がダイアログへ届かなくても、背面のブックマークパネルは閉じない。
+    await getBookmarkItem(page, "Kept Set").getByRole("button", { name: "ブックマーク名を変更" }).focus();
+    await page.keyboard.press("Enter");
+    const renameDialog = page.getByRole("dialog", { name: "ブックマーク名の変更" });
+    await expect(renameDialog).toBeVisible();
+    await tabOutOfDialogs(page);
+    await page.keyboard.press("Escape");
+    await expect(renameDialog).toBeHidden();
+    await expect(bookmarkPanel).toBeVisible();
+
+    // 置換の確認を重ねた状態。1 回の Esc で閉じるのは、いちばん上の確認だけ。
+    await page.locator("#bookmark-panel-import-input").setInputFiles({
+        name: "friend.json",
+        mimeType: "application/json",
+        buffer: Buffer.from(JSON.stringify(FRIEND_FILE))
+    });
+    const importDialog = page.getByRole("dialog", { name: "ブックマークのインポート" });
+    await importDialog.getByRole("button", { name: "取り込み方を選ぶ" }).click();
+    await importDialog.getByRole("menuitemradio", { name: /ブックマーク全体を置換/ }).click();
+    await importDialog.getByRole("button", { name: "置換", exact: true }).focus();
+    await page.keyboard.press("Enter");
+    const confirmDialog = page.getByRole("dialog", { name: "ブックマーク全体の置換" });
+    await expect(confirmDialog).toBeVisible();
+    await tabOutOfDialogs(page);
+    await page.keyboard.press("Escape");
+    await expect(confirmDialog).toBeHidden();
+    await expect(importDialog).toBeVisible();
+    await expect(bookmarkPanel).toBeVisible();
+
+    // 続けて、インポートのダイアログだけを閉じる。
+    await tabOutOfDialogs(page);
+    await page.keyboard.press("Escape");
+    await expect(importDialog).toBeHidden();
+    await expect(bookmarkPanel).toBeVisible();
+    await expect(page.locator("#sidebar")).toHaveAttribute("aria-hidden", "false");
+    expect(await readStoredBookmarks(page)).toEqual({ version: 3, bookmarks: KEPT_BOOKMARKS });
+
+    // ダイアログがなければ、Esc はこれまでどおりブックマークパネルを閉じる。
+    await page.keyboard.press("Escape");
+    await expect(bookmarkPanel).toBeHidden();
+});
+
 test("declining the replace confirmation keeps the dialog open to continue", async ({ page }) => {
     await seedBookmarks(page, KEPT_BOOKMARKS);
     await openBookmarkPanel(page);
