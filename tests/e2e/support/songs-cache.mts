@@ -43,6 +43,38 @@ export async function observeSongsCacheDeletions(page: Page) {
     return () => page.evaluate(() => window.cacheDeletions);
 }
 
+/**
+ * 次のページ読み込みから、曲データJSONを保存しようとした回数を数え、観測用の読み取り関数を返す。
+ * 保存済みの値を見たうえで保存を見送った場合も、1 回に数える。保存の処理が終わったことを待つために使う。
+ */
+export async function observeSongsCacheSaveAttempts(page: Page) {
+    await page.addInitScript((cacheKey) => {
+        window.songsCacheSaveAttempts = 0;
+        const counted = new WeakSet<IDBTransaction>();
+        /** 曲データJSONのキーを読み書きする書き込み用のトランザクションを、完了した時点で 1 回に数える。 */
+        const countWhenDone = (store: IDBObjectStore, key: unknown) => {
+            const { transaction } = store;
+            if (store.name !== "songsJsonCache" || transaction.mode !== "readwrite" || key !== cacheKey) return;
+            if (counted.has(transaction)) return;
+            counted.add(transaction);
+            transaction.addEventListener("complete", () => {
+                window.songsCacheSaveAttempts = (window.songsCacheSaveAttempts ?? 0) + 1;
+            });
+        };
+        const get = IDBObjectStore.prototype.get;
+        IDBObjectStore.prototype.get = function (this: IDBObjectStore, query: IDBValidKey | IDBKeyRange) {
+            countWhenDone(this, query);
+            return get.call(this, query);
+        };
+        const put = IDBObjectStore.prototype.put;
+        IDBObjectStore.prototype.put = function (this: IDBObjectStore, record: unknown, key?: IDBValidKey) {
+            countWhenDone(this, record !== null && typeof record === "object" && "key" in record ? record.key : undefined);
+            return key === undefined ? put.call(this, record) : put.call(this, record, key);
+        };
+    }, SONGS_JSON_CACHE_KEY);
+    return () => page.evaluate(() => window.songsCacheSaveAttempts ?? 0);
+}
+
 /** 取得済みの曲キャッシュを旧localStorage形式へ移し、IndexedDBから取り除く。 */
 export async function prepareLegacySongsCache(page: Page): Promise<void> {
     const text = await readSongsJsonCacheText(page);

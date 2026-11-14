@@ -15,6 +15,12 @@ export function createFakeTextCacheStore(initialValue: string | null = null) {
             value = String(nextValue);
             return true;
         },
+        /** 保存済みの値を見て、置き換えてよいと判定されたときだけ保存する。 */
+        async setTextIf(nextValue: string, canReplace: (current: string | null) => boolean) {
+            if (!canReplace(value)) return false;
+            value = String(nextValue);
+            return true;
+        },
         /** 保存内容を削除し、削除回数を記録する。 */
         async removeText() {
             value = null;

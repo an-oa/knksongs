@@ -21,6 +21,8 @@ type SongsJsonCache = {
     getText: () => Promise<string | null>;
     getLegacyText?: () => string | null;
     setText: (value: string) => Promise<boolean>;
+    /** 保存済みの値を見て、置き換えてよいと判定されたときだけ保存する。読み取りと保存の間に、別のタブの保存を入れない。 */
+    setTextIf: (value: string, canReplace: (current: string | null) => boolean) => Promise<boolean>;
     removeText: () => Promise<void>;
 };
 
@@ -337,15 +339,46 @@ export function createSongsDataSource(input: SongsDataSourceInput) {
     }
 
     /**
-     * 表示の期限に間に合わなかった公開JSONを、公開metaと整合する場合だけ、次回の表示用に保存する。
-     * 表示中の曲データは差し替えない。
+     * 候補のJSONで、保存済みのキャッシュを置き換えてよいかを判定する。
+     * キャッシュのほうが新しいときと、同じ内容のときは置き換えない。キャッシュがないか、読めない内容なら置き換える。
+     * @param candidate 保存しようとするJSONのメタ情報
+     * @param cachedText 保存済みのキャッシュ文字列。なければ null
+     * @returns 置き換えてよいか
      */
-    function saveLateNetworkSongsJson(
+    function canReplaceCachedSongsJson(candidate: SongsJsonArtifactMetadata, cachedText: string | null): boolean {
+        if (!cachedText) return true;
+        let cached: SongsJsonArtifactMetadata;
+        try {
+            cached = parseSongsJsonMetaPayload(cachedText);
+        } catch {
+            return true;
+        }
+        const freshness = compareSongsJsonArtifactFreshness(candidate, cached);
+        return freshness !== "candidate-older" && freshness !== "same-content";
+    }
+
+    /**
+     * 表示の期限に間に合わなかった公開JSONを、次回の表示用に保存する。表示中の曲データは差し替えない。
+     * 取得を始めた時点の公開metaと整合し、かつ保存済みのキャッシュが、より新しい内容でない場合だけ保存する。
+     * 待っている間に公開内容が更新され、別のタブがその新しいJSONを保存していることがある。
+     * metaは取得を始めた時点のものなので、metaとの比較だけでは、後から届いた古いJSONでキャッシュを巻き戻してしまう。
+     * @param candidate 遅れて届いた公開JSON
+     * @param meta 取得を始めた時点の公開meta。取得できなかった場合は null
+     */
+    async function saveLateNetworkSongsJson(
         candidate: NetworkSongsJsonCandidate,
         meta: SongsJsonArtifactMetadata | null
-    ): void {
+    ): Promise<void> {
+        if (!songsJsonCache) return;
         if (meta && !isCurrentJsonCandidate(candidate.payload, meta)) return;
-        void setCachedSongsJsonText(candidate.jsonText);
+        try {
+            await songsJsonCache.setTextIf(
+                candidate.jsonText,
+                (cachedText) => canReplaceCachedSongsJson(candidate.payload, cachedText)
+            );
+        } catch (error) {
+            console.warn("曲データJSONキャッシュを保存できませんでした", error);
+        }
     }
 
     /**

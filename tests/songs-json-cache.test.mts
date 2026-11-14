@@ -121,6 +121,38 @@ test("text cache adapter: setText success clears legacy localStorage keys", asyn
     assert.equal(storage.getItem("cachedCsv"), null);
 });
 
+test("text cache adapter: setTextIf saves only when the stored value may be replaced, and clears legacy keys only then", async (t) => {
+    const storage = createFakeLocalStorage();
+    const cache = createFakeTextCacheStore("stored");
+    const adapter = createLegacyLocalStorageTextCacheAdapter({
+        cache,
+        legacyKeys: ["cachedCsvV2", "cachedCsv"],
+        storage,
+        label: "CSVキャッシュ"
+    });
+    storage.setItem("cachedCsvV2", "current,csv");
+    storage.setItem("cachedCsv", "legacy,csv");
+
+    // 判定には、現行の cache に保存済みの値を渡す。置き換えないと判定されたら、何も変えない。
+    const seen: (string | null)[] = [];
+    assert.equal(await adapter.setTextIf("fresh", (current) => { seen.push(current); return false; }), false);
+    assert.deepEqual(seen, ["stored"]);
+    assert.equal(cache.peek(), "stored");
+    assert.equal(storage.getItem("cachedCsvV2"), "current,csv");
+    assert.equal(storage.getItem("cachedCsv"), "legacy,csv");
+
+    assert.equal(await adapter.setTextIf("fresh", (current) => current === "stored"), true);
+    assert.equal(cache.peek(), "fresh");
+    assert.equal(storage.getItem("cachedCsvV2"), null);
+    assert.equal(storage.getItem("cachedCsv"), null);
+
+    // 保存に失敗したときは、例外にせず false を返す。
+    t.mock.method(console, "warn", () => {});
+    t.mock.method(cache, "setTextIf", async () => { throw new Error("IndexedDB write failed"); });
+    assert.equal(await adapter.setTextIf("newest", () => true), false);
+    assert.equal(cache.peek(), "fresh");
+});
+
 test("text cache adapter: removeText clears primary and all legacy cache entries", async () => {
     const storage = createFakeLocalStorage();
     const cache = createFakeTextCacheStore("cached,csv");
