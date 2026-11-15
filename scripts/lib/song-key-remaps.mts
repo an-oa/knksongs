@@ -6,7 +6,7 @@
 /** Issue に並べるキーの上限。超えた分は件数だけを書く。 */
 const MAX_LISTED_REMAPS = 50;
 
-/** songs.json の1行のうち、キーと歌唱の照合に使う項目。 */
+/** songs.json の曲行と、その曲行が指す曲の情報のうち、キーと歌唱の照合に使う項目。 */
 type SongKeyRow = {
     songKey: string;
     title: string;
@@ -42,7 +42,10 @@ export function readStartSeconds(url: unknown): number {
 }
 
 /**
- * songs.json の内容から、キーと歌唱の照合に使う項目だけを読む。キーのない行は読み飛ばす。
+ * songs.json の内容から、キーと歌唱の照合に使う項目だけを読む。キーのない曲行は読み飛ばす。
+ * 曲名とアーティスト名は曲の情報の表（songInfos）にあるので、曲行の songInfoKey で引く。
+ * app の module を読まないので、表を結ぶ処理（app/lib/song-info-tables.mts）のうち、照合に使う分だけをここに持つ。
+ * 曲の情報を引けない曲行があれば失敗させる。曲名が空のまま比べると、別の歌唱を指すようになったキーを見逃すため。
  * 本番コードでは同じ module 内で使う helper であり、入力の形の境界を単体テストするために export している。
  * @param text songs.json の内容
  * @returns キーを持つ行
@@ -50,20 +53,29 @@ export function readStartSeconds(url: unknown): number {
 export function parseSongKeyRows(text: string): SongKeyRow[] {
     const payload: unknown = JSON.parse(text);
     const songs = payload !== null && typeof payload === "object" && "songs" in payload ? payload.songs : null;
+    const songInfos = payload !== null && typeof payload === "object" && "songInfos" in payload
+        ? payload.songInfos
+        : null;
     if (!Array.isArray(songs)) throw new Error("songs.json must have a songs array");
+    if (!Array.isArray(songInfos)) throw new Error("songs.json must have a songInfos array");
+    const songInfoByKey = new Map<string, Pick<SongKeyRow, "title" | "titleNorm" | "artist">>();
+    for (const songInfo of songInfos) {
+        if (songInfo === null || typeof songInfo !== "object" || typeof songInfo.songInfoKey !== "string") continue;
+        const title = typeof songInfo.title === "string" ? songInfo.title : "";
+        songInfoByKey.set(songInfo.songInfoKey, {
+            title,
+            titleNorm: typeof songInfo.titleNorm === "string" ? songInfo.titleNorm : title,
+            artist: typeof songInfo.artist === "string" ? songInfo.artist : ""
+        });
+    }
     const rows: SongKeyRow[] = [];
     for (const song of songs) {
         if (song === null || typeof song !== "object") continue;
         const key = typeof song.songKey === "string" ? song.songKey.trim() : "";
         if (!key) continue;
-        const title = typeof song.title === "string" ? song.title : "";
-        rows.push({
-            songKey: key,
-            title,
-            titleNorm: typeof song.titleNorm === "string" ? song.titleNorm : title,
-            artist: typeof song.artist === "string" ? song.artist : "",
-            startSeconds: readStartSeconds(song.url)
-        });
+        const songInfo = songInfoByKey.get(song.songInfoKey);
+        if (!songInfo) throw new Error(`songs.json has no song info for the song ${key}`);
+        rows.push({ songKey: key, ...songInfo, startSeconds: readStartSeconds(song.url) });
     }
     return rows;
 }

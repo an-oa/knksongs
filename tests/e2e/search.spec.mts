@@ -95,11 +95,9 @@ test("search box treats an empty quoted query as recommendations after restore",
 test("search box treats quoted phrases as literal text", async ({ page }) => {
     const [literalSong, escapedQuoteSong] = createScrollableResultSongs(2);
     literalSong.title = "Song until:2026-13";
-    literalSong.titleYomi = "Song until:2026-13";
     literalSong.titleNorm = "song until:2026-13";
     literalSong.titleYomiNorm = "song until:2026-13";
     escapedQuoteSong.title = 'Don’t say "lazy"';
-    escapedQuoteSong.titleYomi = 'Don’t say "lazy"';
     escapedQuoteSong.titleNorm = 'don’t say "lazy"';
     escapedQuoteSong.titleYomiNorm = 'don’t say "lazy"';
     await routeSongsJsonFixture(page, [literalSong, escapedQuoteSong]);
@@ -271,13 +269,11 @@ async function showLongNameSongCard(page: Page) {
     songs[0] = {
         ...songs[0],
         title: LONG_SONG_TITLE,
-        titleYomi: LONG_SONG_TITLE,
         titleEn: LONG_SONG_TITLE,
         titleNorm,
         titleYomiNorm: titleNorm,
         titleEnNorm: titleNorm,
         artist: LONG_SONG_ARTIST,
-        artistYomi: LONG_SONG_ARTIST,
         artistEn: LONG_SONG_ARTIST,
         artistNorm,
         artistYomiNorm: artistNorm,

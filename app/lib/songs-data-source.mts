@@ -2,7 +2,8 @@ import { parseCsvToSongs } from "./csv-parser.mjs";
 import {
     compareSongsJsonArtifactFreshness,
     parseSongsJsonMetaPayload,
-    parseSongsJsonPayload
+    parseSongsJsonPayload,
+    toSongsJsonDocument
 } from "./songs-json.mjs";
 import type { SongsJsonArtifactMetadata, SongsJsonPayload } from "./songs-json.mjs";
 
@@ -447,6 +448,7 @@ export function createSongsDataSource(input: SongsDataSourceInput) {
      * - 公開metaが、同じ内容を新しい生成日時で示しているときは、その生成日時をキャッシュに残す。
      *   CSVが元の内容へ戻されて再生成されると、内容は前と同じで、生成日時だけが新しくなる。残さないと、
      *   戻す前の内容が別のタブへ遅れて届いたときに、保存済みの生成日時より新しく見えて、キャッシュを置き換えてしまう。
+     *   payload は 2 つの表を曲行へ戻した後の内容なので、保存する文字列は、表に分け直して作る。
      * - 旧キャッシュから読んだときは、現行ストアへ移行保存する。
      * @param candidate 採用するキャッシュ
      * @param payload 検証済みのキャッシュ内容
@@ -459,7 +461,7 @@ export function createSongsDataSource(input: SongsDataSourceInput) {
         confirmedMeta: SongsJsonArtifactMetadata | null = null
     ): SongsSnapshot {
         const confirmedJsonText = confirmedMeta && Date.parse(confirmedMeta.generatedAt) > Date.parse(payload.generatedAt)
-            ? JSON.stringify({ ...payload, generatedAt: confirmedMeta.generatedAt })
+            ? JSON.stringify(toSongsJsonDocument({ ...payload, generatedAt: confirmedMeta.generatedAt }))
             : null;
         if (candidate.needsMigration) {
             void setCachedSongsJsonText(confirmedJsonText ?? candidate.jsonText);

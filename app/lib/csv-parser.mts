@@ -136,6 +136,7 @@ export function parseCsvToSongs(csvText: string): Song[] {
             url.trim() === "") continue;
         const title = r[idx("曲名")];
         const artist = r[idx("アーティスト名")];
+        // 読みは検索と照合にだけ使い、表示しないので、正規化した値だけを曲データに持つ。
         const titleYomi = r[idx("キョクメイ")];
         const artistYomi = r[idx("アーティストメイ")];
         const titleEn = optionalText(r, "Song Title");
@@ -156,8 +157,6 @@ export function parseCsvToSongs(csvText: string): Song[] {
             isHarmony: r[idx("ハモリあり？")] === "◯",
             title,
             artist,
-            titleYomi,
-            artistYomi,
             titleEn,
             artistEn,
             url,

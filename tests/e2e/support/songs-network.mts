@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import type { Page } from "@playwright/test";
 import { parseCsvToSongs } from "../../../app/lib/csv-parser.mts";
-import { buildSongsJsonMetaPayload, buildSongsJsonPayload } from "../../../app/lib/songs-json.mts";
+import { buildSongsJsonDocument, buildSongsJsonMetaPayload } from "../../../app/lib/songs-json.mts";
 import { createSongsContentHash } from "../../../scripts/songs-content-hash.mts";
 
 const SONGS_JSON_ROUTE = "**/data/songs.json*";
@@ -13,7 +13,7 @@ const songsJsonFixturePromise = csvFixturePromise.then((csv) => buildSongsJsonFi
 function buildSongsJsonFixture(songs: Song[], generatedAt = "2026-08-14T00:00:00.000Z") {
     const contentHash = createSongsContentHash(songs);
     return {
-        json: JSON.stringify(buildSongsJsonPayload(songs, contentHash, generatedAt)),
+        json: JSON.stringify(buildSongsJsonDocument(songs, contentHash, generatedAt)),
         meta: JSON.stringify(buildSongsJsonMetaPayload(contentHash, generatedAt))
     };
 }

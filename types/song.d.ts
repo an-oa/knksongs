@@ -14,8 +14,6 @@ type Song = {
   isHarmony: boolean;
   title: string;
   artist: string;
-  titleYomi: string;
-  artistYomi: string;
   titleEn: string;
   artistEn: string;
   url: string;

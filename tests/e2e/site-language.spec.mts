@@ -12,8 +12,6 @@ function withSongNames(song: Song, names: Pick<Song, "title" | "artist" | "title
     return {
         ...song,
         ...names,
-        titleYomi: names.title,
-        artistYomi: names.artist,
         titleNorm: normalizeForSearch(names.title),
         artistNorm: normalizeForSearch(names.artist),
         titleYomiNorm: normalizeForSearch(names.title),

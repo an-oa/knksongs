@@ -6,7 +6,7 @@ import { pathToFileURL } from "node:url";
 import { parseCsvToSongs } from "#app/lib/csv-parser";
 import {
     buildSongsJsonMetaPayload,
-    buildSongsJsonPayload,
+    buildSongsJsonDocument,
     parseSongsJsonMetaPayload
 } from "#app/lib/songs-json";
 import { PUBLIC_CSV_URL } from "#app/config";
@@ -109,7 +109,7 @@ export async function buildSongsJson(options: {
     const songs = parseCsvToSongs(csvText);
     const contentHash = createSongsContentHash(songs);
     const generatedAt = await resolveGeneratedAt(options, contentHash);
-    const songsJsonText = stringifyPayload(buildSongsJsonPayload(songs, contentHash, generatedAt));
+    const songsJsonText = stringifyPayload(buildSongsJsonDocument(songs, contentHash, generatedAt));
     const songsMetaJsonText = stringifyPayload(buildSongsJsonMetaPayload(contentHash, generatedAt));
     validateSongsJsonArtifacts(songsJsonText, songsMetaJsonText);
     await mkdir(dirname(resolve(options.outputPath)), { recursive: true });

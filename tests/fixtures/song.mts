@@ -1,5 +1,5 @@
 /**
- * 現在のJSONスキーマを満たす曲テストデータを作る。
+ * アプリが使う曲行（曲データJSONの 2 つの表から戻した後の形）のテストデータを作る。
  * @param overrides 上書きするフィールド
  */
 export function createSongFixture(overrides: Partial<Song> = {}): Song {
@@ -17,8 +17,6 @@ export function createSongFixture(overrides: Partial<Song> = {}): Song {
         isHarmony: false,
         title: "KING",
         artist: "Kanaria feat. GUMI",
-        titleYomi: "キング",
-        artistYomi: "カナリアフィーチャリンググミ",
         titleEn: "KING",
         artistEn: "Kanaria feat. GUMI",
         url: "https://www.youtube.com/watch?v=abc123def45&t=10s",

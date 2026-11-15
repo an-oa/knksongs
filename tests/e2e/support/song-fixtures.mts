@@ -25,8 +25,6 @@ export function createScrollableResultSongs(count: number): Song[] {
             isHarmony: false,
             title,
             artist,
-            titleYomi: title,
-            artistYomi: artist,
             titleEn: title,
             artistEn: artist,
             url: `https://www.youtube.com/watch?v=${videoId}&t=${songNumber}s`,
