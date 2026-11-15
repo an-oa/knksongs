@@ -340,7 +340,10 @@ export function createSongsDataSource(input: SongsDataSourceInput) {
 
     /**
      * 候補のJSONで、保存済みのキャッシュを置き換えてよいかを判定する。
-     * キャッシュのほうが新しいときと、同じ内容のときは置き換えない。キャッシュがないか、読めない内容なら置き換える。
+     * 保存済みの生成日時は、このブラウザが公開中だと確かめた最新の世代を表す。それより古い世代では置き換えない。
+     * - 内容が違うときは、キャッシュのほうが新しければ置き換えない。
+     * - 内容が同じときは、候補の生成日時のほうが新しいときだけ置き換え、確かめた世代を進める。
+     * キャッシュがないか、読めない内容なら置き換える。
      * @param candidate 保存しようとするJSONのメタ情報
      * @param cachedText 保存済みのキャッシュ文字列。なければ null
      * @returns 置き換えてよいか
@@ -354,20 +357,31 @@ export function createSongsDataSource(input: SongsDataSourceInput) {
             return true;
         }
         const freshness = compareSongsJsonArtifactFreshness(candidate, cached);
-        return freshness !== "candidate-older" && freshness !== "same-content";
+        if (freshness === "same-content") return Date.parse(candidate.generatedAt) > Date.parse(cached.generatedAt);
+        return freshness !== "candidate-older";
+    }
+
+    /**
+     * 保存済みのキャッシュより古い世代でなければ、曲データJSONを保存する。
+     * 保存済みの値の読み取りと保存はひと続きに行い、別のタブの保存を間に入れない。
+     * @param jsonText 保存するJSON文字列
+     * @param artifact 保存するJSONのメタ情報
+     */
+    async function saveSongsJsonTextUnlessOlder(jsonText: string, artifact: SongsJsonArtifactMetadata): Promise<void> {
+        if (!songsJsonCache) return;
+        try {
+            await songsJsonCache.setTextIf(jsonText, (cachedText) => canReplaceCachedSongsJson(artifact, cachedText));
+        } catch (error) {
+            console.warn("曲データJSONキャッシュを保存できませんでした", error);
+        }
     }
 
     /**
      * 表示の期限に間に合わなかった公開JSONを、次回の表示用に保存する。表示中の曲データは差し替えない。
-     * 待っている間に公開内容が更新されていることがあるので、保存する直前に公開metaを取り直し、
-     * 届いたJSONがいまも公開中の内容と整合するときだけ保存する。取得を始めた時点のmetaとだけ比べると、
-     * 次の場合に、もう公開されていない内容でキャッシュを書き換えてしまう。
-     * - 別のタブが、新しく公開されたJSONを保存していた。
-     * - CSVが元の内容へ戻されて再生成され、その内容がキャッシュと同じだった。別のタブはキャッシュをそのまま使うので、
-     *   保存済みの生成日時は古いままになり、キャッシュとの比較では戻されたことが分からない。
-     * 公開metaを取り直せなかったときは、保存しない。次の訪問で取り直す。
-     * 保存の直前には、保存済みのキャッシュより古い内容でないことも確かめる。metaを取り直してから保存するまでの間に、
-     * 別のタブが、さらに新しく公開された内容を保存することがあるため。
+     * 待っている間に公開内容が更新され、別のタブがその新しい世代を保存したり、確かめたりしていることがある。
+     * metaは取得を始めた時点のものなので、metaとの比較に加えて、保存済みのキャッシュより古い世代でないことを確かめる。
+     * 保存の判断は保存済みの値だけで行い、通信には頼らない。この経路を通るのは応答の遅い回線なので、
+     * 保存の前に通信をもう一度挟むと、その通信が期限に間に合わず、届いたJSONを保存できなくなる。
      * @param candidate 遅れて届いた公開JSON
      * @param meta 取得を始めた時点の公開meta。取得できなかった場合は null
      */
@@ -375,21 +389,8 @@ export function createSongsDataSource(input: SongsDataSourceInput) {
         candidate: NetworkSongsJsonCandidate,
         meta: SongsJsonArtifactMetadata | null
     ): Promise<void> {
-        if (!songsJsonCache) return;
         if (meta && !isCurrentJsonCandidate(candidate.payload, meta)) return;
-        if (publicSongsMetaUrl) {
-            // 待つ人のいない処理なので、通信の共通期限は掛けない。段階ごとの期限で打ち切る。
-            const currentMeta = await loadSongsJsonMeta(Infinity);
-            if (!currentMeta || !isCurrentJsonCandidate(candidate.payload, currentMeta)) return;
-        }
-        try {
-            await songsJsonCache.setTextIf(
-                candidate.jsonText,
-                (cachedText) => canReplaceCachedSongsJson(candidate.payload, cachedText)
-            );
-        } catch (error) {
-            console.warn("曲データJSONキャッシュを保存できませんでした", error);
-        }
+        await saveSongsJsonTextUnlessOlder(candidate.jsonText, candidate.payload);
     }
 
     /**
@@ -441,9 +442,30 @@ export function createSongsDataSource(input: SongsDataSourceInput) {
         }
     }
 
-    /** 有効な旧キャッシュを採用した場合だけ移行保存を開始し、表示は完了を待たない。 */
-    function acceptCachedSongsJson(candidate: CachedSongsJsonCandidate, payload: SongsJsonPayload): SongsSnapshot {
-        if (candidate.needsMigration) void setCachedSongsJsonText(candidate.jsonText);
+    /**
+     * キャッシュの曲データを初期表示に採用する。保存が要る場合も、表示はその完了を待たない。
+     * - 公開metaが、同じ内容を新しい生成日時で示しているときは、その生成日時をキャッシュに残す。
+     *   CSVが元の内容へ戻されて再生成されると、内容は前と同じで、生成日時だけが新しくなる。残さないと、
+     *   戻す前の内容が別のタブへ遅れて届いたときに、保存済みの生成日時より新しく見えて、キャッシュを置き換えてしまう。
+     * - 旧キャッシュから読んだときは、現行ストアへ移行保存する。
+     * @param candidate 採用するキャッシュ
+     * @param payload 検証済みのキャッシュ内容
+     * @param confirmedMeta 内容がキャッシュと同じだと確かめた公開meta。確かめていなければ null
+     * @returns キャッシュのスナップショット
+     */
+    function acceptCachedSongsJson(
+        candidate: CachedSongsJsonCandidate,
+        payload: SongsJsonPayload,
+        confirmedMeta: SongsJsonArtifactMetadata | null = null
+    ): SongsSnapshot {
+        const confirmedJsonText = confirmedMeta && Date.parse(confirmedMeta.generatedAt) > Date.parse(payload.generatedAt)
+            ? JSON.stringify({ ...payload, generatedAt: confirmedMeta.generatedAt })
+            : null;
+        if (candidate.needsMigration) {
+            void setCachedSongsJsonText(confirmedJsonText ?? candidate.jsonText);
+        } else if (confirmedJsonText && confirmedMeta) {
+            void saveSongsJsonTextUnlessOlder(confirmedJsonText, confirmedMeta);
+        }
         return { songs: payload.songs, source: "cache" };
     }
 
@@ -465,6 +487,7 @@ export function createSongsDataSource(input: SongsDataSourceInput) {
 
     /**
      * 公開側を基準に初期データを選ぶ。キャッシュはmetaのhash一致時か取得失敗時だけ使う。
+     * hashが一致したmetaの生成日時のほうが新しいときは、その生成日時をキャッシュに残す。
      * キャッシュがある場合はmetaとJSON本体を待つ時間を合計5秒以内に制限し、間に合わなければキャッシュで表示する。
      * JSON本体の取得は表示後も続け、完了すれば次回の表示用に保存する。
      * キャッシュがない場合はmetaと本体を並行取得し、失敗時はCSVへ進む。
@@ -480,7 +503,7 @@ export function createSongsDataSource(input: SongsDataSourceInput) {
                 if (cachedPayload) {
                     const meta = await loadSongsJsonMeta(deadline);
                     if (meta?.contentHash === cachedPayload.contentHash && cachedCandidate) {
-                        return acceptCachedSongsJson(cachedCandidate, cachedPayload);
+                        return acceptCachedSongsJson(cachedCandidate, cachedPayload, meta);
                     }
                     return await loadUpdatedSongsJson(meta, deadline);
                 }
