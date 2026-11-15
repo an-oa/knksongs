@@ -220,6 +220,22 @@ ruleset はリポジトリの設定なので、ファイルを変えても自動
 
 画面で ruleset を変えたときは、Export した JSON で `.github/rulesets/main.json` を置き換えてください。
 
+### 曲データの更新と公開の前提
+
+曲データ（`data/songs.json`・`data/songs-meta.json`）の更新と公開は、次の前提で動いています。
+アプリのキャッシュの扱いなどをレビューするときは、この前提から外れる運用を、不具合の発生条件として仮定しないでください。
+
+- `update-songs-json.yml` が、公開 CSV から `npm run build:songs-json` で JSON を生成します（1日2回の定期実行と、手動実行）。
+- 生成日時（`generatedAt`）は、リポジトリにある `data/songs-meta.json` と内容の hash（`contentHash`）が同じなら引き継ぎ、
+  違えば生成した時刻にします（`scripts/build-songs-json.mts` の `resolveGeneratedAt`）。内容が変わらなければ、コミットしません。
+- CSV への変更を取り消して JSON を再生成する操作も、通常の更新として扱われます。
+  hash は過去の版と同じになりますが、直前の版とは違うので、生成日時は新しくなります。
+- 過去に生成した JSON を、再生成せずにそのまま再公開する経路は、現行の Actions にありません。
+  `deploy-pages.yml` は、CI を通った `main` のコミットにある `data/` を、そのまま公開します。
+- そのため、公開される JSON の生成日時が、前に公開したものより古くなることは、この経路では起きません。
+  手作業で `data/` を過去のファイルへ戻す（bot のコミットを `git revert` するなど）と、この前提から外れます。
+  内容を戻すときは、CSV を戻して再生成してください。
+
 権限設計、`main` との照合、失敗通知の詳細は [DESIGN.md の CI・デプロイ](DESIGN.md#ciデプロイ) を参照してください。
 
 ## 関連ドキュメント
