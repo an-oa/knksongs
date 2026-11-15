@@ -359,9 +359,15 @@ export function createSongsDataSource(input: SongsDataSourceInput) {
 
     /**
      * 表示の期限に間に合わなかった公開JSONを、次回の表示用に保存する。表示中の曲データは差し替えない。
-     * 取得を始めた時点の公開metaと整合し、かつ保存済みのキャッシュが、より新しい内容でない場合だけ保存する。
-     * 待っている間に公開内容が更新され、別のタブがその新しいJSONを保存していることがある。
-     * metaは取得を始めた時点のものなので、metaとの比較だけでは、後から届いた古いJSONでキャッシュを巻き戻してしまう。
+     * 待っている間に公開内容が更新されていることがあるので、保存する直前に公開metaを取り直し、
+     * 届いたJSONがいまも公開中の内容と整合するときだけ保存する。取得を始めた時点のmetaとだけ比べると、
+     * 次の場合に、もう公開されていない内容でキャッシュを書き換えてしまう。
+     * - 別のタブが、新しく公開されたJSONを保存していた。
+     * - CSVが元の内容へ戻されて再生成され、その内容がキャッシュと同じだった。別のタブはキャッシュをそのまま使うので、
+     *   保存済みの生成日時は古いままになり、キャッシュとの比較では戻されたことが分からない。
+     * 公開metaを取り直せなかったときは、保存しない。次の訪問で取り直す。
+     * 保存の直前には、保存済みのキャッシュより古い内容でないことも確かめる。metaを取り直してから保存するまでの間に、
+     * 別のタブが、さらに新しく公開された内容を保存することがあるため。
      * @param candidate 遅れて届いた公開JSON
      * @param meta 取得を始めた時点の公開meta。取得できなかった場合は null
      */
@@ -371,6 +377,11 @@ export function createSongsDataSource(input: SongsDataSourceInput) {
     ): Promise<void> {
         if (!songsJsonCache) return;
         if (meta && !isCurrentJsonCandidate(candidate.payload, meta)) return;
+        if (publicSongsMetaUrl) {
+            // 待つ人のいない処理なので、通信の共通期限は掛けない。段階ごとの期限で打ち切る。
+            const currentMeta = await loadSongsJsonMeta(Infinity);
+            if (!currentMeta || !isCurrentJsonCandidate(candidate.payload, currentMeta)) return;
+        }
         try {
             await songsJsonCache.setTextIf(
                 candidate.jsonText,

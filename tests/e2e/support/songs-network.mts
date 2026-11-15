@@ -18,21 +18,26 @@ function buildSongsJsonFixture(songs: Song[], generatedAt = "2026-08-14T00:00:00
     };
 }
 
+/** metaのルートだけを置き換える。取得中のJSONの応答には触れない。 */
+async function registerSongsMetaRoute(page: Page, meta: string): Promise<void> {
+    await page.unroute(SONGS_META_ROUTE);
+    await page.route(SONGS_META_ROUTE, async (route) => {
+        await route.fulfill({
+            status: 200,
+            contentType: "application/json; charset=utf-8",
+            body: meta
+        });
+    });
+}
+
 /** JSONとmetaのルートを置き換え、必要な場合だけJSON応答の直前に待機する。 */
 async function registerSongsJsonRoutes(
     page: Page,
     fixture: ReturnType<typeof buildSongsJsonFixture>,
     beforeSongsResponse?: () => Promise<void>
 ): Promise<void> {
-    await page.unroute(SONGS_META_ROUTE);
+    await registerSongsMetaRoute(page, fixture.meta);
     await page.unroute(SONGS_JSON_ROUTE);
-    await page.route(SONGS_META_ROUTE, async (route) => {
-        await route.fulfill({
-            status: 200,
-            contentType: "application/json; charset=utf-8",
-            body: fixture.meta
-        });
-    });
     await page.route(SONGS_JSON_ROUTE, async (route) => {
         if (beforeSongsResponse) await beforeSongsResponse();
         await route.fulfill({
@@ -59,6 +64,19 @@ export async function installSongsNetworkMocks(page: Page): Promise<void> {
 /** テストごとに曲JSONとmetaの応答を指定曲配列へ差し替える。 */
 export async function routeSongsJsonFixture(page: Page, songs: Song[]): Promise<void> {
     await registerSongsJsonRoutes(page, buildSongsJsonFixture(songs));
+}
+
+/**
+ * 既定の曲データを、指定した生成日時で公開し直したものへ、JSONとmetaの応答を差し替える。
+ * CSVを元の内容へ戻して再生成した場合にあたる。内容のhashは既定の曲データと同じで、生成日時だけが新しい。
+ * @param page 応答を差し替えるページ
+ * @param generatedAt 公開し直したときの生成日時
+ * @param scope metaだけを差し替えるときは "meta"。取得中のJSONの応答には触れない
+ */
+export async function routeRepublishedDefaultSongs(page: Page, generatedAt: string, scope: "meta" | "all" = "all"): Promise<void> {
+    const fixture = buildSongsJsonFixture(parseCsvToSongs(await csvFixturePromise), generatedAt);
+    if (scope === "meta") await registerSongsMetaRoute(page, fixture.meta);
+    else await registerSongsJsonRoutes(page, fixture);
 }
 
 /** JSONの要求開始を通知し、テスト側が解放するまで応答を保留する。 */
