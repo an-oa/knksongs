@@ -67,6 +67,20 @@ test("csv: English name columns keep display values and are normalized for searc
     assert.equal(songs[0].artistSortNorm, "yonezu, kenshi");
 });
 
+test("csv: reading columns are kept only as normalized values for search", () => {
+    const csv = [
+        "#,配信日,配信上の立場,画面の向き,公開範囲,形態,歌枠リレー？,ハモリあり？,##,曲名,アーティスト名,キョクメイ,アーティストメイ,URL,終了時刻,メモ",
+        "1,2026/03/11,,縦,全体,配信,,,1,ピエロ,いとうかしたろう,ぴえろ,ｲﾄｳ  ｶｼﾀﾛｳ,https://www.youtube.com/watch?v=abc123def45&t=10s,,"
+    ].join("\n");
+    const [song] = parseCsvToSongs(csv);
+    // 読みは表示しないので、シートの値そのままの項目は持たない。
+    assert.equal(Object.hasOwn(song, "titleYomi"), false);
+    assert.equal(Object.hasOwn(song, "artistYomi"), false);
+    // ひらがなはカタカナに、半角カタカナは全角に、続く空白は 1 つにそろえる。
+    assert.equal(song.titleYomiNorm, "ピエロ");
+    assert.equal(song.artistYomiNorm, "イトウ カシタロウ");
+});
+
 test("csv: missing English name columns keep older csv parseable", () => {
     const csv = [
         "#,配信日,配信上の立場,画面の向き,公開範囲,形態,歌枠リレー？,ハモリあり？,##,曲名,アーティスト名,キョクメイ,アーティストメイ,URL,終了時刻,メモ",

@@ -1,7 +1,7 @@
 /**
  * 曲データJSONに書く 2 つの表（曲の情報の表と曲行の表）と、アプリが使う曲行の配列を、相互に変換する module。
  *
- * 同じ曲は何度も歌われるので、曲名・アーティスト名・読み・英名とその正規化した値を曲行ごとに書くと、
+ * 同じ曲は何度も歌われるので、曲名・アーティスト名・英名と、検索に使う正規化した値（読みを含む）を曲行ごとに書くと、
  * 同じ内容の繰り返しがファイルの大半を占める。繰り返しを 1 つの表へまとめ、曲行からはキーで参照する。
  * 表は「同じ曲」ではなく「曲の情報の全項目が同じ行」でまとめる。値が 1 つでも違う行は別の行として表に入るので、
  * 分けた表を戻すと、元の曲行と同じ内容・同じ項目順になる。
@@ -12,7 +12,7 @@
 
 /** 曲行のうち、曲の情報にあたる項目。同じ曲を歌った曲行の間で同じ値になる。 */
 type SongInfoFields = Pick<Song,
-    | "title" | "artist" | "titleYomi" | "artistYomi" | "titleEn" | "artistEn"
+    | "title" | "artist" | "titleEn" | "artistEn"
     | "titleNorm" | "artistNorm" | "titleYomiNorm" | "artistYomiNorm" | "titleEnNorm" | "artistEnNorm"
     | "artistSortNorm"
 >;
@@ -58,7 +58,7 @@ export type SongInfoJoinIssue =
  */
 function buildSongInfoFieldsKey(song: Song): string {
     return JSON.stringify([
-        song.title, song.artist, song.titleYomi, song.artistYomi, song.titleEn, song.artistEn,
+        song.title, song.artist, song.titleEn, song.artistEn,
         song.titleNorm, song.artistNorm, song.titleYomiNorm, song.artistYomiNorm, song.titleEnNorm, song.artistEnNorm,
         song.artistSortNorm
     ]);
@@ -102,8 +102,6 @@ export function splitSongInfoTables(songs: readonly Song[]): SongInfoTables {
             songInfoKey: song.songKey,
             title: song.title,
             artist: song.artist,
-            titleYomi: song.titleYomi,
-            artistYomi: song.artistYomi,
             titleEn: song.titleEn,
             artistEn: song.artistEn,
             titleNorm: song.titleNorm,
@@ -173,8 +171,6 @@ export function joinSongInfoTables(tables: SongInfoTables): Song[] | SongInfoJoi
             isHarmony: row.isHarmony,
             title: info.title,
             artist: info.artist,
-            titleYomi: info.titleYomi,
-            artistYomi: info.artistYomi,
             titleEn: info.titleEn,
             artistEn: info.artistEn,
             url: row.url,

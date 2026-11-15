@@ -3,13 +3,15 @@ import { createSongFixture } from "./song.mts";
 
 /**
  * 検索用の曲fixtureの入力。正規化済みの *Norm は元の値から作るため受け取らない。
- * 並び替え用の英名は Song に元の値を持たないため、専用の項目で受け取る。
+ * 読みと並び替え用の英名は Song に元の値を持たないため、専用の項目で受け取る。
  */
 type SearchSongFixtureInput = Omit<
     Partial<Song>,
     "titleNorm" | "artistNorm" | "titleYomiNorm" | "artistYomiNorm" |
     "titleEnNorm" | "artistEnNorm" | "artistSortNorm"
 > & {
+    titleYomi?: string;
+    artistYomi?: string;
     artistSort?: string;
 };
 
@@ -19,11 +21,9 @@ export function createSearchSongFixtureFactory() {
 
     /** 曲キーと検索用の正規化済みフィールドを補って曲を作る。 */
     return function createSearchSongFixture(input: SearchSongFixtureInput): Song {
-        const { artistSort = "", ...songInput } = input;
+        const { titleYomi = "", artistYomi = "", artistSort = "", ...songInput } = input;
         const title = songInput.title ?? "";
         const artist = songInput.artist ?? "";
-        const titleYomi = songInput.titleYomi ?? "";
-        const artistYomi = songInput.artistYomi ?? "";
         const titleEn = songInput.titleEn ?? "";
         const artistEn = songInput.artistEn ?? "";
         const songKey = songInput.songKey ?? `song-${++autoSongId}`;
@@ -39,8 +39,6 @@ export function createSearchSongFixtureFactory() {
             isHarmony: !!songInput.isHarmony,
             title,
             artist,
-            titleYomi,
-            artistYomi,
             titleEn,
             artistEn,
             titleNorm: normalizeForSearch(title),

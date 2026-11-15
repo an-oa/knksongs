@@ -43,8 +43,6 @@ type EntrySchema<Entry> = {
 const SONG_INFO_FIELD_KINDS = {
     title: "string",
     artist: "string",
-    titleYomi: "string",
-    artistYomi: "string",
     titleEn: "string",
     artistEn: "string",
     titleNorm: "string",

@@ -33,7 +33,6 @@ function createSungSong(
 /** 既定の曲とは別の曲の情報。 */
 const OTHER_SONG_INFO: Partial<Song> = {
     title: "Other",
-    titleYomi: "アザー",
     titleEn: "Other",
     titleNorm: "other",
     titleYomiNorm: "アザー",
@@ -54,7 +53,7 @@ test("song info tables: rows of the same song share one entry keyed by the first
         ["video00000a::2", "video00000a::2"]
     ]);
     assert.deepEqual(Object.keys(tables.songInfos[0]), [
-        "songInfoKey", "title", "artist", "titleYomi", "artistYomi", "titleEn", "artistEn",
+        "songInfoKey", "title", "artist", "titleEn", "artistEn",
         "titleNorm", "artistNorm", "titleYomiNorm", "artistYomiNorm", "titleEnNorm", "artistEnNorm", "artistSortNorm"
     ]);
     assert.deepEqual(Object.keys(tables.songs[0]), [
@@ -137,7 +136,7 @@ test("song info tables: fixing the song info of every row keeps the key", () => 
 test("song info tables: rows that differ in any song info field keep their own values", () => {
     const base = createSungSong("video00000a", 1, "2026/03/01");
     const infoFields = Object.keys(splitSongInfoTables([base]).songInfos[0]).filter((field) => field !== "songInfoKey");
-    assert.equal(infoFields.length, 13);
+    assert.equal(infoFields.length, 11);
 
     for (const field of infoFields) {
         // 1 つの項目だけが違う行。同じ曲の表記の食い違いでも、どちらの値も捨てない。

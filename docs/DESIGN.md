@@ -289,29 +289,35 @@ flowchart TD
 `SongRow`
 - date / dateKey / archiveId / archiveOrder
 - videoId / songKey / format / streamRole / videoOrientation / isRelay / isHarmony
-- title / artist / titleYomi / artistYomi
+- title / artist
 - titleEn / artistEn（英語表記。シートの値をそのまま持つ）
 - endSeconds
-- titleNorm / artistNorm / titleYomiNorm / artistYomiNorm
+- titleNorm / artistNorm
+- titleYomiNorm / artistYomiNorm（シートの「キョクメイ」「アーティストメイ」。読みは表示しないため、正規化済みの値だけを持つ）
 - titleEnNorm / artistEnNorm / artistSortNorm（並び替え用の英名は表示しないため、正規化済みの値だけを持つ）
 - url
+
+`Norm` が付く項目は、検索と照合（おすすめで同じ曲をまとめる、ブックマークのキーの変化を見分ける）に使う。
+表示する値（曲名・アーティスト名・英名）は、表示用のそのままの値と、検索用の `Norm` の 2 つを持つ。
+表示しない値（読み・`Artist Sort Name`）は、`Norm` だけを持つ。
 
 ### 曲データJSONの形（songs.json）
 アプリの中の曲行（`SongRow`）は、上の全項目を持つ。`songs.json` とそのキャッシュには、2 つの表に分けて書く。
 
 | 表 | 1 行の内容 |
 | --- | --- |
-| `songInfos`（曲の情報の表） | `songInfoKey` と、曲の情報の 13 項目（title / artist / titleYomi / artistYomi / titleEn / artistEn と、正規化済みの 7 項目） |
+| `songInfos`（曲の情報の表） | `songInfoKey` と、曲の情報の 11 項目（title / artist / titleEn / artistEn と、正規化済みの 7 項目） |
 | `songs`（曲行の表） | 残りの 13 項目と、曲の情報の表の行を指す `songInfoKey`。並びは CSV の行順のまま |
 
 - 分ける理由は転送量。同じ曲は何度も歌われるので、曲行ごとに曲の情報を書くと、同じ内容の繰り返しがファイルの大半を占める。
   GitHub Pages は gzip でだけ配信し、gzip は直前の 32 KiB より前にある繰り返しを縮められない。
   同じ曲の曲行は何年も離れて現れるので、表に分ける前は、ほとんど縮まなかった
-  - 2026-11-15 時点（2,643 行、曲の情報は 436 通り）で、ファイルは 2,573,086 バイトから 1,484,646 バイトになった。
-    公開サイトでの転送量は、分ける前が 320,920 バイト。分けた後は、同じ強さの gzip（level 5）で約 123,000 バイトと見積もった
+  - 2026-11-15 時点（2,643 行、曲の情報は 436 通り）で、ファイルは 2,573,086 バイトから 1,438,510 バイトになった。
+    公開サイトでの転送量は、分ける前が 320,920 バイト。分けた後は、同じ強さの gzip（level 5）で約 118,000 バイトと見積もった。
+    この値は、使っていなかった読みのそのままの値（`titleYomi` / `artistYomi`）を同時に除いた後のもの
   - 配信の単位（日付・動画・形態など）でさらに表を分けても、gzip 後の大きさはほぼ変わらないので、分けない。
     曲の情報の下に曲行を入れ子にする形は、隣り合う曲行の日付や動画がそろわなくなり、gzip 後が大きくなる
-- 表は「同じ曲」ではなく「曲の情報の 13 項目がすべて同じ曲行」でまとめる。1 項目でも違う曲行は、別の行として表に入る。
+- 表は「同じ曲」ではなく「曲の情報の 11 項目がすべて同じ曲行」でまとめる。1 項目でも違う曲行は、別の行として表に入る。
   シートで同じ曲の表記が行によって食い違っても、生成は止まらず、どの値も失わない。
   表を曲行へ戻すと、分ける前と同じ内容・同じ項目順になるので、表に分けても `contentHash` は変わらない
 - `songInfoKey` は、その情報を持つ曲行のうち、最初に歌われた曲行の `songKey`。

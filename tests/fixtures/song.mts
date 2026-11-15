@@ -17,8 +17,6 @@ export function createSongFixture(overrides: Partial<Song> = {}): Song {
         isHarmony: false,
         title: "KING",
         artist: "Kanaria feat. GUMI",
-        titleYomi: "キング",
-        artistYomi: "カナリアフィーチャリンググミ",
         titleEn: "KING",
         artistEn: "Kanaria feat. GUMI",
         url: "https://www.youtube.com/watch?v=abc123def45&t=10s",
