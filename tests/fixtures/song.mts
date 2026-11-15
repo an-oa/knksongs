@@ -1,5 +1,5 @@
 /**
- * 現在のJSONスキーマを満たす曲テストデータを作る。
+ * アプリが使う曲行（曲データJSONの 2 つの表から戻した後の形）のテストデータを作る。
  * @param overrides 上書きするフィールド
  */
 export function createSongFixture(overrides: Partial<Song> = {}): Song {

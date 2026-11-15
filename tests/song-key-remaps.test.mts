@@ -10,21 +10,28 @@ import {
     readStartSeconds
 } from "../scripts/lib/song-key-remaps.mts";
 import { writeSongKeyRemapIssueBody } from "../scripts/song-key-remap-issue.mts";
+import { buildSongsJsonDocument } from "../app/lib/songs-json.mts";
+import { createSongFixture } from "./fixtures/song.mts";
 
 type SingingInput = { title: string; artist?: string; startSeconds: number; titleNorm?: string };
 
 /**
  * 1本の動画の歌唱を、歌唱順の番号を振った songs.json の内容にする。
+ * 曲名とアーティスト名は曲の情報の表に書き、曲行からはキーで指す。照合に使わない項目は書かない。
  * @param singings 歌唱順に並べた歌唱
  * @returns songs.json の内容
  */
 function buildSongsJson(singings: SingingInput[]): string {
     return JSON.stringify({
-        songs: singings.map((singing, index) => ({
-            songKey: `video000001::${index + 1}`,
+        songInfos: singings.map((singing, index) => ({
+            songInfoKey: `info-${index + 1}`,
             title: singing.title,
             titleNorm: singing.titleNorm ?? singing.title.toLowerCase(),
-            artist: singing.artist ?? "Artist",
+            artist: singing.artist ?? "Artist"
+        })),
+        songs: singings.map((singing, index) => ({
+            songKey: `video000001::${index + 1}`,
+            songInfoKey: `info-${index + 1}`,
             url: `https://www.youtube.com/watch?v=video000001&t=${singing.startSeconds}s`
         }))
     });
@@ -86,11 +93,13 @@ test("song key remaps: spelling fixes, start time fixes, and added or removed ke
     }
 });
 
-test("song key remaps: rows without a bookmark key are skipped and a missing songs array fails", () => {
+test("song key remaps: rows without a bookmark key are skipped and a missing table fails", () => {
+    const songInfos = [{ songInfoKey: "info-1", title: "Keyed", artist: "Artist" }, null, { title: "No key" }];
     const rows = parseSongKeyRows(JSON.stringify({
+        songInfos,
         songs: [
-            { title: "No key", url: "https://www.youtube.com/watch?v=video000001&t=5s" },
-            { songKey: "  video000001::1  ", title: "Keyed", artist: "Artist" },
+            { songInfoKey: "info-1", url: "https://www.youtube.com/watch?v=video000001&t=5s" },
+            { songKey: "  video000001::1  ", songInfoKey: "info-1" },
             null
         ]
     }));
@@ -102,6 +111,33 @@ test("song key remaps: rows without a bookmark key are skipped and a missing son
         startSeconds: 0
     }]);
     assert.throws(() => parseSongKeyRows("[]"), /songs array/);
+    assert.throws(() => parseSongKeyRows(JSON.stringify({ songs: [] })), /songInfos array/);
+    assert.throws(() => parseSongKeyRows(JSON.stringify({ songInfos })), /songs array/);
+});
+
+test("song key remaps: a song row whose song info cannot be found fails instead of hiding a moved key", () => {
+    // 曲名を空として比べると「曲名が同じ」と判定され、別の歌唱を指すようになったキーを見逃す。
+    for (const songInfoKey of ["missing", undefined]) {
+        assert.throws(
+            () => parseSongKeyRows(JSON.stringify({
+                songInfos: [{ songInfoKey: "info-1", title: "Keyed" }],
+                songs: [{ songKey: "video000001::1", songInfoKey }]
+            })),
+            /no song info for the song video000001::1/
+        );
+    }
+});
+
+test("song key remaps: the keys are read from the songs json that the build writes", () => {
+    const document = buildSongsJsonDocument([
+        createSongFixture({ title: "Second", titleNorm: "second", archiveOrder: 2, songKey: "abc123def45::2", url: "https://www.youtube.com/watch?v=abc123def45&t=300s" }),
+        createSongFixture({ title: "First", titleNorm: "first" })
+    ], "sha256:test", "2026-08-14T00:00:00.000Z");
+
+    assert.deepEqual(parseSongKeyRows(JSON.stringify(document)), [
+        { songKey: "abc123def45::2", title: "Second", titleNorm: "second", artist: "Kanaria feat. GUMI", startSeconds: 300 },
+        { songKey: "abc123def45::1", title: "First", titleNorm: "first", artist: "Kanaria feat. GUMI", startSeconds: 10 }
+    ]);
 });
 
 test("song key remaps: start seconds are read from t or start like the app does", () => {

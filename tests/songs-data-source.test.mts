@@ -4,10 +4,14 @@ import { createFakeTextCacheStore } from "./fixtures/text-cache.mts";
 import { createFakeLocalStorage } from "./fixtures/local-storage.mts";
 import { createSongFixture } from "./fixtures/song.mts";
 import type { SongsSnapshot } from "../app/lib/songs-data-source.mts";
-import type { SongsJsonPayload } from "../app/lib/songs-json.mts";
+import type { SongsJsonDocument } from "../app/lib/songs-json.mts";
 import { createSongsDataSource } from "../app/lib/songs-data-source.mts";
 import { createLegacyLocalStorageSongsJsonCacheAdapter } from "../app/lib/storage/songs-json-cache.mts";
-import { buildSongsJsonMetaPayload, buildSongsJsonPayload } from "../app/lib/songs-json.mts";
+import {
+    buildSongsJsonDocument,
+    buildSongsJsonMetaPayload,
+    SONGS_JSON_SCHEMA_VERSION
+} from "../app/lib/songs-json.mts";
 
 const GENERATED_AT = "2026-08-14T00:00:00.000Z";
 
@@ -34,20 +38,23 @@ function createSongsJson(
     contentHash = `sha256:${archiveId}`,
     generatedAt = GENERATED_AT
 ) {
-    return JSON.stringify(buildSongsJsonPayload([createSongFixture({ archiveId })], contentHash, generatedAt));
+    return JSON.stringify(buildSongsJsonDocument([createSongFixture({ archiveId })], contentHash, generatedAt));
 }
 
 /**
  * 直前schemaのキャッシュ確認用JSON文字列を返す。
+ * 直前schemaは、曲の情報を表に分けず、曲行ごとに全項目を書いていた。
  * @param archiveId 曲の archiveId
  * @param contentHash 内容hash
  * @returns 直前schemaの曲データJSONの文字列
  */
 function createPreviousSchemaSongsJson(archiveId: string, contentHash: string) {
-    const payload: SongsJsonPayload = JSON.parse(createSongsJson(archiveId, contentHash));
-    payload.schemaVersion -= 1;
-    payload.songs = payload.songs.map((song, sourceIndex) => ({ ...song, sourceIndex }));
-    return JSON.stringify(payload);
+    return JSON.stringify({
+        schemaVersion: SONGS_JSON_SCHEMA_VERSION - 1,
+        contentHash,
+        generatedAt: GENERATED_AT,
+        songs: [createSongFixture({ archiveId })]
+    });
 }
 
 /**
@@ -190,8 +197,10 @@ for (const saveResult of ["success", "false", "reject"]) {
 }
 
 test("songs data source: structurally invalid network json is not cached and falls back to csv", async (t) => {
-    const invalidPayload: { songs: Partial<Song>[] } = JSON.parse(createSongsJson("invalid-archive"));
-    delete invalidPayload.songs[0].title;
+    const invalidPayload: { songInfos: Partial<SongsJsonDocument["songInfos"][number]>[] } = JSON.parse(
+        createSongsJson("invalid-archive")
+    );
+    delete invalidPayload.songInfos[0].title;
     const songsJsonCache = createFakeTextCacheStore();
     const fetchMock = mockFetch(t, async (url) => {
         if (url === "data/songs.json") return createResponse(JSON.stringify(invalidPayload));
@@ -215,7 +224,7 @@ test("songs data source: structurally invalid network json is not cached and fal
 });
 
 test("songs data source: unsafe links in network and cached JSON fall back to validated CSV", async (t) => {
-    const payload: SongsJsonPayload = JSON.parse(createSongsJson("unsafe-archive", "sha256:unsafe"));
+    const payload: SongsJsonDocument = JSON.parse(createSongsJson("unsafe-archive", "sha256:unsafe"));
     payload.songs[0].url = "javascript:alert(1)";
     const unsafeJson = JSON.stringify(payload);
     const songsJsonCache = createFakeTextCacheStore(unsafeJson);
