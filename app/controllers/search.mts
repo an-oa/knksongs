@@ -1,7 +1,7 @@
 /**
  * 検索を担う controller。
  *
- * 検索 UI から条件を集めて検索語を解析し (../lib/search-query)、入力の誤りを表示する。
+ * 検索条件の状態 (ui.search) から条件を読んで検索語を解析し (../lib/search-query)、入力の誤りを表示する。
  * 条件に応じて、通常の検索・選択中のブックマーク内の検索・条件なしのおすすめ表示の
  * いずれかで結果を決め (../lib/search-filters, ../lib/search-recommendation)、
  * data.currentResults と表示件数を更新する。おすすめは表示領域の大きさに合わせて増減する。
@@ -13,11 +13,8 @@ import { filterSongsByCriteria } from "../lib/search-filters.mjs";
 import { isValidEmptySearchQuery, parseSearchQuery } from "../lib/search-query.mjs";
 import type { ParsedSearchQuery } from "../lib/search-query.mjs";
 import { pickRecommendedSongsWithCache } from "../lib/search-recommendation.mjs";
-import {
-    collectSearchBooleanFilterState,
-    hasSelectedSearchBooleanFilterState
-} from "../lib/search-boolean-filters.mjs";
-import type { SearchBooleanFilterElements } from "../lib/search-boolean-filters.mjs";
+import { hasSelectedSearchBooleanFilter, toSearchBooleanFilterState } from "../lib/search-boolean-filters.mjs";
+import { getPartialDateKeyRange, parsePartialDateText } from "../lib/partial-date.mjs";
 import { resolveSongRefs } from "../lib/song-lookup.mjs";
 import { validateSearchQueryInput } from "../ui/search-query-validation.mjs";
 import type { ResultCountSummary } from "../lib/ui-text.mjs";
@@ -27,24 +24,23 @@ import type {
     SearchUiRuntimeState,
     LookupUiRuntimeState,
     SiteLanguageUiRuntimeState
-} from "../state.types";
-import type { createDateFilterController } from "../ui/date/filter.mjs";
+} from "../state.types.mjs";
 
 type SearchControllerInput = {
     data: AppDataState;
     ui: {
+        /** 検索語の誤りを表示する要素。条件は要素からではなく ui.search から読む。 */
         el: {
             searchBox?: Parameters<typeof validateSearchQueryInput>[0];
             searchBoxError?: Parameters<typeof validateSearchQueryInput>[1];
-        } & SearchBooleanFilterElements;
-        search: Pick<SearchUiRuntimeState, "selectedFormats" | "recommendedCache">;
+        };
+        search: Pick<SearchUiRuntimeState, "conditions" | "selectedFormats" | "recommendedCache">;
         lookup: LookupUiRuntimeState;
         language: SiteLanguageUiRuntimeState;
     };
     searchFiltersController: {
         areAllFormatsSelected: () => boolean;
     };
-    dateFilterController: Pick<ReturnType<typeof createDateFilterController>, "getPartialDateRange">;
     constants: {
         RANDOM_DISPLAY_COUNT: number;
         MIN_PERFORMANCE_FOR_RANDOM: number;
@@ -81,13 +77,12 @@ type SearchOutcome = {
 
 /**
  * 検索条件の収集・結果解決・推薦選曲を管理するコントローラーを作成する。
- * @param {SearchControllerInput} input
+ * @param input 曲データと検索条件の状態、表示件数の定数、描画へ委ねる callback
  */
 export function createSearchController({
     data,
     ui,
     searchFiltersController,
-    dateFilterController,
     constants,
     callbacks
 }: SearchControllerInput) {
@@ -144,15 +139,17 @@ export function createSearchController({
     }
 
     /**
-     * 現在の UI 入力から検索条件オブジェクトを生成する。
-     * @returns {SearchState}
+     * 検索条件の状態から、絞り込みに使う検索条件オブジェクトを生成する。
+     * 年や年月だけの日付は、開始側は期間の最初の日、終了側は期間の最後の日として扱う。
+     * @returns 絞り込みに使う検索条件
      */
     function getSearchState(): SearchState {
-        const fromRange = dateFilterController.getPartialDateRange("from");
-        const toRange = dateFilterController.getPartialDateRange("to");
+        const conditions = searchUiState.conditions;
+        const fromRange = getPartialDateKeyRange(parsePartialDateText(conditions.dateFrom));
+        const toRange = getPartialDateKeyRange(parsePartialDateText(conditions.dateTo));
         return {
-            queryRaw: ui.el.searchBox?.value.trim() ?? "",
-            ...collectSearchBooleanFilterState(ui),
+            queryRaw: conditions.query.trim(),
+            ...conditions.booleanFilters,
             dateFromKey: fromRange ? fromRange.minKey : null,
             dateToKey: toRange ? toRange.maxKey : null,
             hasDateFilter: Boolean(fromRange || toRange)
@@ -161,14 +158,14 @@ export function createSearchController({
 
     /**
      * 条件未指定時のおすすめ表示モードかどうかを判定する。
-     * @param {SearchState} searchState
+     * @param searchState 絞り込みに使う検索条件
      * @param parsedQuery 解析済み検索語
-     * @returns {boolean}
+     * @returns 条件を何も指定していなければ true
      */
     function isRecommendedMode(searchState: SearchState, parsedQuery: ParsedSearchQuery): boolean {
         return !data.activeBookmark &&
             isValidEmptySearchQuery(parsedQuery) &&
-            !hasSelectedSearchBooleanFilterState(searchState) &&
+            !hasSelectedSearchBooleanFilter(toSearchBooleanFilterState(searchState)) &&
             !searchState.hasDateFilter &&
             searchFiltersController.areAllFormatsSelected();
     }

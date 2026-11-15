@@ -15,7 +15,7 @@ import {
     isYoutubePlaybackStartUnconfirmed
 } from "../lib/youtube/playback-start-attempt.mjs";
 import type { YoutubePlaybackStartResult } from "../lib/youtube/playback-start-attempt.mjs";
-import type { AppDataState, AppUiState } from "../state.types";
+import type { AppDataState, AppUiState } from "../state.types.mjs";
 
 type PlaybackSessionCallbacks = {
     playSongByKey: (songKey: string) => Promise<YoutubePlaybackStartResult> | YoutubePlaybackStartResult;

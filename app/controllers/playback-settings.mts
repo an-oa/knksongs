@@ -26,7 +26,7 @@ import type {
     PlaybackUiRuntimeState,
     PlaybackSettingsUiSlice,
     SearchUiRuntimeState
-} from "../state.types";
+} from "../state.types.mjs";
 import type { PlaybackSettingDefinition } from "../lib/playback-settings/definitions.mjs";
 import {
     getStoredSettingText,

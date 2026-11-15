@@ -61,6 +61,8 @@ export function renderSearchFormatOptions(input: SearchFormatOptionsInput): bool
         checkbox.id = `format-filter-${index}`;
         checkbox.type = "checkbox";
         checkbox.value = format;
+        // 選択状態は検索条件の状態から映すので、ブラウザには再読み込み時に復元させない。
+        checkbox.setAttribute("autocomplete", "off");
         label.htmlFor = checkbox.id;
         checkbox.addEventListener("change", (event) => {
             if (checkbox.checked) selectedFormats.add(checkbox.value);

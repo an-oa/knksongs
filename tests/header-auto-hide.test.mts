@@ -13,7 +13,7 @@ function setupHeaderController(initialScrollY = 0, headerHeight = 60) {
     header.className = "header";
     getFakeElement(header)._rect = { top: 0, bottom: headerHeight, left: 0, right: 300, width: 300, height: headerHeight };
     document.body.appendChild(header);
-    const sidebar = document.createElement("aside");
+    const sidebar = document.createElement("div");
     sidebar.className = "sidebar";
     document.body.appendChild(sidebar);
     window.scrollY = initialScrollY;

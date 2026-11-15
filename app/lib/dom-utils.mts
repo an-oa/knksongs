@@ -40,6 +40,17 @@ export function prefersReducedMotion(): boolean {
 }
 
 /**
+ * 主な入力手段が指 (粗いポインタ) の端末かを返す。スマホやタブレットが当てはまる。
+ * 画面のキーボードを閉じるかどうかの判断に使う。タッチ対応のノート PC は、主な入力手段がマウスなので当てはまらない。
+ * @returns 主な入力手段が粗いポインタなら true。matchMedia を使えない環境では false
+ */
+export function hasCoarsePrimaryPointer(): boolean {
+    return typeof window !== "undefined"
+        && typeof window.matchMedia === "function"
+        && window.matchMedia("(pointer: coarse)").matches;
+}
+
+/**
  * 実行環境が iOS 系の WebKit かどうかを判定する。
  * タッチ操作に対応し、WebKit 独自の CSS プロパティを使える環境を iOS 系とみなす。
  * @returns iOS 系の WebKit なら true

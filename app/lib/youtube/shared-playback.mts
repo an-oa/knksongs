@@ -1,5 +1,5 @@
 import { isHtmlElement } from "../dom-utils.mjs";
-import type { YoutubePlayerLike } from "./iframe-api.types";
+import type { YoutubePlayerLike } from "./iframe-api.types.mjs";
 
 /** 共有プレーヤー初期化待ち中の最新 iframe 紐付け要求。 */
 export type YoutubeSharedPlaybackPendingAttach = {

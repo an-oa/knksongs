@@ -711,7 +711,7 @@ test("songs data source: stalled json request times out before falling back to n
         publicSongsJsonUrl: "data/songs.json",
         publicCsvUrl: "https://example.test/songs.csv",
         songsJsonCache: createFakeTextCacheStore(),
-        songsJsonResponseTimeoutMs: 10,
+        uncachedSongsJsonResponseTimeoutMs: 10,
         csvResponseTimeoutMs: 50
     });
 
@@ -723,6 +723,29 @@ test("songs data source: stalled json request times out before falling back to n
         ["https://example.test/songs.csv", { cache: "no-store" }]
     ]);
     assert.equal(snapshot.songs[0].archiveId, "archive-1");
+});
+
+test("songs data source: without a cache the json response may take longer than the cached-path limit", async (t) => {
+    const tick = createNetworkClock(t);
+    const publicJson = createSongsJson("public", "sha256:public");
+    const urls: Parameters<typeof fetch>[0][] = [];
+    mockFetch(t, (url) => {
+        urls.push(url);
+        // キャッシュがあるときの response 期限 (2 秒) より遅く、キャッシュがないときの期限 (10 秒) より早く応答する。
+        return new Promise((resolve) => setTimeout(() => resolve(createResponse(publicJson)), 9000));
+    });
+    const loading = createSongsDataSource({
+        publicSongsJsonUrl: "data/songs.json",
+        publicCsvUrl: "https://example.test/songs.csv",
+        songsJsonCache: createFakeTextCacheStore()
+    }).loadInitialSnapshot();
+    await tick(0);
+    await tick(9000);
+    const snapshot = await loading;
+    assert.ok(snapshot);
+    assert.equal(snapshot.source, "network");
+    assert.equal(snapshot.songs[0].archiveId, "public");
+    assert.deepEqual(urls, ["data/songs.json"], "the csv fallback is not started while the json is still expected");
 });
 
 test("songs data source: slow json body may finish after the response timeout", async (t) => {
@@ -864,14 +887,390 @@ test("songs data source: meta and json response/body share the default five seco
     await tick(1);
     const snapshot = await loading;
     assert.ok(snapshot);
-    assert.equal(jsonSignal.aborted, true);
     assert.equal(snapshot.source, "cache");
     assert.equal(snapshot.songs[0].archiveId, "cached");
-    releaseBody(createSongsJson("public", "sha256:public"));
-    await tick(30_000);
+    // 表示はキャッシュへ切り替えるが、取得は中断しない。後から届いた本文は次回の表示用に保存する。
+    assert.equal(jsonSignal.aborted, false);
     assert.equal(songsJsonCache.peek(), cachedJson);
+    const publicJson = createSongsJson("public", "sha256:public");
+    releaseBody(publicJson);
+    await tick(0);
+    assert.equal(songsJsonCache.peek(), publicJson);
+    assert.equal(snapshot.songs[0].archiveId, "cached", "the shown data is not swapped");
     assert.deepEqual(urls, ["data/songs-meta.json", "data/songs.json"]);
 });
+
+test("songs data source: a json response slower than the cached-path limit still refreshes the cache for the next visit", async (t) => {
+    const tick = createNetworkClock(t);
+    const cachedJson = createSongsJson("cached", "sha256:cached");
+    const publicJson = createSongsJson("public", "sha256:public");
+    const songsJsonCache = createFakeTextCacheStore(cachedJson);
+    let jsonSignal: AbortSignal | null | undefined;
+    mockFetch(t, (url, options) => {
+        if (url === "data/songs-meta.json") {
+            return Promise.resolve(createResponse(createSongsMetaJson("sha256:public")));
+        }
+        jsonSignal = options?.signal;
+        // response の期限 (2 秒) にも、全体の期限 (5 秒) にも間に合わない。
+        return new Promise((resolve) => setTimeout(() => resolve(createResponse(publicJson)), 8000));
+    });
+    const loading = createSongsDataSource({
+        publicSongsJsonUrl: "data/songs.json",
+        publicSongsMetaUrl: "data/songs-meta.json",
+        publicCsvUrl: "https://example.test/songs.csv",
+        songsJsonCache
+    }).loadInitialSnapshot();
+    await tick(0);
+    await tick(2000);
+    const snapshot = await loading;
+    assert.ok(snapshot);
+    assert.equal(snapshot.source, "cache", "the cache is shown as soon as the response limit passes");
+    assert.equal(songsJsonCache.peek(), cachedJson);
+
+    await tick(6000);
+    assert.ok(jsonSignal);
+    assert.equal(jsonSignal.aborted, false);
+    assert.equal(songsJsonCache.peek(), publicJson);
+});
+
+test("songs data source: a late json does not roll back a newer cache that another tab saved in the meantime", async (t) => {
+    const tick = createNetworkClock(t);
+    const cachedJson = createSongsJson("cached", "sha256:cached", "2026-08-01T00:00:00.000Z");
+    const olderPublicJson = createSongsJson("older", "sha256:older", "2026-08-02T00:00:00.000Z");
+    const newerPublicJson = createSongsJson("newer", "sha256:newer", "2026-08-03T00:00:00.000Z");
+    // 同じブラウザのタブは、同じキャッシュを共有する。
+    const songsJsonCache = createFakeTextCacheStore(cachedJson);
+    mockFetch(t, (url) => {
+        // このタブが取得を始めた時点で公開されていた内容。本文は、表示の期限に間に合わない。
+        if (url === "data/songs-meta.json") {
+            return Promise.resolve(createResponse(createSongsMetaJson("sha256:older", "2026-08-02T00:00:00.000Z")));
+        }
+        return new Promise((resolve) => setTimeout(() => resolve(createResponse(olderPublicJson)), 8000));
+    });
+    const loading = createSongsDataSource({
+        publicSongsJsonUrl: "data/songs.json",
+        publicSongsMetaUrl: "data/songs-meta.json",
+        publicCsvUrl: "https://example.test/songs.csv",
+        songsJsonCache
+    }).loadInitialSnapshot();
+    await tick(0);
+    await tick(2000);
+    const snapshot = await loading;
+    assert.ok(snapshot);
+    assert.equal(snapshot.source, "cache");
+
+    // 待っている間に公開内容が更新され、後から開いた別のタブが、その新しい JSON を保存した。
+    await songsJsonCache.setText(newerPublicJson);
+
+    // 遅れて届いた古い JSON は、取得を始めた時点の meta とは整合するが、保存済みのキャッシュより古い。
+    await tick(6000);
+    assert.equal(songsJsonCache.peek(), newerPublicJson);
+});
+
+const LATE_PUBLIC_JSON = createSongsJson("late", "sha256:late", "2026-08-02T00:00:00.000Z");
+
+for (const { cacheOnArrival, cached, isReplaced } of [
+    { cacheOnArrival: "an older one", cached: createSongsJson("cached", "sha256:cached", "2026-08-01T00:00:00.000Z"), isReplaced: true },
+    { cacheOnArrival: "none, because it was removed", cached: null, isReplaced: true },
+    { cacheOnArrival: "one that cannot be read", cached: createPreviousSchemaSongsJson("stale", "sha256:stale"), isReplaced: true },
+    { cacheOnArrival: "the same content, saved by another tab", cached: LATE_PUBLIC_JSON, isReplaced: false },
+    { cacheOnArrival: "the same content of an older generation", cached: createSongsJson("late", "sha256:late", "2026-08-01T12:00:00.000Z"), isReplaced: true },
+    { cacheOnArrival: "the same content of a newer generation, confirmed by another tab", cached: createSongsJson("late", "sha256:late", "2026-08-03T00:00:00.000Z"), isReplaced: false },
+    { cacheOnArrival: "a newer one, saved by another tab", cached: createSongsJson("newer", "sha256:newer", "2026-08-03T00:00:00.000Z"), isReplaced: false }
+]) {
+    test(`songs data source: a late json ${isReplaced ? "replaces" : "leaves"} the cache when the cache is ${cacheOnArrival}`, async (t) => {
+        const tick = createNetworkClock(t);
+        const songsJsonCache = createFakeTextCacheStore(createSongsJson("cached", "sha256:cached", "2026-08-01T00:00:00.000Z"));
+        const replace = t.mock.method(songsJsonCache, "setTextIf");
+        mockFetch(t, (url) => {
+            if (url === "data/songs-meta.json") {
+                return Promise.resolve(createResponse(createSongsMetaJson("sha256:late", "2026-08-02T00:00:00.000Z")));
+            }
+            return new Promise((resolve) => setTimeout(() => resolve(createResponse(LATE_PUBLIC_JSON)), 8000));
+        });
+        const loading = createSongsDataSource({
+            publicSongsJsonUrl: "data/songs.json",
+            publicSongsMetaUrl: "data/songs-meta.json",
+            publicCsvUrl: "https://example.test/songs.csv",
+            songsJsonCache
+        }).loadInitialSnapshot();
+        await tick(0);
+        await tick(2000);
+        assert.equal((await loading)?.source, "cache");
+
+        // 遅れた JSON が届くまでの間に、キャッシュがこの状態になっている。
+        if (cached === null) await songsJsonCache.removeText();
+        else await songsJsonCache.setText(cached);
+        await tick(6000);
+
+        // 保存するかどうかは、届いた時点で保存済みの内容を見て決める。
+        assert.equal(replace.mock.callCount(), 1);
+        assert.equal(await replace.mock.calls[0].result, isReplaced);
+        assert.equal(songsJsonCache.peek(), isReplaced ? LATE_PUBLIC_JSON : cached);
+    });
+}
+
+// CSV を元の内容へ戻して再生成すると、内容 (hash) は前と同じで、生成日時だけが新しくなる。A(t1) → B(t2) → A(t3)。
+const CONTENT_A_FIRST = createSongsJson("content-a", "sha256:content-a", "2026-08-01T00:00:00.000Z");
+const CONTENT_B = createSongsJson("content-b", "sha256:content-b", "2026-08-02T00:00:00.000Z");
+const CONTENT_A_REPUBLISHED = createSongsJson("content-a", "sha256:content-a", "2026-08-03T00:00:00.000Z");
+
+test("songs data source: a late json is not saved after the csv was reverted to the cached content and another tab reused the cache", async (t) => {
+    const tick = createNetworkClock(t);
+    // A(t1) がキャッシュにある。同じブラウザのタブは、同じキャッシュを共有する。
+    const songsJsonCache = createFakeTextCacheStore(CONTENT_A_FIRST);
+    let published = { meta: createSongsMetaJson("sha256:content-b", "2026-08-02T00:00:00.000Z"), json: CONTENT_B };
+    const urls: Parameters<typeof fetch>[0][] = [];
+    mockFetch(t, (url) => {
+        urls.push(url);
+        if (url === "data/songs-meta.json") return Promise.resolve(createResponse(published.meta));
+        // 本文は、表示の期限に間に合わない。届くのは、取得を始めた時点で公開されていた内容。
+        const { json } = published;
+        return new Promise((resolve) => setTimeout(() => resolve(createResponse(json)), 8000));
+    });
+    const openTab = () => createSongsDataSource({
+        publicSongsJsonUrl: "data/songs.json",
+        publicSongsMetaUrl: "data/songs-meta.json",
+        publicCsvUrl: "https://example.test/songs.csv",
+        songsJsonCache
+    }).loadInitialSnapshot();
+
+    // 最初のタブが、公開中の B(t2) を取得し始める。
+    const firstTab = openTab();
+    await tick(0);
+    await tick(2000);
+    assert.equal((await firstTab)?.source, "cache");
+
+    // 待っている間に CSV が A へ戻されて再生成され、A(t3) が公開される。その後で別のタブを開く。
+    published = { meta: createSongsMetaJson("sha256:content-a", "2026-08-03T00:00:00.000Z"), json: CONTENT_A_REPUBLISHED };
+    const secondTab = await openTab();
+    await tick(0);
+    // 別のタブは、公開中の meta の hash が保存済みの A と一致するので、本文を取らずにキャッシュを使う。
+    assert.equal(secondTab?.source, "cache");
+    assert.equal(secondTab?.songs[0].archiveId, "content-a");
+    assert.deepEqual(urls, ["data/songs-meta.json", "data/songs.json", "data/songs-meta.json"]);
+    // そのとき、公開し直された生成日時をキャッシュに残す。
+    assert.equal(songsJsonCache.peek(), CONTENT_A_REPUBLISHED);
+
+    // 最初のタブに B(t2) が遅れて届く。取得を始めた時点の meta とは整合するが、保存済みの A(t3) より古い。
+    await tick(6000);
+    assert.equal(songsJsonCache.peek(), CONTENT_A_REPUBLISHED);
+    assert.deepEqual(urls, ["data/songs-meta.json", "data/songs.json", "data/songs-meta.json"], "saving needs no further request");
+});
+
+for (const { generation, metaGeneratedAt, cachedAfterwards, saveCount } of [
+    { generation: "a newer generation", metaGeneratedAt: "2026-08-03T00:00:00.000Z", cachedAfterwards: CONTENT_A_REPUBLISHED, saveCount: 1 },
+    { generation: "the same generation", metaGeneratedAt: "2026-08-01T00:00:00.000Z", cachedAfterwards: CONTENT_A_FIRST, saveCount: 0 },
+    // 公開される生成日時が古くなることは、現行の生成・公開の経路では起きない。起きても、確かめた世代を後ろへ戻さない。
+    { generation: "an older generation", metaGeneratedAt: "2026-07-31T00:00:00.000Z", cachedAfterwards: CONTENT_A_FIRST, saveCount: 0 }
+]) {
+    test(`songs data source: reusing the cache ${saveCount ? "records" : "does not write"} when the public meta shows ${generation} of the same content`, async (t) => {
+        const songsJsonCache = createFakeTextCacheStore(CONTENT_A_FIRST);
+        const save = t.mock.method(songsJsonCache, "setText");
+        const saveIf = t.mock.method(songsJsonCache, "setTextIf");
+        const fetchMock = mockFetch(t, async () => createResponse(createSongsMetaJson("sha256:content-a", metaGeneratedAt)));
+        const snapshot = await createSongsDataSource({
+            publicSongsJsonUrl: "data/songs.json",
+            publicSongsMetaUrl: "data/songs-meta.json",
+            publicCsvUrl: "https://example.test/songs.csv",
+            songsJsonCache
+        }).loadInitialSnapshot();
+        await new Promise((resolve) => setImmediate(resolve));
+
+        assert.equal(snapshot?.source, "cache");
+        assert.equal(snapshot?.songs[0].archiveId, "content-a");
+        assertFetchCalls(fetchMock, [["data/songs-meta.json", { cache: "no-cache" }]]);
+        assert.equal(save.mock.callCount(), 0);
+        assert.equal(saveIf.mock.callCount(), saveCount);
+        assert.equal(songsJsonCache.peek(), cachedAfterwards);
+    });
+}
+
+test("songs data source: a generation confirmed while reusing the cache replaces an older json that another tab saved late", async (t) => {
+    const songsJsonCache = createFakeTextCacheStore(CONTENT_A_FIRST);
+    const { promise: metaResponse, resolve: releaseMeta } = Promise.withResolvers<Response>();
+    mockFetch(t, () => metaResponse);
+    const loading = createSongsDataSource({
+        publicSongsJsonUrl: "data/songs.json",
+        publicSongsMetaUrl: "data/songs-meta.json",
+        publicCsvUrl: "https://example.test/songs.csv",
+        songsJsonCache
+    }).loadInitialSnapshot();
+    // このタブが A(t1) のキャッシュを読み終え、公開 meta を待っている。
+    await new Promise((resolve) => setImmediate(resolve));
+
+    // その間に、別のタブへ遅れて届いた B(t2) が保存される。保存済みの A(t1) より新しいので、保存は通る。
+    await songsJsonCache.setText(CONTENT_B);
+
+    // 公開中の内容は、戻された A(t3) だった。このタブは読み込んであった A を表示し、A(t3) をキャッシュに残す。
+    releaseMeta(createResponse(createSongsMetaJson("sha256:content-a", "2026-08-03T00:00:00.000Z")));
+    const snapshot = await loading;
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(snapshot?.source, "cache");
+    assert.equal(snapshot?.songs[0].archiveId, "content-a");
+    assert.equal(songsJsonCache.peek(), CONTENT_A_REPUBLISHED);
+});
+
+test("songs data source: legacy localStorage json is migrated with the newer generation that the public meta shows", async (t) => {
+    const storage = createFakeLocalStorage();
+    const primarySongsJsonCache = createFakeTextCacheStore();
+    const songsJsonCache = createLegacyLocalStorageSongsJsonCacheAdapter({
+        cache: primarySongsJsonCache,
+        legacyKey: "cachedSongsJson",
+        storage
+    });
+    storage.setItem("cachedSongsJson", CONTENT_A_FIRST);
+    const fetchMock = mockFetch(t, async () => createResponse(createSongsMetaJson("sha256:content-a", "2026-08-03T00:00:00.000Z")));
+
+    const snapshot = await createSongsDataSource({
+        publicSongsJsonUrl: "data/songs.json",
+        publicSongsMetaUrl: "data/songs-meta.json",
+        publicCsvUrl: "https://example.test/songs.csv",
+        songsJsonCache
+    }).loadInitialSnapshot();
+    await new Promise((resolve) => setImmediate(resolve));
+
+    assert.equal(snapshot?.source, "cache");
+    assertFetchCalls(fetchMock, [["data/songs-meta.json", { cache: "no-cache" }]]);
+    assert.equal(primarySongsJsonCache.peek(), CONTENT_A_REPUBLISHED);
+    assert.equal(storage.getItem("cachedSongsJson"), null);
+});
+
+test("songs data source: a line where meta and json each answer in three seconds still refreshes the cache for the next visit", async (t) => {
+    const tick = createNetworkClock(t);
+    t.mock.method(console, "warn", () => {});
+    const cachedJson = createSongsJson("cached", "sha256:cached", "2026-08-01T00:00:00.000Z");
+    const publicJson = createSongsJson("public", "sha256:public", "2026-08-02T00:00:00.000Z");
+    const songsJsonCache = createFakeTextCacheStore(cachedJson);
+    const urls: Parameters<typeof fetch>[0][] = [];
+    // どの要求も、応答まで 3 秒かかる。待つ側が中断したら、その時点で失敗する。
+    mockFetch(t, (url, options) => {
+        urls.push(url);
+        const body = url === "data/songs-meta.json" ? createSongsMetaJson("sha256:public", "2026-08-02T00:00:00.000Z") : publicJson;
+        return new Promise((resolve, reject) => {
+            const timeoutId = setTimeout(() => resolve(createResponse(body)), 3000);
+            options?.signal?.addEventListener("abort", () => {
+                clearTimeout(timeoutId);
+                reject(new DOMException("aborted", "AbortError"));
+            }, { once: true });
+        });
+    });
+    const openPage = () => createSongsDataSource({
+        publicSongsJsonUrl: "data/songs.json",
+        publicSongsMetaUrl: "data/songs-meta.json",
+        publicCsvUrl: "https://example.test/songs.csv",
+        songsJsonCache
+    }).loadInitialSnapshot();
+
+    const firstVisit = openPage();
+    await tick(0);
+    await tick(2000); // meta の応答を待つ期限 (2 秒) が切れ、JSON の取得を始める。
+    await tick(2000); // JSON の応答を待つ期限 (2 秒) が切れ、キャッシュで表示する。
+    assert.equal((await firstVisit)?.songs[0].archiveId, "cached");
+    assert.equal(songsJsonCache.peek(), cachedJson);
+    await tick(1000); // JSON が、取得を始めてから 3 秒で届く。
+    // 保存の前に通信を挟まないので、同じ回線でも保存できる。
+    assert.equal(songsJsonCache.peek(), publicJson);
+    assert.deepEqual(urls, ["data/songs-meta.json", "data/songs.json"]);
+
+    // 次の訪問では、保存された新しい内容を表示する。
+    const secondVisit = openPage();
+    await tick(0);
+    await tick(2000);
+    await tick(2000);
+    assert.equal((await secondVisit)?.songs[0].archiveId, "public");
+});
+
+test("songs data source: a late json that cannot be saved is reported and does not disturb the page", async (t) => {
+    const tick = createNetworkClock(t);
+    const warn = t.mock.method(console, "warn", () => {});
+    const cachedJson = createSongsJson("cached", "sha256:cached", "2026-08-01T00:00:00.000Z");
+    const songsJsonCache = createFakeTextCacheStore(cachedJson);
+    const storageError = new Error("the storage is full");
+    t.mock.method(songsJsonCache, "setTextIf", async () => { throw storageError; });
+    mockFetch(t, (url) => {
+        if (url === "data/songs-meta.json") {
+            return Promise.resolve(createResponse(createSongsMetaJson("sha256:late", "2026-08-02T00:00:00.000Z")));
+        }
+        return new Promise((resolve) => setTimeout(() => resolve(createResponse(LATE_PUBLIC_JSON)), 8000));
+    });
+    const loading = createSongsDataSource({
+        publicSongsJsonUrl: "data/songs.json",
+        publicSongsMetaUrl: "data/songs-meta.json",
+        publicCsvUrl: "https://example.test/songs.csv",
+        songsJsonCache
+    }).loadInitialSnapshot();
+    await tick(0);
+    await tick(2000);
+    assert.equal((await loading)?.source, "cache");
+
+    await tick(6000);
+    assert.deepEqual(warn.mock.calls.map((call) => call.arguments), [["曲データJSONキャッシュを保存できませんでした", storageError]]);
+    assert.equal(songsJsonCache.peek(), cachedJson);
+});
+
+test("songs data source: the background json download is given up after its own limit", async (t) => {
+    const tick = createNetworkClock(t);
+    const cachedJson = createSongsJson("cached", "sha256:cached");
+    const songsJsonCache = createFakeTextCacheStore(cachedJson);
+    let jsonSignal: AbortSignal | null | undefined;
+    mockFetch(t, (url, options) => {
+        if (url === "data/songs-meta.json") {
+            return Promise.resolve(createResponse(createSongsMetaJson("sha256:public")));
+        }
+        jsonSignal = options?.signal;
+        return createPendingFetch()(url, options);
+    });
+    const loading = createSongsDataSource({
+        publicSongsJsonUrl: "data/songs.json",
+        publicSongsMetaUrl: "data/songs-meta.json",
+        publicCsvUrl: "https://example.test/songs.csv",
+        songsJsonCache
+    }).loadInitialSnapshot();
+    await tick(0);
+    await tick(2000);
+    const snapshot = await loading;
+    assert.ok(snapshot);
+    assert.equal(snapshot.source, "cache");
+
+    await tick(57_999);
+    assert.ok(jsonSignal);
+    assert.equal(jsonSignal.aborted, false);
+    await tick(1);
+    assert.equal(jsonSignal.aborted, true);
+    assert.equal(songsJsonCache.peek(), cachedJson);
+});
+
+for (const invalidKind of ["malformed", "older-than-meta"]) {
+    test(`songs data source: a late ${invalidKind} json does not replace the cache`, async (t) => {
+        const tick = createNetworkClock(t);
+        const cachedJson = createSongsJson("cached", "sha256:cached");
+        const songsJsonCache = createFakeTextCacheStore(cachedJson);
+        const lateJson = invalidKind === "malformed"
+            ? "not json"
+            : createSongsJson("public", "sha256:public", "2026-08-13T00:00:00.000Z");
+        mockFetch(t, (url) => {
+            if (url === "data/songs-meta.json") {
+                return Promise.resolve(createResponse(createSongsMetaJson("sha256:meta")));
+            }
+            return new Promise((resolve) => setTimeout(() => resolve(createResponse(lateJson)), 8000));
+        });
+        const loading = createSongsDataSource({
+            publicSongsJsonUrl: "data/songs.json",
+            publicSongsMetaUrl: "data/songs-meta.json",
+            publicCsvUrl: "https://example.test/songs.csv",
+            songsJsonCache
+        }).loadInitialSnapshot();
+        await tick(0);
+        await tick(2000);
+        const snapshot = await loading;
+        assert.ok(snapshot);
+        assert.equal(snapshot.source, "cache");
+
+        await tick(6000);
+        assert.equal(songsJsonCache.peek(), cachedJson);
+    });
+}
 
 for (const phase of ["response", "body"]) {
     test(`songs data source: meta ${phase} exhausting the deadline prevents a json request`, async (t) => {
@@ -904,17 +1303,16 @@ for (const phase of ["response", "body"]) {
     });
 }
 
-test("songs data source: late successful body is rejected even before the timeout callback runs", async (t) => {
+test("songs data source: a body that arrives after the deadline is not shown even before the timeout callback runs", async (t) => {
     let now = 0;
     t.mock.method(performance, "now", () => now);
     const cachedJson = createSongsJson("cached", "sha256:cached");
+    const publicJson = createSongsJson("public", "sha256:public");
     const songsJsonCache = createFakeTextCacheStore(cachedJson);
-    let signal: AbortSignal | null | undefined;
-    mockFetch(t, async (_url, options) => {
-        signal = options?.signal;
+    mockFetch(t, async () => {
         return createResponse(async () => {
             now = 5001;
-            return createSongsJson("public", "sha256:public");
+            return publicJson;
         });
     });
     const snapshot = await createSongsDataSource({
@@ -924,9 +1322,10 @@ test("songs data source: late successful body is rejected even before the timeou
     }).loadInitialSnapshot();
     assert.ok(snapshot);
     assert.equal(snapshot.source, "cache");
-    assert.ok(signal);
-    assert.equal(signal.aborted, true);
-    assert.equal(songsJsonCache.peek(), cachedJson);
+    assert.equal(snapshot.songs[0].archiveId, "cached");
+    // 表示には使わないが、届いた本文は次回の表示用に保存する。
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(songsJsonCache.peek(), publicJson);
 });
 
 test("songs data source: no cache keeps parallel requests and allows a body beyond five seconds", async (t) => {

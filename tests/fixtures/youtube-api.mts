@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import type { YoutubeIframeApiGlobal, YoutubePlayerLike } from "../../app/lib/youtube/iframe-api.types";
+import type { YoutubeIframeApiGlobal, YoutubePlayerLike } from "../../app/lib/youtube/iframe-api.types.mts";
 import { YOUTUBE_PLAYER_STATE } from "../../app/lib/youtube/player-state.mts";
 
 /** Playerごとに状態とイベント通知先を保持する。現在状態と通知値は独立して指定できる。 */

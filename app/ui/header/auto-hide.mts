@@ -1,4 +1,4 @@
-import type { AppUiState } from "../../state.types";
+import type { AppUiState } from "../../state.types.mjs";
 
 type AutoHideHeaderControllerInput = {
     ui: Pick<AppUiState, "el">;

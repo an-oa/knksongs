@@ -1,11 +1,7 @@
-type UiSyncOptions = {
-    visual?: boolean;
-    search?: boolean;
-};
-
 type UiSyncControllerInput = {
     uiSyncPasses: number;
-    syncSearchUI: (options?: UiSyncOptions) => void;
+    /** 検索条件の状態を、検索窓と絞り込みの入力欄へ映す。 */
+    refreshConditionInputs: () => void;
     applyThemeFromStorage: () => void;
     applyPlaybackSettingsFromStorage: () => void;
     applySiteLanguageFromStorage: () => void;
@@ -13,43 +9,45 @@ type UiSyncControllerInput = {
 
 /**
  * 画面復帰時の UI 再同期をまとめて扱うコントローラーを作成する。
+ * テーマ・再生設定・サイトの言語は、別のタブで変わっていることがあるので、保存値から読み直す。
+ * 検索条件は状態 (ui.search) が正なので読み直さず、状態の値を入力欄へ映し直すだけにする。
+ * ブラウザがフォームの値を後から復元することがあるため、次のフレームと少し後にも同じ同期を行う。
  */
 export function createUiSyncController(input: UiSyncControllerInput) {
     const {
         uiSyncPasses,
-        syncSearchUI,
+        refreshConditionInputs,
         applyThemeFromStorage,
         applyPlaybackSettingsFromStorage,
         applySiteLanguageFromStorage
     } = input;
 
     /**
-     * オプションに応じて UI の見た目と検索状態を同期する。
-     * @param {{ visual?: boolean, search?: boolean } | undefined} [options]
+     * 保存値で決まる設定と、検索条件の入力欄を同期する。
      */
-    function syncUiState(options?: UiSyncOptions): void {
-        const opts = options || {};
-        if (opts.visual !== false) syncVisualUI();
-        if (opts.search !== false) syncSearchUI();
+    function syncUiState(): void {
+        applyThemeFromStorage();
+        applyPlaybackSettingsFromStorage();
+        applySiteLanguageFromStorage();
+        refreshConditionInputs();
     }
 
     /**
      * UI 同期を実行し、必要に応じて次フレームでも再同期する。
-     * @param {{ visual?: boolean, search?: boolean } | undefined} [options]
      */
-    function scheduleSyncUiState(options?: UiSyncOptions): void {
-        syncUiState(options);
+    function scheduleSyncUiState(): void {
+        syncUiState();
         if (uiSyncPasses < 2) return;
-        requestAnimationFrame(() => syncUiState(options));
+        requestAnimationFrame(() => syncUiState());
     }
 
     /**
-     * 遅延付きで見た目のみの UI 同期を予約する。
-     * @param {number | undefined} [delayMs]
+     * 少し待ってから、もう一度 UI 同期を予約する。
+     * @param delayMs 待つ時間。省略時は 200ms
      */
-    function scheduleDelayedVisualSync(delayMs?: number): void {
+    function scheduleDelayedSync(delayMs?: number): void {
         const delay = Number.isFinite(delayMs) ? delayMs : 200;
-        setTimeout(() => scheduleSyncUiState({ visual: true, search: false }), delay);
+        setTimeout(() => scheduleSyncUiState(), delay);
     }
 
     /**
@@ -68,20 +66,11 @@ export function createUiSyncController(input: UiSyncControllerInput) {
     }
 
     /**
-     * pageshow 時に同期と遅延ビジュアル同期を行う。
+     * pageshow 時に同期し、少し後にももう一度同期する。
      */
     function handlePageShowSync(): void {
         scheduleSyncUiState();
-        scheduleDelayedVisualSync();
-    }
-
-    /**
-     * テーマ・サムネイル表示・サイトの言語の UI 状態を同期する。
-     */
-    function syncVisualUI(): void {
-        applyThemeFromStorage();
-        applyPlaybackSettingsFromStorage();
-        applySiteLanguageFromStorage();
+        scheduleDelayedSync();
     }
 
     /**
@@ -95,7 +84,7 @@ export function createUiSyncController(input: UiSyncControllerInput) {
 
     return {
         scheduleSyncUiState,
-        scheduleDelayedVisualSync,
+        scheduleDelayedSync,
         setupSyncEvents
     };
 }

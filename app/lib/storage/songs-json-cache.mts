@@ -6,9 +6,17 @@ import {
 const DEFAULT_DB_NAME = "knksongs";
 const DEFAULT_STORE_NAME = "songsJsonCache";
 
+/** 保存済みの値 (なければ null) を見て、置き換えてよいかを同期で返す判定。 */
+type CanReplaceCachedText = (current: string | null) => boolean;
+
 type TextCacheStore = {
     getText: () => Promise<string | null>;
     setText: (value: string) => Promise<boolean>;
+    /**
+     * 保存済みの値を読み、置き換えてよいと判定されたときだけ保存する。保存したら true を返す。
+     * 読み取りと保存をひと続きに行い、別のタブの保存が間に入らないようにする。
+     */
+    setTextIf: (value: string, canReplace: CanReplaceCachedText) => Promise<boolean>;
     removeText: () => Promise<void>;
 };
 
@@ -161,6 +169,30 @@ export function createIndexedDbTextCacheStore(options: TextCacheStoreOptions): T
                 closeDb(db);
             }
         },
+        async setTextIf(value, canReplace) {
+            if (!cacheKey) return false;
+            const { db, transaction, store } = await openStore("readwrite");
+            try {
+                let isReplaced = false;
+                const request = store.get(cacheKey);
+                // 読み取りの完了通知の中で、続けて保存する。同じ読み書きのトランザクションなので、
+                // 別のタブの保存は、読み取りと保存の間に入れない。判定が例外を投げたときは、トランザクションごと中止になる。
+                request.onsuccess = () => {
+                    const record = request.result as { value?: unknown } | undefined;
+                    if (!canReplace(typeof record?.value === "string" ? record.value : null)) return;
+                    store.put({
+                        key: cacheKey,
+                        value,
+                        updatedAt: Date.now()
+                    });
+                    isReplaced = true;
+                };
+                await waitForTransaction(transaction);
+                return isReplaced;
+            } finally {
+                closeDb(db);
+            }
+        },
         async removeText() {
             if (!cacheKey) return;
             const { db, transaction, store } = await openStore("readwrite");
@@ -241,20 +273,38 @@ export function createLegacyLocalStorageTextCacheAdapter(
     const legacyKeys = getLegacyCacheKeys(legacyKey, rawLegacyKeys);
 
     /**
-     * 非同期 cache へテキストを保存する。
-     * @param {string} value
-     * @returns {Promise<boolean>}
+     * 現行 cache への保存を実行し、保存できたときだけ旧 localStorage キャッシュを片付ける。
+     * @param save 現行 cache へ保存する処理。保存したら true を返す
+     * @returns 保存できたか
      */
-    async function setText(value: string): Promise<boolean> {
-        // 現行 cache へ保存し、成功後は旧 localStorage キャッシュを片付ける。
+    async function saveAndClearLegacy(save: () => Promise<boolean>): Promise<boolean> {
         try {
-            const saved = await cache.setText(value);
+            const saved = await save();
             if (saved) removeLegacyCachedTexts(storage, legacyKeys);
             return saved;
         } catch (error) {
             console.warn(`${label}を保存できませんでした`, error);
             return false;
         }
+    }
+
+    /**
+     * 非同期 cache へテキストを保存する。
+     * @param value 保存するテキスト
+     * @returns 保存できたか
+     */
+    function setText(value: string): Promise<boolean> {
+        return saveAndClearLegacy(() => cache.setText(value));
+    }
+
+    /**
+     * 現行 cache の保存済みの値を見て、置き換えてよいときだけ保存する。
+     * @param value 保存するテキスト
+     * @param canReplace 保存済みの値を見て、置き換えてよいかを返す判定
+     * @returns 保存したか
+     */
+    function setTextIf(value: string, canReplace: CanReplaceCachedText): Promise<boolean> {
+        return saveAndClearLegacy(() => cache.setTextIf(value, canReplace));
     }
 
     return {
@@ -271,6 +321,7 @@ export function createLegacyLocalStorageTextCacheAdapter(
         /** 旧キャッシュを読み取るだけにし、採用後のsetText成功時に削除する。 */
         getLegacyText: () => getFirstLegacyCachedText(storage, legacyKeys),
         setText,
+        setTextIf,
         async removeText() {
             // 現行 cache と旧 localStorage キャッシュをまとめて削除する。
             try {

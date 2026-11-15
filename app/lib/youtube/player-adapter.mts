@@ -1,7 +1,7 @@
 import { isHtmlElement } from "../dom-utils.mjs";
 import { resolveYoutubeEmbedHostFromUrl } from "./embed.mjs";
 import type { YoutubeSharedPlaybackState } from "./shared-playback.mjs";
-import type { YoutubePlayerEvent, YoutubePlayerLike } from "./iframe-api.types";
+import type { YoutubePlayerEvent, YoutubePlayerLike } from "./iframe-api.types.mjs";
 
 type YoutubePlayerAdapterInput = {
     getSharedPlaybackState: () => Pick<YoutubeSharedPlaybackState,

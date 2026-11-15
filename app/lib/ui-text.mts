@@ -29,6 +29,8 @@ type StaticText = {
     collabGuestOnly: string;
     bookmarks: string;
     bookmarksBack: string;
+    /** 戻るボタンの読み上げ名。見えている文字 (bookmarksBack) を含め、声で操作する人が見たままの名前で押せるようにする。 */
+    bookmarksBackLabel: string;
     newBookmarkName: string;
     newBookmarkPlaceholder: string;
     createBookmark: string;
@@ -36,8 +38,9 @@ type StaticText = {
     importBookmarks: string;
     exportBookmarks: string;
     settings: string;
-    backToSidebar: string;
     settingsBack: string;
+    /** 戻るボタンの読み上げ名。見えている文字 (settingsBack) を含める。理由は bookmarksBackLabel と同じ。 */
+    settingsBackLabel: string;
     displayGroup: string;
     thumbnails: string;
     darkMode: string;
@@ -84,6 +87,14 @@ export type UiText = {
         addToBookmark: string;
         removeFromBookmark: string;
         backToThumbnail: string;
+        /** 埋め込んだ動画の枠 (iframe) の名前。動画の情報が届くと、YouTube が動画の題名へ書き換える。 */
+        videoPlayer: string;
+        /** サムネイルの再生ボタンの説明。どの曲を再生するかを伝える。 */
+        play: (title: string) => string;
+        /** ブックマーク表示中の並べ替えハンドルの説明。キーボードでの動かし方も伝える。 */
+        reorderHandle: string;
+        /** キーボードで並べ替えた後に読み上げる、移動先の位置。 */
+        reordered: (title: string, position: number, total: number) => string;
         /** カードの日付。日本語は CSV の表記のまま、英語は「Oct 8, 2026」の形にする。 */
         date: (song: Pick<Song, "date" | "dateKey">) => string;
     };
@@ -92,6 +103,15 @@ export type UiText = {
         connecting: string;
         loadingData: string;
         loadError: string;
+        /** 曲データを取得できなかったときに、結果一覧に出す説明。 */
+        loadErrorDetail: string;
+        /**
+         * アプリのコードを読み込めなかったときに、結果一覧に出す説明。
+         * 辞書を読めない状況で出すので、表示には startup-error.mts に持つ同じ文言を使う。
+         */
+        appLoadErrorDetail: string;
+        /** 読み込みに失敗したときに出す、ページを読み込み直すボタン。 */
+        reload: string;
         loading: string;
         selectFormats: string;
         notFound: string;
@@ -194,6 +214,7 @@ const JAPANESE_TEXT: UiText = {
         collabGuestOnly: "コラボ(ゲスト)",
         bookmarks: "ブックマーク",
         bookmarksBack: "← ブックマーク",
+        bookmarksBackLabel: "ブックマークを閉じて、絞り込み・設定に戻る",
         newBookmarkName: "新規ブックマーク名",
         newBookmarkPlaceholder: "新規ブックマーク名",
         createBookmark: "作成",
@@ -201,8 +222,8 @@ const JAPANESE_TEXT: UiText = {
         importBookmarks: "インポート",
         exportBookmarks: "エクスポート",
         settings: "設定",
-        backToSidebar: "検索・設定に戻る",
         settingsBack: "← 設定",
+        settingsBackLabel: "設定を閉じて、絞り込み・設定に戻る",
         displayGroup: "表示",
         thumbnails: "サムネイル表示",
         darkMode: "ダークモード",
@@ -240,6 +261,10 @@ const JAPANESE_TEXT: UiText = {
         addToBookmark: "ブックマークに追加",
         removeFromBookmark: "ブックマークから削除",
         backToThumbnail: "サムネイルに戻す",
+        videoPlayer: "YouTube 動画プレーヤー",
+        play: (title) => `「${title}」を再生`,
+        reorderHandle: "並べ替え（矢印キーで前後へ移動）",
+        reordered: (title, position, total) => `「${title}」を ${total} 件中 ${position} 番目へ移動しました`,
         date: (song) => song.date
     },
     results: {
@@ -251,6 +276,9 @@ const JAPANESE_TEXT: UiText = {
         connecting: "接続中...",
         loadingData: "データを読み込み中...",
         loadError: "読込エラー",
+        loadErrorDetail: "曲データを読み込めませんでした。通信状況を確認して、ページを再読み込みしてください。",
+        appLoadErrorDetail: "ページを読み込めませんでした。通信状況を確認して、ページを再読み込みしてください。",
+        reload: "再読み込み",
         loading: "読み込み中...",
         selectFormats: "動画の種類を選択してください",
         notFound: "見つかりませんでした",
@@ -297,6 +325,7 @@ const ENGLISH_TEXT: UiText = {
         collabGuestOnly: "Collab (guest)",
         bookmarks: "Bookmarks",
         bookmarksBack: "← Bookmarks",
+        bookmarksBackLabel: "Close Bookmarks and go back to filters & settings",
         newBookmarkName: "New bookmark name",
         // 入力欄の幅に収まるよう、プレースホルダーは読み上げ用のラベルより短くする
         newBookmarkPlaceholder: "New bookmark",
@@ -305,8 +334,8 @@ const ENGLISH_TEXT: UiText = {
         importBookmarks: "Import",
         exportBookmarks: "Export",
         settings: "Settings",
-        backToSidebar: "Back to filters & settings",
         settingsBack: "← Settings",
+        settingsBackLabel: "Close Settings and go back to filters & settings",
         displayGroup: "Display",
         thumbnails: "Thumbnails",
         darkMode: "Dark mode",
@@ -344,6 +373,10 @@ const ENGLISH_TEXT: UiText = {
         addToBookmark: "Add to bookmark",
         removeFromBookmark: "Remove from bookmark",
         backToThumbnail: "Back to thumbnail",
+        videoPlayer: "YouTube video player",
+        play: (title) => `Play “${title}”`,
+        reorderHandle: "Reorder (use the arrow keys to move)",
+        reordered: (title, position, total) => `Moved “${title}” to position ${position} of ${total}`,
         date: formatEnglishSongDate
     },
     results: {
@@ -355,6 +388,9 @@ const ENGLISH_TEXT: UiText = {
         connecting: "Connecting...",
         loadingData: "Loading data...",
         loadError: "Failed to load",
+        loadErrorDetail: "The song data could not be loaded. Check your connection and reload the page.",
+        appLoadErrorDetail: "The page could not be loaded. Check your connection and reload the page.",
+        reload: "Reload",
         loading: "Loading...",
         selectFormats: "Select at least one video type",
         notFound: "No songs found",

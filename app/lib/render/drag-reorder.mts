@@ -18,6 +18,17 @@ type HandlePointerDownEvent = Pick<PointerEvent, "currentTarget" | "pointerId" |
 /** 結果一覧がキャプチャしたポインタの、動いた・離した・取り消されたイベントのうち、並べ替えに使う部分。 */
 type ListPointerEvent = Pick<PointerEvent, "pointerId" | "clientX" | "clientY">;
 
+/** ハンドルにフォーカスして押したキーのイベントのうち、並べ替えに使う部分。 */
+type HandleKeyDownEvent = Pick<KeyboardEvent, "key" | "currentTarget" | "preventDefault">;
+
+/** ハンドルにフォーカスして押すと、カードを 1 つ前後へ動かすキーと、動かす向き。 */
+const KEYBOARD_MOVE_OFFSETS = new Map<string, number>([
+    ["ArrowUp", -1],
+    ["ArrowLeft", -1],
+    ["ArrowDown", 1],
+    ["ArrowRight", 1]
+]);
+
 type BookmarkDragReorderControllerInput = {
     data: BookmarkDragReorderDataState;
     moveSongInActiveBookmark: (fromSongKey: string, toSongKey: string) => StorageActionResult<{ ok: true; changed: boolean }>;
@@ -26,6 +37,16 @@ type BookmarkDragReorderControllerInput = {
     refreshDisplay: () => void;
     /** 結果カードを並べた一覧を返す。 */
     getResultList: () => HTMLElement | null;
+    /**
+     * キーボードでの並べ替えを保存する前に、移動先の位置までを結果一覧に表示させる。
+     * 移動先が追加表示の範囲の外だと、保存後の描き直しで動かしたカードが一覧から外れ、フォーカスも失うため。
+     */
+    showResultAt?: (index: number) => void;
+    /**
+     * キーボードでの並べ替えを保存した後に呼ぶ。動かしたカードのハンドルへフォーカスを戻し、移動先を伝えるために使う。
+     * toIndex は、保存した後の表示順での位置。
+     */
+    onKeyboardMove?: (songKey: string, toIndex: number) => void;
 };
 
 type PointInList = { x: number; y: number };
@@ -93,6 +114,7 @@ export function findCardAtPoint(list: HTMLElement, point: PointInList): HTMLElem
  * マウスもタッチも同じく Pointer Events で扱う。HTML の Drag and Drop は、Android の Firefox がタッチで始められないので使わない。
  * ドラッグ中は、ポインタの下のカードの位置へ移動元を移して見せ、他のカードをよけさせる（プレビュー）。
  * 保存する順序は、一覧の中で離したときに、見えている順序で確定する。一覧の外で離したときや取り消したときは元の順序へ戻す。
+ * ポインタを使えない人のために、ハンドルにフォーカスして矢印キーを押すと、1 つ前後へ動かしてその場で保存する。
  */
 export function createBookmarkDragReorderController(input: BookmarkDragReorderControllerInput) {
     const {
@@ -100,7 +122,9 @@ export function createBookmarkDragReorderController(input: BookmarkDragReorderCo
         moveSongInActiveBookmark,
         onSaveFailure,
         refreshDisplay,
-        getResultList
+        getResultList,
+        showResultAt,
+        onKeyboardMove
     } = input;
     /** ハンドルから始めた並べ替えのドラッグの間だけ、移動元の曲キーを持つ。 */
     let draggedSongKey: string | null = null;
@@ -173,6 +197,38 @@ export function createBookmarkDragReorderController(input: BookmarkDragReorderCo
         document.addEventListener("contextmenu", preventContextMenu);
         // ページの scroll は document に、スクロールする要素の scroll は捕捉で受ける。
         document.addEventListener("scroll", onDocumentScroll, { capture: true, passive: true });
+    }
+
+    /**
+     * ハンドルにフォーカスして矢印キーを押したら、カードを 1 つ前後へ動かして保存する。
+     * 上と左は 1 つ前、下と右は 1 つ後ろへ動かす。プレビューは挟まず、押すたびに保存する。
+     * 端のカードで動かせないときも、矢印キーでページがスクロールしないよう、既定の動作は止める。
+     * ポインタでドラッグしている間は受け付けない。
+     * @param event ハンドルで起きた keydown のイベント
+     */
+    function onHandleKeyDown(event: HandleKeyDownEvent): void {
+        const offset = KEYBOARD_MOVE_OFFSETS.get(event.key);
+        if (offset === undefined || !data.activeBookmark || dragPointerId !== null) return;
+        const songKey = getSongCardFromTarget(event.currentTarget)?.dataset.songKey || "";
+        if (!songKey) return;
+        event.preventDefault();
+        const fromIndex = data.currentResults.findIndex((row) => row.songKey === songKey);
+        if (fromIndex === -1) return;
+        const toIndex = fromIndex + offset;
+        const targetKey = data.currentResults[toIndex]?.songKey || "";
+        if (!targetKey) return;
+        showResultAt?.(toIndex);
+        const list = getResultList();
+        const previousPositions = captureCardPositions(list);
+        // 保存に成功すると、ブックマーク操作 API が保存した順序で結果一覧を描き直す。
+        const saveResult = moveSongInActiveBookmark(songKey, targetKey);
+        if (saveResult.ok === false) {
+            onSaveFailure(saveResult);
+            return;
+        }
+        if (!saveResult.changed) return;
+        animateCardReorder(list, previousPositions, songKey);
+        onKeyboardMove?.(songKey, toIndex);
     }
 
     /**
@@ -338,6 +394,7 @@ export function createBookmarkDragReorderController(input: BookmarkDragReorderCo
         isDraggingSong,
         orderForPreview,
         onHandlePointerDown,
+        onHandleKeyDown,
         onListPointerMove,
         onListPointerUp,
         onListPointerCancel

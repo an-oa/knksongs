@@ -86,3 +86,34 @@ export function getPartialDateKeyRange(
     const key = toDateKey({ year, month, day });
     return { minKey: key, maxKey: key };
 }
+
+/**
+ * 年・年月・年月日の文字列 (YYYY・YYYY-MM・YYYY-MM-DD。区切りは / でもよい) を部分日付値へ解析する。
+ * 検索条件の状態と保存データは、日付をこの文字列で持つ。
+ * @param text 日付の文字列
+ * @returns 部分日付値。空文字や形式に合わない値なら null
+ */
+export function parsePartialDateText(text: string | null | undefined): PartialDateValue | null {
+    if (!text) return null;
+    const match = /^(\d{4})(?:[/-](\d{1,2})(?:[/-](\d{1,2}))?)?$/.exec(text.trim());
+    if (!match) return null;
+    return normalizePartialDateParts({
+        year: match[1],
+        month: match[2] ?? "",
+        day: match[3] ?? ""
+    });
+}
+
+/**
+ * 部分日付値を、精度に応じた YYYY・YYYY-MM・YYYY-MM-DD の文字列にする。
+ * @param value 部分日付値
+ * @returns 日付の文字列。値がなければ空文字
+ */
+export function formatPartialDateValue(value: PartialDateValue | null): string {
+    if (!value) return "";
+    const year = String(value.year).padStart(4, "0");
+    if (value.precision === "year" || value.month === null) return year;
+    const month = String(value.month).padStart(2, "0");
+    if (value.precision === "month" || value.day === null) return `${year}-${month}`;
+    return `${year}-${month}-${String(value.day).padStart(2, "0")}`;
+}

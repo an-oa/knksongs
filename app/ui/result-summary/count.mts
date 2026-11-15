@@ -1,5 +1,5 @@
 import { getUiText, type ResultCountSummary } from "../../lib/ui-text.mjs";
-import type { SiteLanguageUiRuntimeState } from "../../state.types";
+import type { SiteLanguageUiRuntimeState } from "../../state.types.mjs";
 
 /**
  * 結果一覧の上の件数表示に出す内容。言語を切り替えたときに今の言語で書き直せるよう、文言ではなく状態で持つ。

@@ -41,7 +41,8 @@ function runInlineScript(source: string, input: InlineScriptInput) {
         localStorage,
         navigator: { languages: input.preferredLanguages, language: input.preferredLanguages[0] ?? "" },
         location: { search: input.search },
-        window: { matchMedia: () => ({ matches: false }) },
+        // 入口の script を読み込めなかったときの表示も同じスクリプトが登録する。言語の判定には関わらない。
+        window: { matchMedia: () => ({ matches: false }), addEventListener() {} },
         URLSearchParams,
         setTimeout: (_callback: () => void, ms: number) => { timeouts.push(ms); }
     });

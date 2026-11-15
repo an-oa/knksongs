@@ -2,10 +2,13 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <!-- テーマと言語の初期化だけを SHA-256 で許可し、YouTube API の script は必要な path に限定する。 -->
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-dVbQd0MMdvnWvuB2DHfgdemsr4Cg2QL1JvqSzHdCE5c=' https://www.youtube.com/iframe_api https://www.youtube.com/s/player/; script-src-attr 'none'; style-src 'self'; img-src 'self' https://i.ytimg.com; connect-src 'self' https://docs.google.com https://*.googleusercontent.com; frame-src https://www.youtube.com/embed/ https://www.youtube-nocookie.com/embed/; object-src 'none'; base-uri 'none'; form-action 'none'">
+  <!-- 埋め込みスクリプト (テーマと言語の初期化、入口の script を読み込めなかったときの表示) だけを SHA-256 で許可し、
+       YouTube API の script は必要な path に限定する。 -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-YOqdzavZ/sFP/UEFJLATiBqWN5vjlpsxUIPl1+OgAc0=' https://www.youtube.com/iframe_api https://www.youtube.com/s/player/; script-src-attr 'none'; style-src 'self'; img-src 'self' https://i.ytimg.com; connect-src 'self' https://docs.google.com https://*.googleusercontent.com; frame-src https://www.youtube.com/embed/ https://www.youtube-nocookie.com/embed/; object-src 'none'; base-uri 'none'; form-action 'none'">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title data-i18n="siteTitle">鐘輝かう 歌サーチ</title>
+  <!-- 検索結果に出る説明文。共有カードの説明 (og:description) と同じ文にする。 -->
+  <meta name="description" content="非公式ファンサイト。曲名・アーティスト名・読みで検索。配信/歌みた/ショート/切り抜き/収録、コラボ種別、リレー/ハモリ、日付範囲で絞り込み。" />
 
   <!-- Canonical -->
   <link rel="canonical" href="https://an-oa.github.io/knksongs/" />
@@ -81,6 +84,43 @@
         root.classList.add('i18n-pending');
         setTimeout(function () { root.classList.remove('i18n-pending'); }, 4000);
       }
+      // アプリの入口の script (startup) か、その依存を読み込めなかったときは、アプリのコードが 1 行も動かない。
+      // 何も出さないと「接続中...」のまま止まるので、ここで失敗と再読み込みのボタンを出す。
+      // 入口が動いた後の失敗は app/startup-error.mts が出す。見た目と文言はそれと同じにし、
+      // tests/inline-startup-error-script.test.mts で一致を確かめる。
+      window.addEventListener('error', function (event) {
+        var script = event.target;
+        if (!script || script.tagName !== 'SCRIPT' || script.type !== 'module') return;
+        var text = root.lang === 'en'
+          ? ['Failed to load', 'The page could not be loaded. Check your connection and reload the page.', 'Reload']
+          : ['読込エラー', 'ページを読み込めませんでした。通信状況を確認して、ページを再読み込みしてください。', '再読み込み'];
+        root.classList.remove('i18n-pending');
+        var count = document.getElementById('resultCount');
+        if (count) count.textContent = text[0];
+        var list = document.getElementById('resultList');
+        if (list) {
+          var item = document.createElement('li');
+          item.className = 'result-empty-state result-load-error';
+          var detail = document.createElement('p');
+          detail.className = 'result-empty-state-title';
+          detail.textContent = text[1];
+          var reload = document.createElement('button');
+          reload.type = 'button';
+          reload.className = 'result-reload-btn';
+          reload.textContent = text[2];
+          reload.addEventListener('click', function () { location.reload(); });
+          item.append(detail, reload);
+          list.replaceChildren(item);
+        }
+        // WebKit は先読みに失敗した module を覚えていて、読み込み直しても取りに行かない。
+        // 取り直しておくと (失敗しても) 覚えていた失敗を捨てるので、次に読み込み直した時には取りに行く。
+        try {
+          var preloads = document.querySelectorAll('link[rel="modulepreload"]');
+          for (var j = 0; j < preloads.length; j++) {
+            fetch(preloads[j].href, { cache: 'reload' }).catch(function () {});
+          }
+        } catch (e) {}
+      }, true);
     })();
   </script>
   <link rel="stylesheet" href="styles.css">
@@ -90,7 +130,8 @@
 
   <div id="sidebar-overlay" class="overlay"></div>
 
-  <aside id="sidebar" class="sidebar" role="dialog" aria-modal="true" aria-labelledby="sidebar-title" aria-hidden="true" popover="manual">
+  <!-- 役割は dialog。aside は dialog の役割を持てない要素なので、div にする。 -->
+  <div id="sidebar" class="sidebar" role="dialog" aria-modal="true" aria-labelledby="sidebar-title" aria-hidden="true" popover="manual">
     <div class="sidebar-sheet">
     <div class="sidebar-header">
       <div class="sidebar-title-group">
@@ -103,6 +144,8 @@
       <div class="sidebar-actions">
         <button id="clearBtn" class="text-clear-btn" type="button" data-i18n="clearConditions">条件をクリア</button>
       </div>
+      <!-- 検索条件と設定の入力欄は、アプリが持つ状態と保存値から映す。autocomplete="off" を付けて、
+           ブラウザが再読み込みや「戻る」で前の値を復元し、状態と食い違うのを防ぐ。 -->
       <section class="sidebar-group">
         <div class="sidebar-group-body">
           <fieldset class="sidebar-section sidebar-fieldset">
@@ -111,11 +154,11 @@
               <span class="section-label date-row-label">From</span>
               <div class="date-select-group">
                 <label class="visually-hidden" for="dateFromYear" data-i18n="dateFromYear">開始年</label>
-                <select id="dateFromYear" class="date-select year"></select>
+                <select id="dateFromYear" class="date-select year" autocomplete="off"></select>
                 <label class="visually-hidden" for="dateFromMonth" data-i18n="dateFromMonth">開始月</label>
-                <select id="dateFromMonth" class="date-select month"></select>
+                <select id="dateFromMonth" class="date-select month" autocomplete="off"></select>
                 <label class="visually-hidden" for="dateFromDay" data-i18n="dateFromDay">開始日</label>
-                <select id="dateFromDay" class="date-select day"></select>
+                <select id="dateFromDay" class="date-select day" autocomplete="off"></select>
               </div>
               <button id="clearDateFromBtn" class="date-clear-btn" aria-label="開始日をクリア" data-i18n-aria-label="clearDateFrom">&times;</button>
             </div>
@@ -123,11 +166,11 @@
               <span class="section-label date-row-label">To</span>
               <div class="date-select-group">
                 <label class="visually-hidden" for="dateToYear" data-i18n="dateToYear">終了年</label>
-                <select id="dateToYear" class="date-select year"></select>
+                <select id="dateToYear" class="date-select year" autocomplete="off"></select>
                 <label class="visually-hidden" for="dateToMonth" data-i18n="dateToMonth">終了月</label>
-                <select id="dateToMonth" class="date-select month"></select>
+                <select id="dateToMonth" class="date-select month" autocomplete="off"></select>
                 <label class="visually-hidden" for="dateToDay" data-i18n="dateToDay">終了日</label>
-                <select id="dateToDay" class="date-select day"></select>
+                <select id="dateToDay" class="date-select day" autocomplete="off"></select>
               </div>
               <button id="clearDateToBtn" class="date-clear-btn" aria-label="終了日をクリア" data-i18n-aria-label="clearDateTo">&times;</button>
             </div>
@@ -140,10 +183,10 @@
 
           <fieldset class="sidebar-section sidebar-fieldset sidebar-flags">
             <legend class="visually-hidden" data-i18n="moreFilters">追加条件</legend>
-            <label class="checkbox-item" for="relayOnly"><input type="checkbox" id="relayOnly"> <span data-i18n="relayOnly">歌枠リレー</span></label>
-            <label class="checkbox-item" for="collabHostOnly"><input type="checkbox" id="collabHostOnly"> <span data-i18n="collabHostOnly">コラボ(ホスト)</span></label>
-            <label class="checkbox-item" for="harmonyOnly"><input type="checkbox" id="harmonyOnly"> <span data-i18n="harmonyOnly">ハモリあり</span></label>
-            <label class="checkbox-item" for="collabGuestOnly"><input type="checkbox" id="collabGuestOnly"> <span data-i18n="collabGuestOnly">コラボ(ゲスト)</span></label>
+            <label class="checkbox-item" for="relayOnly"><input type="checkbox" id="relayOnly" autocomplete="off"> <span data-i18n="relayOnly">歌枠リレー</span></label>
+            <label class="checkbox-item" for="collabHostOnly"><input type="checkbox" id="collabHostOnly" autocomplete="off"> <span data-i18n="collabHostOnly">コラボ(ホスト)</span></label>
+            <label class="checkbox-item" for="harmonyOnly"><input type="checkbox" id="harmonyOnly" autocomplete="off"> <span data-i18n="harmonyOnly">ハモリあり</span></label>
+            <label class="checkbox-item" for="collabGuestOnly"><input type="checkbox" id="collabGuestOnly" autocomplete="off"> <span data-i18n="collabGuestOnly">コラボ(ゲスト)</span></label>
           </fieldset>
         </div>
       </section>
@@ -161,33 +204,34 @@
 
     <div id="settings-sidebar-panel" class="sidebar-subpanel" aria-hidden="true" hidden>
       <div class="sidebar-subpanel-header">
-        <button id="close-settings-panel" class="sidebar-subpanel-back" type="button" aria-label="検索・設定に戻る" data-i18n-aria-label="backToSidebar" data-i18n="settingsBack">← 設定</button>
+        <button id="close-settings-panel" class="sidebar-subpanel-back" type="button" aria-label="設定を閉じて、絞り込み・設定に戻る" data-i18n-aria-label="settingsBackLabel" data-i18n="settingsBack">← 設定</button>
         <button id="close-settings-sidebar" class="close-btn" aria-label="閉じる" data-i18n-aria-label="close">&times;</button>
       </div>
       <div class="sidebar-subpanel-body">
+        <!-- スイッチは小さいので、行全体を label にして、項目名を押しても切り替わるようにする。 -->
         <section class="sidebar-group">
           <div class="sidebar-group-header">
             <div class="sidebar-group-title" data-i18n="displayGroup">表示</div>
           </div>
           <div class="sidebar-group-body">
             <div class="sidebar-section sidebar-setting-item">
-              <div class="menu-item-toggle">
+              <label class="menu-item-toggle" for="thumbnail-toggle">
                 <span id="thumbnail-toggle-label" data-i18n="thumbnails">サムネイル表示</span>
-                <label class="switch">
-                  <input type="checkbox" id="thumbnail-toggle" aria-labelledby="thumbnail-toggle-label">
+                <span class="switch">
+                  <input type="checkbox" id="thumbnail-toggle" autocomplete="off" aria-labelledby="thumbnail-toggle-label">
                   <span class="slider"></span>
-                </label>
-              </div>
+                </span>
+              </label>
             </div>
 
             <div class="sidebar-section sidebar-setting-item">
-              <div class="menu-item-toggle">
+              <label class="menu-item-toggle" for="theme-toggle">
                 <span id="theme-toggle-label" data-i18n="darkMode">ダークモード</span>
-                <label class="switch">
-                  <input type="checkbox" id="theme-toggle" aria-labelledby="theme-toggle-label">
+                <span class="switch">
+                  <input type="checkbox" id="theme-toggle" autocomplete="off" aria-labelledby="theme-toggle-label">
                   <span class="slider"></span>
-                </label>
-              </div>
+                </span>
+              </label>
             </div>
 
           </div>
@@ -200,26 +244,26 @@
           <div class="sidebar-group-body">
             <div class="sidebar-section sidebar-setting-item">
               <div class="setting-item-copy">
-                <div class="menu-item-toggle">
+                <label class="menu-item-toggle" for="youtube-nocookie-toggle">
                   <span id="youtube-nocookie-toggle-label" data-i18n="privacyMode">プライバシー強化</span>
-                  <label class="switch">
-                    <input type="checkbox" id="youtube-nocookie-toggle" aria-labelledby="youtube-nocookie-toggle-label" aria-describedby="youtube-nocookie-toggle-help">
+                  <span class="switch">
+                    <input type="checkbox" id="youtube-nocookie-toggle" autocomplete="off" aria-labelledby="youtube-nocookie-toggle-label" aria-describedby="youtube-nocookie-toggle-help">
                     <span class="slider"></span>
-                  </label>
-                </div>
+                  </span>
+                </label>
                 <div id="youtube-nocookie-toggle-help" class="setting-item-help" data-i18n="privacyModeHelp">youtube-nocookie.com を使用します。</div>
               </div>
             </div>
 
             <div class="sidebar-section sidebar-setting-item">
               <div class="setting-item-copy">
-                <div class="menu-item-toggle">
+                <label class="menu-item-toggle" for="play-archive-to-end-toggle">
                   <span id="play-archive-to-end-toggle-label" data-i18n="playArchiveToEnd">アーカイブ全体を再生</span>
-                  <label class="switch">
-                    <input type="checkbox" id="play-archive-to-end-toggle" aria-labelledby="play-archive-to-end-toggle-label" aria-describedby="play-archive-to-end-toggle-help">
+                  <span class="switch">
+                    <input type="checkbox" id="play-archive-to-end-toggle" autocomplete="off" aria-labelledby="play-archive-to-end-toggle-label" aria-describedby="play-archive-to-end-toggle-help">
                     <span class="slider"></span>
-                  </label>
-                </div>
+                  </span>
+                </label>
                 <div id="play-archive-to-end-toggle-help" class="setting-item-help" data-i18n="playArchiveToEndHelp">OFFでは曲の終わりで停止します。</div>
               </div>
             </div>
@@ -227,26 +271,26 @@
             <div id="experimental-playback-settings" aria-hidden="true" hidden>
               <div class="sidebar-section sidebar-setting-item">
                 <div class="setting-item-copy">
-                  <div class="menu-item-toggle">
+                  <label class="menu-item-toggle" for="continuous-playback-toggle">
                     <span id="continuous-playback-toggle-label" data-i18n="continuousPlayback">終了後、次の曲を再生</span>
-                    <label class="switch">
-                      <input type="checkbox" id="continuous-playback-toggle" aria-labelledby="continuous-playback-toggle-label">
+                    <span class="switch">
+                      <input type="checkbox" id="continuous-playback-toggle" autocomplete="off" aria-labelledby="continuous-playback-toggle-label">
                       <span class="slider"></span>
-                    </label>
-                  </div>
+                    </span>
+                  </label>
                   <div class="setting-item-help" data-i18n="continuousPlaybackHelp">現在の一覧で、次の曲へ順に進みます。</div>
                 </div>
               </div>
 
               <div class="sidebar-section sidebar-setting-item">
                 <div class="setting-item-copy">
-                  <div class="menu-item-toggle">
+                  <label class="menu-item-toggle" for="loop-playback-toggle">
                     <span id="loop-playback-toggle-label" data-i18n="loopPlayback">リピート再生</span>
-                    <label class="switch">
-                      <input type="checkbox" id="loop-playback-toggle" aria-labelledby="loop-playback-toggle-label">
+                    <span class="switch">
+                      <input type="checkbox" id="loop-playback-toggle" autocomplete="off" aria-labelledby="loop-playback-toggle-label">
                       <span class="slider"></span>
-                    </label>
-                  </div>
+                    </span>
+                  </label>
                   <div class="setting-item-help" data-i18n="loopPlaybackHelp">「終了後、次の曲を再生」がOFFでは1曲、ONでは一覧全体を繰り返します。</div>
                 </div>
               </div>
@@ -258,7 +302,7 @@
 
     <div id="bookmark-sidebar-panel" class="sidebar-subpanel" aria-hidden="true" hidden>
       <div class="sidebar-subpanel-header">
-        <button id="close-bookmark-panel" class="sidebar-subpanel-back" type="button" aria-label="検索・設定に戻る" data-i18n-aria-label="backToSidebar" data-i18n="bookmarksBack">← ブックマーク</button>
+        <button id="close-bookmark-panel" class="sidebar-subpanel-back" type="button" aria-label="ブックマークを閉じて、絞り込み・設定に戻る" data-i18n-aria-label="bookmarksBackLabel" data-i18n="bookmarksBack">← ブックマーク</button>
         <button id="close-bookmark-sidebar" class="close-btn" aria-label="閉じる" data-i18n-aria-label="close">&times;</button>
       </div>
       <div class="sidebar-subpanel-body">
@@ -277,9 +321,11 @@
       </div>
     </div>
     </div>
-  </aside>
+  </div>
 
-  <main class="main-content">
+  <!-- サイドバーを開いている間、背面をまとめて inert にするための枠。
+       header と footer をページ全体のランドマーク (banner / contentinfo) にするため、main の外に置く。 -->
+  <div class="main-content">
     <header class="header">
       <h1 class="header-title">
         <img class="header-logo" src="goggles.svg" alt="" width="48" height="36">
@@ -307,11 +353,11 @@
           <path d="M20 0h120c-3 14-14 24-29 27-11 2-17 12-31 14-17 2-32-6-39-19C35 13 25 6 20 0z"/>
           <path d="M70 64c3-11 13-19 26-21 9-1 14-6 24-6 14 0 26 10 30 27z"/>
         </svg>
-        <div class="header-search">
+        <search class="header-search">
           <svg class="header-search-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5 21 21"/></svg>
           <label class="visually-hidden" for="searchBox" data-i18n="searchLabel">曲名・アーティスト名・読みで検索</label>
-          <input type="text" id="searchBox" placeholder="曲名・歌手・読み..." data-i18n-placeholder="searchPlaceholder" aria-errormessage="searchBoxError" disabled>
-        </div>
+          <input type="text" id="searchBox" placeholder="曲名・歌手・読み..." data-i18n-placeholder="searchPlaceholder" aria-errormessage="searchBoxError" enterkeyhint="search" autocomplete="off" autocapitalize="none" spellcheck="false" disabled>
+        </search>
         <svg class="header-spots header-spots-wide header-spots-wide-right" viewBox="0 0 170 64" aria-hidden="true" focusable="false">
           <path d="M10 0h100c-2 12-10 22-24 25-10 2-14 12-28 13-15 1-27-7-33-18C21 12 14 6 10 0z"/>
           <path d="M136 30c6-6 19-7 24 0 5 6 1 15-8 17-10 2-20-2-21-9 0-3 2-6 5-8z"/>
@@ -339,17 +385,19 @@
       </div>
     </header>
 
-    <section class="container" aria-labelledby="result-list-title">
+    <main class="container" aria-labelledby="result-list-title">
       <h2 id="result-list-title" class="visually-hidden" data-i18n="searchResults">検索結果</h2>
       <div class="result-summary">
-        <p id="resultCount" class="result-summary-count">接続中...</p>
+        <p id="resultCount" class="result-summary-count" role="status">接続中...</p>
         <ul id="resultConditions" class="result-conditions" aria-label="適用中の条件" data-i18n-aria-label="activeFilters"></ul>
         <button id="resultClearAll" class="result-clear-all" type="button" data-i18n="clearAll" hidden>すべてクリア</button>
       </div>
       <p id="searchBoxError" class="search-query-error" aria-live="polite" hidden></p>
+      <!-- キーボードでの並べ替えの結果など、画面には出さず読み上げだけで伝える内容を書く。 -->
+      <p id="resultAnnouncement" class="visually-hidden" role="status"></p>
       <ol id="resultList" class="result-list"></ol>
       <div id="resultTailSentinel" class="result-tail-sentinel" aria-hidden="true" hidden></div>
-    </section>
+    </main>
 
     <footer class="site-footer">
       <p>
@@ -357,7 +405,7 @@
         <span data-i18n="footerSource">YouTube 上の公開情報を参照しており、コンテンツの再配布は行いません。</span>
       </p>
     </footer>
-  </main>
+  </div>
   <div id="bookmark-notification-region" class="bookmark-toast-region" aria-live="polite" aria-atomic="false"></div>
 </body>
 </html>

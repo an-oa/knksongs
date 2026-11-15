@@ -7,7 +7,7 @@ import {
     isPostPlaybackAdFinishedPlayerState,
     YOUTUBE_POST_PLAYBACK_AD_RESTORE_POLL_MS
 } from "../app/lib/youtube/post-playback-ad-restore.mts";
-import type { YoutubePlayerLike } from "../app/lib/youtube/iframe-api.types";
+import type { YoutubePlayerLike } from "../app/lib/youtube/iframe-api.types.mts";
 import { YOUTUBE_PLAYER_STATE } from "../app/lib/youtube/player-state.mts";
 import {
     installFakeDom,

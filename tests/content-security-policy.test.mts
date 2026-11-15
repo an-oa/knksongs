@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 
-test("CSP permits the initial theme and language script with its exact hash", async () => {
+test("CSP permits the inline startup script with its exact hash", async () => {
     const html = await readFile(new URL("../public/index.html", import.meta.url), "utf8");
     const policy = html.match(/http-equiv="Content-Security-Policy" content="([^"]+)"/)?.[1];
     assert.ok(policy);
@@ -12,7 +12,7 @@ test("CSP permits the initial theme and language script with its exact hash", as
     assert.equal(scripts.length, 1);
     for (const [, source] of scripts) {
         const hash = createHash("sha256").update(source).digest("base64");
-        assert.ok(policy.includes(`'sha256-${hash}'`), "update the CSP hash when changing the theme and language initializer");
+        assert.ok(policy.includes(`'sha256-${hash}'`), "update the CSP hash when changing the inline script");
     }
     assert.ok(!policy.includes("'unsafe-inline'"));
     assert.ok(!policy.includes("'unsafe-eval'"));

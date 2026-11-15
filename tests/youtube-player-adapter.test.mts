@@ -5,7 +5,7 @@ import {
     YT_NOCOOKIE_EMBED_HOST
 } from "../app/lib/youtube/embed.mts";
 import { createYoutubePlayerAdapter } from "../app/lib/youtube/player-adapter.mts";
-import type { YoutubePlayerEvent } from "../app/lib/youtube/iframe-api.types";
+import type { YoutubePlayerEvent } from "../app/lib/youtube/iframe-api.types.mts";
 import type { YoutubeSharedPlaybackState } from "../app/lib/youtube/shared-playback.mts";
 import { createYoutubeIframeApiFixture } from "./fixtures/youtube-api.mts";
 import { installFakeDom } from "./test-helpers.mts";

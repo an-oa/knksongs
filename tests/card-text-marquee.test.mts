@@ -81,7 +81,7 @@ test("card text marquee: scrolls only the names that do not fit while a mouse po
         // 曲名は 80px はみ出し、アーティスト名はちょうど収まる。
         const { card, title, artist } = createCard(280, 200);
 
-        void invokeListener(card, "pointerenter", { pointerType: "mouse" });
+        invokeListener(card, "pointerenter", { pointerType: "mouse" });
 
         // 1 回分は、先頭で 0.5 秒かけて表し、1 秒止め、80px を 1 秒に 40px で 2 秒かけて流し、末尾で 1 秒止め、0.5 秒かけて消す。
         // 1 回目は表し終えた所から始め、最後は 4 回目の表し終えた所で終わる。
@@ -110,7 +110,7 @@ test("card text marquee: does not scroll when reduced motion is preferred", () =
     try {
         const { card, title } = createCard(280, 200);
         window.matchMedia = (query) => ({ matches: query === "(prefers-reduced-motion: reduce)" }) as unknown as MediaQueryList;
-        void invokeListener(card, "pointerenter", { pointerType: "mouse" });
+        invokeListener(card, "pointerenter", { pointerType: "mouse" });
         assert.deepEqual(title.calls, []);
         assert.equal(title.target.box.classList.contains(MARQUEE_CLASS), false);
     } finally {
@@ -127,26 +127,26 @@ test("card text marquee: a tap keeps the names scrolling until another place is 
         const outside = document.createElement("div");
 
         // タッチの出入りと、マウスのクリック、キーボードで開いたときの click では流さない。
-        void invokeListener(card, "pointerenter", { pointerType: "touch" });
-        void invokeListener(card, "pointerdown", { pointerType: "mouse", target: inside });
-        void invokeListener(card, "click", { target: inside, detail: 1 });
-        void invokeListener(card, "click", { target: inside, detail: 0 });
+        invokeListener(card, "pointerenter", { pointerType: "touch" });
+        invokeListener(card, "pointerdown", { pointerType: "mouse", target: inside });
+        invokeListener(card, "click", { target: inside, detail: 1 });
+        invokeListener(card, "click", { target: inside, detail: 0 });
         assert.deepEqual(title.calls, []);
 
         // 指でなぞっただけでは click が届かず、流さない。
-        void invokeListener(card, "pointerdown", { pointerType: "touch", target: inside });
+        invokeListener(card, "pointerdown", { pointerType: "touch", target: inside });
         assert.deepEqual(title.calls, []);
 
         // タップの click で流し始め、指を離した直後に届くタッチの pointerleave では止めない。
-        void invokeListener(card, "click", { target: inside, detail: 1 });
+        invokeListener(card, "click", { target: inside, detail: 1 });
         const marquee = title.running[0];
-        void invokeListener(card, "pointerleave", { pointerType: "touch" });
+        invokeListener(card, "pointerleave", { pointerType: "touch" });
         assert.equal(marquee?.cancelled, false);
 
         // カードの中をタップしても止めず、外をタップすると止める。
-        void invokeListener(cleanup.document, "pointerup", { pointerType: "touch", target: inside });
+        invokeListener(cleanup.document, "pointerup", { pointerType: "touch", target: inside });
         assert.equal(marquee.cancelled, false);
-        void invokeListener(cleanup.document, "pointerup", { pointerType: "touch", target: outside });
+        invokeListener(cleanup.document, "pointerup", { pointerType: "touch", target: outside });
         assert.equal(marquee.cancelled, true);
         assert.equal(cleanup.document._events.has("pointerup"), false, "the outside tap listener is removed");
     } finally {
@@ -159,9 +159,9 @@ test("card text marquee: a tap outside also stops a scroll started by a mouse en
     try {
         // タッチの端末では、画面が変わったときにブラウザがマウスの出入りを送り、離れたことが届かないことがある。
         const { card, title } = createCard(280, 200);
-        void invokeListener(card, "pointerenter", { pointerType: "mouse" });
+        invokeListener(card, "pointerenter", { pointerType: "mouse" });
         const marquee = title.running[0];
-        void invokeListener(cleanup.document, "pointerup", { pointerType: "touch", target: document.createElement("div") });
+        invokeListener(cleanup.document, "pointerup", { pointerType: "touch", target: document.createElement("div") });
         assert.equal(marquee?.cancelled, true);
     } finally {
         cleanup();
@@ -176,12 +176,12 @@ test("card text marquee: a swipe followed by a keyboard click is not taken for a
         const outside = document.createElement("a");
 
         // スクロールしない一覧を指でなぞると、押した記録だけが残り、click は届かない。
-        void invokeListener(card, "pointerdown", { pointerType: "touch", target: link });
+        invokeListener(card, "pointerdown", { pointerType: "touch", target: link });
         // その後、キーボードでリンクへ移って Enter を押し、カードの外へ移る。
-        void invokeListener(card, "focusin", { target: link });
+        invokeListener(card, "focusin", { target: link });
         const marquee = title.running[0];
-        void invokeListener(card, "click", { target: link, detail: 0 });
-        void invokeListener(card, "focusout", { target: link, relatedTarget: outside });
+        invokeListener(card, "click", { target: link, detail: 0 });
+        invokeListener(card, "focusout", { target: link, relatedTarget: outside });
 
         assert.equal(marquee?.cancelled, true);
         assert.equal(cleanup.document._events.has("pointerup"), false);
@@ -194,9 +194,9 @@ test("card text marquee: a press canceled by scrolling is not paired with a late
     const cleanup = installFakeDom();
     try {
         const { card, title } = createCard(280, 200);
-        void invokeListener(card, "pointerdown", { pointerType: "touch", target: card });
-        void invokeListener(card, "pointercancel", { pointerType: "touch", target: card });
-        void invokeListener(card, "click", { target: card, detail: 1 });
+        invokeListener(card, "pointerdown", { pointerType: "touch", target: card });
+        invokeListener(card, "pointercancel", { pointerType: "touch", target: card });
+        invokeListener(card, "click", { target: card, detail: 1 });
         assert.deepEqual(title.calls, []);
     } finally {
         cleanup();
@@ -212,12 +212,12 @@ test("card text marquee: cards removed from the list stop and drop the outside l
         for (let i = 0; i < 3; i++) {
             const { card, title } = createCard(280, 200);
             const button = appendFocusable(card, false);
-            void invokeListener(card, "pointerenter", { pointerType: "mouse" });
-            void invokeListener(card, "focusin", { target: button });
+            invokeListener(card, "pointerenter", { pointerType: "mouse" });
+            invokeListener(card, "focusin", { target: button });
             const marquee = title.running[0];
             document.body.removeChild(card);
 
-            void invokeListener(cleanup.document, "pointerup", { pointerType: "mouse", target: searchBox });
+            invokeListener(cleanup.document, "pointerup", { pointerType: "mouse", target: searchBox });
 
             assert.equal(marquee?.cancelled, true);
             assert.equal(cleanup.document._events.has("pointerup"), false, `no listener is left after removal ${i + 1}`);
@@ -233,9 +233,9 @@ test("card text marquee: releasing a mouse button outside the card stops the scr
         const { card, title } = createCard(280, 200);
         const outside = document.createElement("div");
         document.body.appendChild(outside);
-        void invokeListener(card, "pointerenter", { pointerType: "mouse" });
+        invokeListener(card, "pointerenter", { pointerType: "mouse" });
         const marquee = title.running[0];
-        void invokeListener(cleanup.document, "pointerup", { pointerType: "mouse", target: outside });
+        invokeListener(cleanup.document, "pointerup", { pointerType: "mouse", target: outside });
         assert.equal(marquee?.cancelled, true);
     } finally {
         cleanup();
@@ -248,10 +248,10 @@ test("card text marquee: leaving the card stops only the name scroll and brings 
         const { card, title } = createCard(280, 200);
         const other = { id: "other", cancelled: false, cancel() { this.cancelled = true; } };
         title.running.push(other as unknown as MockAnimation);
-        void invokeListener(card, "pointerenter", { pointerType: "mouse" });
+        invokeListener(card, "pointerenter", { pointerType: "mouse" });
         const marquee = title.running.find((animation) => animation.id === MARQUEE_ANIMATION_ID);
 
-        void invokeListener(card, "pointerleave", { pointerType: "mouse" });
+        invokeListener(card, "pointerleave", { pointerType: "mouse" });
 
         assert.equal(marquee?.cancelled, true);
         assert.equal(other.cancelled, false);
@@ -265,12 +265,12 @@ test("card text marquee: finishing brings back the ellipsis unless a new scroll 
     const cleanup = installFakeDom();
     try {
         const { card, title } = createCard(280, 200);
-        void invokeListener(card, "pointerenter", { pointerType: "mouse" });
+        invokeListener(card, "pointerenter", { pointerType: "mouse" });
         const first = title.running[0];
 
         // 終わりの通知が届く前に、カードから離れてもう一度指し、流し直す。
-        void invokeListener(card, "pointerleave", { pointerType: "mouse" });
-        void invokeListener(card, "pointerenter", { pointerType: "mouse" });
+        invokeListener(card, "pointerleave", { pointerType: "mouse" });
+        invokeListener(card, "pointerenter", { pointerType: "mouse" });
         const second = title.running[0];
         first.notifyFinish();
         assert.equal(first.cancelled, true);
@@ -304,17 +304,17 @@ test("card text marquee: scrolls while keyboard focus stays in the card and stop
         const button = appendFocusable(card, true);
         const outside = document.createElement("a");
 
-        void invokeListener(card, "focusin", { target: link });
+        invokeListener(card, "focusin", { target: link });
         assert.equal(title.calls.length, 1);
         const marquee = title.running[0];
 
         // カード内のリンクからボタンへ移っても、流している途中から先頭へ戻さない。
-        void invokeListener(card, "focusout", { target: link, relatedTarget: button });
-        void invokeListener(card, "focusin", { target: button });
+        invokeListener(card, "focusout", { target: link, relatedTarget: button });
+        invokeListener(card, "focusin", { target: button });
         assert.equal(title.calls.length, 1);
         assert.equal(marquee.cancelled, false);
 
-        void invokeListener(card, "focusout", { target: button, relatedTarget: outside });
+        invokeListener(card, "focusout", { target: button, relatedTarget: outside });
         assert.equal(marquee.cancelled, true);
         assert.equal(title.target.box.classList.contains(MARQUEE_CLASS), false);
     } finally {
@@ -327,12 +327,12 @@ test("card text marquee: focus from a mouse click or with reduced motion does no
     try {
         const { card, title } = createCard(280, 200);
         const clicked = appendFocusable(card, false);
-        void invokeListener(card, "focusin", { target: clicked });
+        invokeListener(card, "focusin", { target: clicked });
         assert.deepEqual(title.calls, []);
 
         window.matchMedia = (query) => ({ matches: query === "(prefers-reduced-motion: reduce)" }) as unknown as MediaQueryList;
         const focused = appendFocusable(card, true);
-        void invokeListener(card, "focusin", { target: focused });
+        invokeListener(card, "focusin", { target: focused });
         assert.deepEqual(title.calls, []);
     } finally {
         cleanup();
@@ -346,21 +346,21 @@ test("card text marquee: keeps scrolling until both the pointer and keyboard foc
         const link = appendFocusable(card, true);
 
         // 指してからフォーカスし、指すのをやめてもフォーカスが残る間は流す。
-        void invokeListener(card, "pointerenter", { pointerType: "mouse" });
-        void invokeListener(card, "focusin", { target: link });
+        invokeListener(card, "pointerenter", { pointerType: "mouse" });
+        invokeListener(card, "focusin", { target: link });
         assert.equal(title.calls.length, 1, "focusing while pointing does not restart the scroll");
-        void invokeListener(card, "pointerleave", { pointerType: "mouse" });
+        invokeListener(card, "pointerleave", { pointerType: "mouse" });
         assert.equal(title.running[0]?.cancelled, false);
-        void invokeListener(card, "focusout", { target: link, relatedTarget: null });
+        invokeListener(card, "focusout", { target: link, relatedTarget: null });
         assert.equal(title.running.length, 0);
 
         // フォーカスしてから指し、フォーカスが外れても指している間は流す。
-        void invokeListener(card, "focusin", { target: link });
+        invokeListener(card, "focusin", { target: link });
         const marquee = title.running[0];
-        void invokeListener(card, "pointerenter", { pointerType: "mouse" });
-        void invokeListener(card, "focusout", { target: link, relatedTarget: null });
+        invokeListener(card, "pointerenter", { pointerType: "mouse" });
+        invokeListener(card, "focusout", { target: link, relatedTarget: null });
         assert.equal(marquee.cancelled, false);
-        void invokeListener(card, "pointerleave", { pointerType: "mouse" });
+        invokeListener(card, "pointerleave", { pointerType: "mouse" });
         assert.equal(marquee.cancelled, true);
     } finally {
         cleanup();

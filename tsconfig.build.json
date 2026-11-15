@@ -2,7 +2,6 @@
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "allowJs": false,
-    "checkJs": false,
     "noEmit": false,
     "declaration": false,
     "sourceMap": false,
@@ -12,7 +11,6 @@
   },
   "include": [
     "app/**/*.mts",
-    "app/**/*.d.ts",
     "types/**/*.d.ts"
   ]
 }

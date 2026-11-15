@@ -4,7 +4,8 @@
  * IFrame API を読み込み、結果カードのサムネイルの位置へ埋め込みプレーヤーを差し込んで再生する。
  * プレーヤーは同時に 1 つだけで、別のカードで再生するときは作り直す。
  * 再生セッション ID で古いイベントを除外し、開始の成否と未確定の判定、再生後の広告の監視、
- * 閉じるボタン、サムネイル画像の表示も受け持つ。
+ * 閉じるボタン、サムネイル画像を入れた再生ボタンの表示も受け持つ。
+ * サムネイルの中身を入れ替えるときは、キーボードのフォーカスを入れ替えた後の要素へ引き継ぐ。
  * 個別の処理は ../lib/youtube/* に分け、ここで ui.playback と youtube 状態につなぐ。
  *
  * 次の曲の選択は ./playback-session.mts、カードの配置は ./render.mts が担当し、
@@ -32,13 +33,18 @@ import {
 import {
     applyYoutubeThumbnailImage,
     clearYoutubeThumbnailPlaybackTarget,
-    createYoutubeThumbnailImage,
+    createYoutubeThumbnailPlayButton,
     getSongKeyFromYoutubeThumb,
+    getYoutubeThumbnailIdleRenderKey,
+    getYoutubeThumbnailPlayButtonForVideo,
+    getYoutubeThumbnailPlayButton,
+    getYoutubeThumbnailPlayLabel,
     getYoutubeThumbnailPlaybackEndSeconds,
     getYoutubeThumbnailPlaybackMode,
     getYoutubeThumbnailPlaybackSessionId,
     revealYoutubePlaybackCardIfNeeded,
     setYoutubeThumbnailExpandedCardState,
+    setYoutubeThumbnailIdleRenderKey,
     setYoutubeThumbnailOrientation,
     setYoutubeThumbnailPlaybackMode,
     setYoutubeThumbnailPlaybackSessionId,
@@ -70,8 +76,8 @@ import { createYoutubePostPlaybackAdRestoreManager } from "../lib/youtube/post-p
 import type {
     AppUiState,
     AppYoutubeRuntimeState
-} from "../state.types";
-import type { YoutubePlayerEvent, YoutubePlayerLike } from "../lib/youtube/iframe-api.types";
+} from "../state.types.mjs";
+import type { YoutubePlayerEvent, YoutubePlayerLike } from "../lib/youtube/iframe-api.types.mjs";
 
 export { extractYoutubeInfo } from "../lib/youtube-url.mjs";
 
@@ -245,6 +251,15 @@ export function createYoutubeController({ ui, youtube, constants }: YoutubeContr
     }
 
     /**
+     * サムネイルを復元した後に呼ぶ通知 (再生終了・再生開始失敗) の中で起きた例外を記録する。
+     * サムネイルは復元済みで画面は使えるので、止めずに記録だけ残す。
+     * @param error 通知先で起きた例外
+     */
+    function reportPlaybackHookError(error: unknown): void {
+        console.error("YouTube playback hook failed", error);
+    }
+
+    /**
      * 再生終了として扱い、サムネイル復元と継続再生通知を行う。
      */
     function completeEndedPlayback(thumbDiv: HTMLElement, playbackSessionId: number): void {
@@ -274,7 +289,7 @@ export function createYoutubeController({ ui, youtube, constants }: YoutubeContr
                     wasPlaybackStartUnconfirmed
                 }));
             }
-        });
+        }).catch(reportPlaybackHookError);
     }
 
     const postPlaybackAdRestore = createYoutubePostPlaybackAdRestoreManager({
@@ -459,10 +474,13 @@ export function createYoutubeController({ ui, youtube, constants }: YoutubeContr
 
     /**
      * 共有再生に使う iframe 要素を生成する。
+     * 読み上げ環境が枠の中身を伝えられるよう、名前 (title) を付けておく。
+     * 動画の情報が届くと YouTube の IFrame API が動画の題名へ書き換えるので、言語の切り替えでは書き直さない。
      */
     function createSharedPlaybackFrame() {
         if (!canUseDom()) return null;
         const iframe = document.createElement("iframe");
+        iframe.title = getUiText(ui.language.current).card.videoPlayer;
         applyYoutubePlayerIframeAttributes(iframe);
         return iframe;
     }
@@ -496,7 +514,7 @@ export function createYoutubeController({ ui, youtube, constants }: YoutubeContr
             event.stopPropagation();
             const activeThumb = playbackUi.activeThumb;
             if (!activeThumb) return;
-            restoreThumbnail(activeThumb, activeThumb.dataset.videoId || "");
+            void restoreThumbnail(activeThumb, activeThumb.dataset.videoId || "");
         });
         return close;
     }
@@ -581,7 +599,7 @@ export function createYoutubeController({ ui, youtube, constants }: YoutubeContr
                 errorCode: options && options.errorCode
             });
             handlePlaybackStartFailed(buildPlaybackStartFailedPayload(failedSongKey, playbackMode, options));
-        });
+        }).catch(reportPlaybackHookError);
     }
 
     /**
@@ -658,7 +676,20 @@ export function createYoutubeController({ ui, youtube, constants }: YoutubeContr
     }
 
     /**
+     * サムネイルの中にフォーカスがあるかを返す。
+     * 中の要素を入れ替えるとフォーカスが外れてページの先頭へ戻るので、入れ替える前に調べ、
+     * 入れ替えた後の要素 (閉じるボタンや再生ボタン) へ移すために使う。
+     * @param thumbDiv 調べるサムネイル要素
+     * @returns サムネイルの中の要素にフォーカスがあれば true
+     */
+    function hasFocusInsideThumb(thumbDiv: HTMLElement): boolean {
+        const active = canUseDom() ? document.activeElement : null;
+        return isHtmlElement(active) && thumbDiv.contains(active);
+    }
+
+    /**
      * 指定サムネイルへ共有プレーヤーを差し込み、iframe src から再生開始する。
+     * 再生ボタンにフォーカスがあったときは、入れ替わりで消えないよう閉じるボタンへ移す。
      */
     function mountSharedPlayback(
         thumbDiv: HTMLElement,
@@ -681,8 +712,10 @@ export function createYoutubeController({ ui, youtube, constants }: YoutubeContr
         if (!isHtmlElement(iframe) || !isHtmlElement(sharedPlayback.closeButton)) {
             return Promise.resolve(false);
         }
+        const hadFocus = hasFocusInsideThumb(thumbDiv);
         iframe.src = youtubeApi.buildEmbedUrl(yt, playbackMode);
         thumbDiv.replaceChildren(iframe, sharedPlayback.closeButton);
+        if (hadFocus) sharedPlayback.closeButton.focus({ preventScroll: true });
         sharedPlayback.hostThumb = thumbDiv;
         setSharedPlaybackSessionId(playbackSessionId);
         debugPlayback("youtube", "mountSharedPlayback using iframe src", {
@@ -746,10 +779,14 @@ export function createYoutubeController({ ui, youtube, constants }: YoutubeContr
 
     /**
      * サムネイルコンテナを再生状態から初期表示へリセットする。
+     * @param thumbDiv リセットするサムネイル要素
+     * @param playbackTarget 次に表示する曲の再生対象
+     * @param keptPlayButton 使い続ける再生ボタン。DOM から外すとフォーカスを失うので、これだけは残す
      */
     function resetThumbnailContainer(
         thumbDiv: HTMLElement,
-        playbackTarget: YoutubePlaybackTargetMetadata
+        playbackTarget: YoutubePlaybackTargetMetadata,
+        keptPlayButton: HTMLElement | null
     ): void {
         const previousSessionId = getYoutubeThumbnailPlaybackSessionId(thumbDiv);
         playbackStartAttempts.cancelForThumb(thumbDiv);
@@ -765,7 +802,13 @@ export function createYoutubeController({ ui, youtube, constants }: YoutubeContr
         thumbDiv.classList.remove("playing");
         setYoutubeThumbnailExpandedCardState(thumbDiv, false);
         thumbDiv.onclick = null;
-        thumbDiv.replaceChildren();
+        if (!keptPlayButton) {
+            thumbDiv.replaceChildren();
+            return;
+        }
+        for (const child of Array.from(thumbDiv.children)) {
+            if (child !== keptPlayButton) thumbDiv.removeChild(child);
+        }
     }
 
     /**
@@ -782,7 +825,7 @@ export function createYoutubeController({ ui, youtube, constants }: YoutubeContr
      */
     function setActiveThumb(thumbDiv: HTMLElement, options?: { preserveTransitionGeneration?: boolean }) {
         if (playbackUi.activeThumb && playbackUi.activeThumb !== thumbDiv) {
-            restoreThumbnail(playbackUi.activeThumb, playbackUi.activeThumb.dataset.videoId || "", {
+            void restoreThumbnail(playbackUi.activeThumb, playbackUi.activeThumb.dataset.videoId || "", {
                 preserveTransitionGeneration: Boolean(options && options.preserveTransitionGeneration)
             });
         }
@@ -798,6 +841,7 @@ export function createYoutubeController({ ui, youtube, constants }: YoutubeContr
 
     /**
      * 埋め込み再生を解除して通常サムネイル表示へ戻す。
+     * 動画や閉じるボタンにフォーカスがあったときは、作り直した再生ボタンへ移す。
      */
     function restoreThumbnail(
         thumbDiv: HTMLElement,
@@ -810,6 +854,7 @@ export function createYoutubeController({ ui, youtube, constants }: YoutubeContr
             playbackMode: getYoutubeThumbnailPlaybackMode(thumbDiv),
             sessionId: getYoutubeThumbnailPlaybackSessionId(thumbDiv)
         });
+        const hadFocus = hasFocusInsideThumb(thumbDiv);
         applyPlaybackStateEvent({
             type: "RESTORE_PLAYBACK",
             sessionId: getYoutubeThumbnailPlaybackSessionId(thumbDiv),
@@ -824,8 +869,12 @@ export function createYoutubeController({ ui, youtube, constants }: YoutubeContr
         setYoutubeThumbnailOrientation(thumbDiv, "landscape");
         setYoutubeThumbnailPlaybackState(thumbDiv, "stopped");
         setYoutubeThumbnailExpandedCardState(thumbDiv, false);
+        // 次に曲情報を反映するときに、再生前と同じ曲でも、再生対象の値と押したときの処理を入れ直す。
+        // ここで置く再生ボタンは、同じ動画なら updateThumbnail が作り直さずに使う。
+        setYoutubeThumbnailIdleRenderKey(thumbDiv, "");
         if (videoId) {
             applyYoutubeThumbnailImage(thumbDiv, videoId);
+            if (hadFocus) getYoutubeThumbnailPlayButton(thumbDiv)?.focus({ preventScroll: true });
         } else {
             thumbDiv.replaceChildren();
         }
@@ -849,7 +898,7 @@ export function createYoutubeController({ ui, youtube, constants }: YoutubeContr
             playbackMode: getYoutubeThumbnailPlaybackMode(activeThumb),
             sessionId: getYoutubeThumbnailPlaybackSessionId(activeThumb)
         });
-        restoreThumbnail(activeThumb, activeThumb.dataset.videoId || "");
+        void restoreThumbnail(activeThumb, activeThumb.dataset.videoId || "");
     }
 
     /**
@@ -866,6 +915,7 @@ export function createYoutubeController({ ui, youtube, constants }: YoutubeContr
             playbackMode
         });
         setActiveThumb(thumbDiv, { preserveTransitionGeneration: true });
+        setYoutubeThumbnailIdleRenderKey(thumbDiv, "");
         setYoutubeThumbnailPlaybackTarget(thumbDiv, buildPlaybackTargetMetadata(yt));
         setYoutubeThumbnailPlaybackSessionId(thumbDiv, playbackSessionId);
         setYoutubeThumbnailPlaybackMode(thumbDiv, playbackMode);
@@ -900,7 +950,7 @@ export function createYoutubeController({ ui, youtube, constants }: YoutubeContr
             });
         });
         if (yt && yt.isVertical) {
-            refreshCardLayoutSoon(thumbDiv);
+            void refreshCardLayoutSoon(thumbDiv);
         }
         if (options && options.revealCard) {
             revealYoutubePlaybackCardIfNeeded(thumbDiv);
@@ -924,7 +974,29 @@ export function createYoutubeController({ ui, youtube, constants }: YoutubeContr
     }
 
     /**
+     * 再生していない状態のサムネイルに描く内容を表す値を作る。
+     * 画像を出すかどうかと、押したときに再生する対象が同じなら、同じ値になる。
+     * @param yt 曲の再生対象
+     * @param playbackTarget サムネイルへ保存する再生対象
+     * @returns 描く内容を表す値
+     */
+    function buildIdleThumbnailRenderKey(yt: YoutubeTarget, playbackTarget: YoutubePlaybackTargetMetadata): string {
+        return [
+            playbackUi.showThumbnails ? "shown" : "hidden",
+            yt.videoId,
+            yt.startSeconds,
+            yt.endSeconds ?? "",
+            yt.isVertical ? "vertical" : "landscape",
+            playbackTarget.playbackKey
+        ].join("|");
+    }
+
+    /**
      * 曲情報に合わせてサムネイル表示内容を更新する。
+     * 結果一覧を描き直すたびに表示中の全カードについて呼ばれるので、再生していないサムネイルに
+     * 同じ内容を描いてあるときは何もしない。画像や再生ボタンを作り直すと、件数に比例して描画が重くなる。
+     * 描き直すときも、同じ動画の再生ボタンは作り直さずに使い、ボタンが持つフォーカスを保つ。
+     * 押したときの処理はサムネイルの枠で受け、キーボードでは中の再生ボタンから同じ処理へ届く。
      */
     function updateThumbnail(thumbDiv: HTMLElement, yt: YoutubeTarget) {
         const playbackTarget = buildPlaybackTargetMetadata(yt);
@@ -933,22 +1005,31 @@ export function createYoutubeController({ ui, youtube, constants }: YoutubeContr
             setYoutubeThumbnailOrientation(thumbDiv, yt && yt.isVertical ? "vertical" : "landscape");
             return;
         }
-        resetThumbnailContainer(thumbDiv, playbackTarget);
+        const renderKey = buildIdleThumbnailRenderKey(yt, playbackTarget);
+        if (getYoutubeThumbnailIdleRenderKey(thumbDiv) === renderKey) return;
+        // 同じ動画の再生ボタンをすでに置いてあれば、作り直さずに使う。再生を閉じた後は、閉じたときに置いた
+        // 再生ボタンがフォーカスを持っているので、作り直すとフォーカスを失い、Tab の位置も戻ってしまう。
+        const keptPlayButton = playbackUi.showThumbnails
+            ? getYoutubeThumbnailPlayButtonForVideo(thumbDiv, yt.videoId)
+            : null;
+        resetThumbnailContainer(thumbDiv, playbackTarget, keptPlayButton);
         setYoutubeThumbnailOrientation(thumbDiv, "landscape");
+        setYoutubeThumbnailIdleRenderKey(thumbDiv, renderKey);
 
         if (!playbackUi.showThumbnails) return;
         if (!yt.videoId) return;
 
-        const img = createYoutubeThumbnailImage(yt.videoId);
-        if (!img) return;
+        const playButton = keptPlayButton
+            ?? createYoutubeThumbnailPlayButton(yt.videoId, getYoutubeThumbnailPlayLabel(thumbDiv));
+        if (!playButton) return;
         thumbDiv.onclick = () => {
             if (thumbDiv.classList.contains("playing")) return;
-            startEmbeddedPlayback(thumbDiv, yt, {
+            void startEmbeddedPlayback(thumbDiv, yt, {
                 revealCard: true,
                 playbackMode: "manual"
             });
         };
-        thumbDiv.appendChild(img);
+        if (playButton !== keptPlayButton) thumbDiv.appendChild(playButton);
     }
 
     return {

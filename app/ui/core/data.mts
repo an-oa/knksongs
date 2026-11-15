@@ -1,17 +1,14 @@
-import type { AppDataState, AppUiState } from "../../state.types";
+import type { AppDataState, AppUiState } from "../../state.types.mjs";
 import type { SongsSnapshot } from "../../lib/songs-data-source.mjs";
 import type { ResultCountState } from "../result-summary/count.mjs";
 
-export type InitialDataLoadResult =
-    | { loaded: false }
-    | { loaded: true; shouldResetConditions: boolean };
+export type InitialDataLoadResult = { loaded: boolean };
 
 type DataLoaderInput = {
     data: Pick<AppDataState, "allSongsRaw">;
     ui: {
         el: Pick<AppUiState["el"], "searchBox">;
-        search: Pick<AppUiState["search"], "recommendedCache" | "dataReady" | "hasRestoredSearchState">;
-        date: Pick<AppUiState["date"], "pendingValues">;
+        search: Pick<AppUiState["search"], "recommendedCache" | "dataReady">;
     };
     dataSource: {
         loadInitialSnapshot: () => Promise<SongsSnapshot | null>;
@@ -35,7 +32,6 @@ export function createDataLoader(input: DataLoaderInput) {
         callbacks
     } = input;
     const searchUiState = ui.search;
-    const dateUi = ui.date;
     const {
         applyDateInputRange,
         clampDateInputsToBounds
@@ -65,11 +61,8 @@ export function createDataLoader(input: DataLoaderInput) {
             callbacks.showResultCount({ kind: "loadError" });
             return { loaded: false };
         }
-        const shouldResetConditions = !searchUiState.dataReady &&
-            !searchUiState.hasRestoredSearchState &&
-            !dateUi.pendingValues;
         applyLoadedSongs(snapshot.songs);
-        return { loaded: true, shouldResetConditions };
+        return { loaded: true };
     }
 
     return {

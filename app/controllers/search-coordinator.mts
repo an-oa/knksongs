@@ -1,7 +1,7 @@
 /**
  * 検索の実行タイミングを管理する controller。
  *
- * 即時実行と debounce 付き実行を切り替え、予約済み検索の取り消しを受け持つ。
+ * 即時実行と debounce 付き実行を切り替え、予約済み検索の取り消しと前倒しを受け持つ。
  * 検索の予約中は、おすすめ表示の増減を止めて確定済みの結果を保つ。
  * 検索そのものは渡された searchController に任せる。
  */
@@ -61,9 +61,21 @@ export function createSearchCoordinator({
         }, debounceMs);
     }
 
+    /**
+     * 予約済みの検索があれば、待たずにその場で実行する。予約がなければ何もしない。
+     * 検索窓で Enter を押したときに、入力の確定として結果をすぐ出すために使う。
+     * @returns 実行したら true
+     */
+    function flushScheduledSearch(): boolean {
+        if (debounceId === null) return false;
+        runSearch();
+        return true;
+    }
+
     return {
         cancelScheduledSearch,
         scheduleSearch,
+        flushScheduledSearch,
         refreshRecommendedDisplay,
         search: runSearch
     };

@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createSongFixture } from "./fixtures/song.mts";
-import type { LookupUiRuntimeState } from "../app/state.types";
+import type { LookupUiRuntimeState } from "../app/state.types.mts";
 import {
     ensureSongLookupMaps,
     resolveSongRef,

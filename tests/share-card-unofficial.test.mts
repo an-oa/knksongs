@@ -33,3 +33,12 @@ test("share cards: Japanese and English pages say the site is unofficial", async
         }
     }
 });
+
+// 検索結果に出る説明文は、共有カードの説明と同じ文にする。片方だけを直して食い違うのを防ぐ。
+test("search snippet: the main page describes itself with the same text as its share card", async () => {
+    const html = await readFile(new URL("../public/index.html", import.meta.url), "utf8");
+    const description = readMeta(html, "description");
+    assert.ok(description, "the main page has a meta description");
+    assert.equal(description, readMeta(html, "og:description"));
+    assert.match(description, /非公式/);
+});

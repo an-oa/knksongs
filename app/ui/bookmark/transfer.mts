@@ -13,11 +13,17 @@ import {
     saveTextFile
 } from "./import-export.mjs";
 import { getBookmarkIdsInListOrder, setBookmarkPanelError } from "./panel.mjs";
+import { createBookmarkPromptDialogController } from "./prompt-dialog.mjs";
+import type { OpenBookmarkPromptDialog } from "./prompt-dialog.mjs";
 import { createBookmarkTransferDialogController } from "./transfer-dialog.mjs";
-import type { BookmarkTransferDialogRequest, OpenBookmarkTransferDialog } from "./transfer-dialog.mjs";
+import type {
+    BookmarkTransferDialogActionResult,
+    BookmarkTransferDialogRequest,
+    OpenBookmarkTransferDialog
+} from "./transfer-dialog.mjs";
 import { MAX_BOOKMARK_IMPORT_BYTES } from "../../lib/storage/bookmark-transfer.mjs";
 import type { SiteLanguage } from "../../lib/site-language.mjs";
-import type { AppDataState, AppUiElements, SiteLanguageUiRuntimeState } from "../../state.types";
+import type { AppDataState, AppUiElements, SiteLanguageUiRuntimeState } from "../../state.types.mjs";
 import { getBookmarkText } from "./text.mjs";
 import type { LocalizedText } from "./text.mjs";
 import type { BookmarkImportPreview, StorageActionResult } from "../../controllers/storage.mjs";
@@ -42,6 +48,16 @@ export type BookmarkTransferCallbacks = {
         open: OpenBookmarkTransferDialog;
         refreshText: (language: SiteLanguage) => void;
     };
+    /**
+     * ブックマーク全体の置換を確認するダイアログ。省略時は body に作るモーダルダイアログを使う。
+     * ブックマーク一覧の controller と同じものを渡すと、ダイアログの要素を 1 つだけ作り、
+     * 開いている間の言語の切り替えも一覧の controller がまとめて書き直す。
+     */
+    promptDialog?: {
+        open: OpenBookmarkPromptDialog;
+    };
+    /** 取り込んだ結果を利用者へ通知する。言語が変わったら書き直せるよう、文言の作り方を渡す。 */
+    onNotify?: (message: LocalizedText) => void;
 };
 
 type BookmarkTransferControllerInput = {
@@ -63,6 +79,7 @@ type ExportEntry = { id: string; name: string; songCount: number };
  * ブックマークパネルのエクスポート・インポートを扱う controller を作成する。
  * 一覧の操作とは分け、ダイアログでの選択、ファイルの読み書き、取り込み方の分岐、結果の通知をまとめる。
  * 失敗の理由は、一覧の作成欄と共有するパネル上部のエラー欄に出す。
+ * 全体の置換の確認と取り込んだ結果の通知には、ブラウザ標準の confirm / alert ではなく、ページ内のダイアログと通知を使う。
  */
 export function createBookmarkTransferController({ data, ui, callbacks }: BookmarkTransferControllerInput) {
     const {
@@ -71,7 +88,9 @@ export function createBookmarkTransferController({ data, ui, callbacks }: Bookma
         onImportSelectedBookmarks,
         onReplaceAllBookmarks,
         saveTextFile: saveTextFileCallback = saveTextFile,
-        transferDialog = createBookmarkTransferDialogController()
+        transferDialog = createBookmarkTransferDialogController(),
+        promptDialog = createBookmarkPromptDialogController(),
+        onNotify
     } = callbacks;
 
     /**
@@ -179,13 +198,13 @@ export function createBookmarkTransferController({ data, ui, callbacks }: Bookma
      * @param text ファイルから読み込んだ文字列
      * @param preview 手元と照合したファイルの内容
      * @param language ダイアログの言語
-     * @returns 表示内容と決定時の処理。決定時の値は取り込んだ結果のメッセージ
+     * @returns 表示内容と決定時の処理。決定時の値は、取り込んだ結果を伝える文言の作り方
      */
     function buildImportRequest(
         text: string,
         preview: BookmarkImportPreview,
         language: SiteLanguage
-    ): BookmarkTransferDialogRequest<string> {
+    ): BookmarkTransferDialogRequest<LocalizedText> {
         const mergeBlocked = preview.mergeBlocker !== null;
         const labels = getBookmarkText(language);
         return {
@@ -202,7 +221,10 @@ export function createBookmarkTransferController({ data, ui, callbacks }: Bookma
                 if (result.ok === false) {
                     return { ok: false, message: (nextLanguage) => getBookmarkImportErrorMessage(result, nextLanguage) };
                 }
-                return { ok: true, value: buildBookmarkImportResultMessage(result, language) };
+                return {
+                    ok: true,
+                    value: (nextLanguage) => buildBookmarkImportResultMessage(result, nextLanguage)
+                };
             },
             allItemsAction: {
                 menuLabel: labels.importMenuLabel,
@@ -217,17 +239,46 @@ export function createBookmarkTransferController({ data, ui, callbacks }: Bookma
                 description: labels.replaceDescription,
                 submitLabel: labels.replaceSubmit,
                 message: buildBookmarkReplaceMessage(preview, language),
-                run: () => {
-                    if (!confirm(buildBookmarkImportConfirmMessage(preview, language))) return { ok: false, message: () => "" };
-                    const result = onReplaceAllBookmarks(text);
-                    if (result.ok === false) {
-                        return { ok: false, message: (nextLanguage) => getBookmarkImportErrorMessage(result, nextLanguage) };
-                    }
-                    return { ok: true, value: buildBookmarkReplaceResultMessage(result.bookmarkCount, language) };
-                }
+                run: () => confirmAndReplaceAllBookmarks(text, preview)
             },
             returnFocusEl: ui.el.bookmarkPanelImportBtn
         };
+    }
+
+    /**
+     * ブックマーク全体の置換を確認のダイアログで確かめ、決定されたら置換する。
+     * 確認のダイアログは、置換を実行した時点で成否にかかわらず閉じる。
+     * 失敗の理由は、インポートのダイアログに開いたまま出し、取り込み方を選び直せるようにする。
+     * @param text ファイルから読み込んだ文字列
+     * @param preview 手元と照合したファイルの内容
+     * @returns 置換した結果を伝える文言の作り方。取り消したときは、理由のない失敗
+     */
+    async function confirmAndReplaceAllBookmarks(
+        text: string,
+        preview: BookmarkImportPreview
+    ): Promise<BookmarkTransferDialogActionResult<LocalizedText>> {
+        let outcome: BookmarkTransferDialogActionResult<LocalizedText> = { ok: false, message: () => "" };
+        await promptDialog.open((language) => {
+            const labels = getBookmarkText(language);
+            return {
+                title: labels.replaceConfirmTitle,
+                message: buildBookmarkImportConfirmMessage(preview, language),
+                submitLabel: labels.replaceSubmit,
+                cancelLabel: labels.cancel,
+                isDestructive: true,
+                onSubmit: () => {
+                    const result = onReplaceAllBookmarks(text);
+                    outcome = result.ok === false
+                        ? { ok: false, message: (nextLanguage) => getBookmarkImportErrorMessage(result, nextLanguage) }
+                        : {
+                            ok: true,
+                            value: (nextLanguage) => buildBookmarkReplaceResultMessage(result.bookmarkCount, nextLanguage)
+                        };
+                    return { ok: true };
+                }
+            };
+        }, getLanguage());
+        return outcome;
     }
 
     /**
@@ -263,7 +314,7 @@ export function createBookmarkTransferController({ data, ui, callbacks }: Bookma
                 (language) => buildImportRequest(text, preview, language),
                 getLanguage()
             );
-            if (resultMessage) alert(resultMessage);
+            if (resultMessage) onNotify?.(resultMessage);
         } catch {
             showBookmarkPanelError((language) => getBookmarkText(language).readFailed);
         } finally {

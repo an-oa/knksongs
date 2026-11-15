@@ -135,6 +135,9 @@ flowchart LR
 - すべて `strict: true` です。scripts は Node が型を除去して実行できる構文に限定するため、
   `erasableSyntaxOnly`・`verbatimModuleSyntax` も有効にしています。
 - ESLint は `app/`・`scripts/`・`tests/` の `.mts` に直接適用し、`_build` は対象外です。
+- 型情報を使う `@typescript-eslint/no-floating-promises` も適用します。
+  `await` も `catch` もしていない Promise を検出します。完了を待たない呼び出しには `void` を付けて意図を示し、
+  失敗し得るものは `catch` で記録します。`tests/` では、完了を test runner が待つ `node:test` の `test()` だけを除外しています。
 
 ## テスト
 
@@ -142,13 +145,21 @@ flowchart LR
 | --- | --- | --- | --- |
 | 単体テスト | `tests/*.test.mts` | `tsx` 経由で `app/**/*.mts` を直接 import | ロジック、controller、DOM モックでの状態遷移 |
 | scripts のテスト | `tests/*.test.mts`（一部） | scripts 経由で `_build/app` を読む | 曲JSON・build・配布成果物の整合性 |
-| E2E | `tests/e2e/*.spec.mts` | Playwright（Chromium・WebKit）で `_site` を検証 | 起動順序、保存状態、レイアウト、キーボード操作、再生 |
+| E2E | `tests/e2e/*.spec.mts` | Playwright（Chromium・WebKit）で `_site` を検証 | 起動順序、保存状態、レイアウト、キーボード操作、再生、axe によるアクセシビリティの自動検査 |
 
 - `npm run test:unit` は、scripts のテストが生成 module を読むため事前に `build:ts` を実行します。
   `tsx` は型検査をしないため、`npm run typecheck` も併せて実行してください。
+- DOM モックの `click()` と `dispatchEvent()` は、ブラウザと同じく、非同期の listener の完了を待ちません。
+  非同期の処理の完了を確かめるテストでは、`invokeAsyncListener()` か、結果が出るまで待つ適切な仕組みを使います。
+  待たずに先へ進むと、「〜されていない」ことを確かめる assert が、処理の途中で通ってしまいます。
+- `invokeListener()` は同期の listener 専用で、listener が Promise を返すとその場で失敗します。
+  `invokeAsyncListener()` は、Promise を返した listener すべての完了を待てる Promise を返します。
 - テストファイル名は対象 module に揃えています（例: `app/lib/search-query.mts` → `tests/search-query.test.mts`）。
   一覧は `ls tests/` で確認してください。
 - E2E では `_site` を `python3 -m http.server 4173` でローカル配信し、曲データと YouTube Iframe API はモックに差し替えます。
+- 配信するポート（既定は 4173）がすでに使われていると、E2E は開始時に失敗します。動いているサーバーは使い回しません。
+  使い回すと、同じ機械の別の作業が配信している別の `_site` を相手にテストが動き、結果が当てにならなくなるためです。
+  その場合は、`E2E_PORT=4174 npm run test:e2e` のように、空いているポートを指定します。
 - E2E は Chromium と WebKit で実行します。WebKit は Safari と同じエンジンですが、iOS の判定（`isIOSWebKit`）は真にならず、
   長押しの操作も再現できません。iOS Safari は実機または手動で確認してください。
 - WebKit では、Playwright の screenshot のたびに CSP の違反（`style-src-elem`）が 1 件記録されます。
@@ -208,6 +219,22 @@ ruleset はリポジトリの設定なので、ファイルを変えても自動
 3. Create で保存する
 
 画面で ruleset を変えたときは、Export した JSON で `.github/rulesets/main.json` を置き換えてください。
+
+### 曲データの更新と公開の前提
+
+曲データ（`data/songs.json`・`data/songs-meta.json`）の更新と公開は、次の前提で動いています。
+アプリのキャッシュの扱いなどをレビューするときは、この前提から外れる運用を、不具合の発生条件として仮定しないでください。
+
+- `update-songs-json.yml` が、公開 CSV から `npm run build:songs-json` で JSON を生成します（1日2回の定期実行と、手動実行）。
+- 生成日時（`generatedAt`）は、リポジトリにある `data/songs-meta.json` と内容の hash（`contentHash`）が同じなら引き継ぎ、
+  違えば生成した時刻にします（`scripts/build-songs-json.mts` の `resolveGeneratedAt`）。内容が変わらなければ、コミットしません。
+- CSV への変更を取り消して JSON を再生成する操作も、通常の更新として扱われます。
+  hash は過去の版と同じになりますが、直前の版とは違うので、生成日時は新しくなります。
+- 過去に生成した JSON を、再生成せずにそのまま再公開する経路は、現行の Actions にありません。
+  `deploy-pages.yml` は、CI を通った `main` のコミットにある `data/` を、そのまま公開します。
+- そのため、公開される JSON の生成日時が、前に公開したものより古くなることは、この経路では起きません。
+  手作業で `data/` を過去のファイルへ戻す（bot のコミットを `git revert` するなど）と、この前提から外れます。
+  内容を戻すときは、CSV を戻して再生成してください。
 
 権限設計、`main` との照合、失敗通知の詳細は [DESIGN.md の CI・デプロイ](DESIGN.md#ciデプロイ) を参照してください。
 

@@ -15,7 +15,7 @@ import {
     parseStoredBookmarksPayload
 } from "../lib/storage/bookmark-schema.mjs";
 import { isDebugFlagEnabled, writeDebugLog } from "../lib/debug-log.mjs";
-import type { AppDataState, BookmarkRecord } from "../state.types";
+import type { AppDataState, BookmarkRecord } from "../state.types.mjs";
 
 export type BookmarkSaveFailure =
     | {

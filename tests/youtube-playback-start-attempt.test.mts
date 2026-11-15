@@ -163,7 +163,7 @@ test("youtube playback start attempt: default start timeout is five seconds", ()
     try {
         const { manager, thumb } = createAttemptHarness();
 
-        manager.create(1, { thumbDiv: thumb, playbackMode: "autoplay" });
+        void manager.create(1, { thumbDiv: thumb, playbackMode: "autoplay" });
         manager.armStartTimeout(1);
 
         assert.equal(fakeTimeouts.timeoutCalls[1].delay, DEFAULT_PLAYBACK_START_TIMEOUT_MS);

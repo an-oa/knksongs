@@ -3,7 +3,7 @@ import { createPlaybackSettingsController } from "../../app/controllers/playback
 import { LEGACY_PLAYBACK_SETTINGS_STORAGE_KEYS } from "../../app/lib/playback-settings/definitions.mts";
 
 type PlaybackSettingsFixtureInput = {
-    ui?: Partial<import("../../app/state.types").PlaybackSettingsUiSlice> & {
+    ui?: Partial<import("../../app/state.types.mts").PlaybackSettingsUiSlice> & {
         dataReady?: boolean;
         activeThumb?: HTMLElement | null;
     };

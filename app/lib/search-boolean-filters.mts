@@ -7,6 +7,9 @@ export const SEARCH_BOOLEAN_FILTER_KEYS = [
 
 export type SearchBooleanFilterKey = typeof SEARCH_BOOLEAN_FILTER_KEYS[number];
 
+/** 真偽値フィルターごとの選択状態。検索条件の状態と保存データで同じ形を使う。 */
+export type SearchBooleanFilterState = Record<SearchBooleanFilterKey, boolean>;
+
 type SearchBooleanFilterElement = Pick<HTMLInputElement, "checked">;
 
 /** 真偽値フィルターが必要とする最小限の要素。未設置の要素も許容する。 */
@@ -18,10 +21,37 @@ type SearchBooleanFilterUi<FilterElement extends SearchBooleanFilterElement = Se
 } | null | undefined;
 
 /**
+ * すべて未選択の真偽値フィルターの状態を作る。
+ * @returns すべて false の選択状態
+ */
+export function createDefaultSearchBooleanFilters(): SearchBooleanFilterState {
+    return {
+        collabHostOnly: false,
+        collabGuestOnly: false,
+        relayOnly: false,
+        harmonyOnly: false
+    };
+}
+
+/**
+ * 保存データなど形の分からない値から、真偽値フィルターの状態を作る。項目がなければ未選択にする。
+ * @param source 真偽値フィルターの値を持つ可能性のある値
+ * @returns 真偽値フィルターの選択状態
+ */
+export function toSearchBooleanFilterState(source: Partial<Record<SearchBooleanFilterKey, unknown>>): SearchBooleanFilterState {
+    return {
+        collabHostOnly: Boolean(source.collabHostOnly),
+        collabGuestOnly: Boolean(source.collabGuestOnly),
+        relayOnly: Boolean(source.relayOnly),
+        harmonyOnly: Boolean(source.harmonyOnly)
+    };
+}
+
+/**
  * 検索 boolean filter に対応する UI 要素を取得する。
- * @param {SearchBooleanFilterUi} ui
- * @param {SearchBooleanFilterKey} key
- * @returns {SearchBooleanFilterElement | null}
+ * @param ui 真偽値フィルターの要素を持つ UI
+ * @param key フィルターのキー
+ * @returns 対応する要素。未設置なら null
  */
 export function getSearchBooleanFilterElement<FilterElement extends SearchBooleanFilterElement>(
     ui: SearchBooleanFilterUi<FilterElement>,
@@ -32,70 +62,23 @@ export function getSearchBooleanFilterElement<FilterElement extends SearchBoolea
 }
 
 /**
- * 検索 boolean filter の UI 要素一覧を返す。
- * @param {SearchBooleanFilterUi} ui
- * @returns {SearchBooleanFilterElement[]}
+ * 真偽値フィルターの選択状態を、チェックボックスへ映す。
+ * 値が同じ要素には書き込まず、利用者の操作中に状態を揺らさない。
+ * @param ui 真偽値フィルターの要素を持つ UI
+ * @param filters 映す選択状態
  */
-export function getSearchBooleanFilterElements<FilterElement extends SearchBooleanFilterElement>(
-    ui: SearchBooleanFilterUi<FilterElement>
-): FilterElement[] {
-    return SEARCH_BOOLEAN_FILTER_KEYS
-        .map((key) => getSearchBooleanFilterElement(ui, key))
-        .filter((element): element is FilterElement => Boolean(element));
-}
-
-/**
- * 検索 boolean filter の checked 値を state/payload 用 object として収集する。
- * @param {SearchBooleanFilterUi} ui
- * @returns {Record<string, boolean>}
- */
-export function collectSearchBooleanFilterState(ui: SearchBooleanFilterUi): Record<string, boolean> {
-    return Object.fromEntries(SEARCH_BOOLEAN_FILTER_KEYS.map((key) => {
-        const element = getSearchBooleanFilterElement(ui, key);
-        return [key, Boolean(element && element.checked)];
-    }));
-}
-
-/**
- * 保存済み payload の検索 boolean filter 値を UI へ反映する。
- * @param {SearchBooleanFilterUi} ui
- * @param {Record<string, unknown>} payload
- */
-export function applySearchBooleanFilterState(ui: SearchBooleanFilterUi, payload: Record<string, unknown>): void {
+export function renderSearchBooleanFilters(ui: SearchBooleanFilterUi, filters: SearchBooleanFilterState): void {
     SEARCH_BOOLEAN_FILTER_KEYS.forEach((key) => {
         const element = getSearchBooleanFilterElement(ui, key);
-        if (element) element.checked = Boolean(payload[key]);
+        if (element && element.checked !== filters[key]) element.checked = filters[key];
     });
 }
 
 /**
- * 検索 boolean filter の UI を既定状態へ戻す。
- * @param {SearchBooleanFilterUi} ui
+ * 真偽値フィルターに、選択中の項目があるか判定する。
+ * @param filters 真偽値フィルターの選択状態
+ * @returns 1 つでも選択していれば true
  */
-export function resetSearchBooleanFilters(ui: SearchBooleanFilterUi): void {
-    SEARCH_BOOLEAN_FILTER_KEYS.forEach((key) => {
-        const element = getSearchBooleanFilterElement(ui, key);
-        if (element) element.checked = false;
-    });
-}
-
-/**
- * 検索 boolean filter の UI に有効な項目があるか判定する。
- * @param {SearchBooleanFilterUi} ui
- * @returns {boolean}
- */
-export function hasEnabledSearchBooleanFilter(ui: SearchBooleanFilterUi): boolean {
-    return SEARCH_BOOLEAN_FILTER_KEYS.some((key) => {
-        const element = getSearchBooleanFilterElement(ui, key);
-        return Boolean(element && element.checked);
-    });
-}
-
-/**
- * 検索状態 object に有効な boolean filter があるか判定する。
- * @param {Record<string, unknown>} searchState
- * @returns {boolean}
- */
-export function hasSelectedSearchBooleanFilterState(searchState: Record<string, unknown>): boolean {
-    return SEARCH_BOOLEAN_FILTER_KEYS.some((key) => Boolean(searchState[key]));
+export function hasSelectedSearchBooleanFilter(filters: SearchBooleanFilterState): boolean {
+    return SEARCH_BOOLEAN_FILTER_KEYS.some((key) => filters[key]);
 }
