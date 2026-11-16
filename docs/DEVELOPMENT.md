@@ -24,8 +24,8 @@
   - `npm run lint` は devDependencies の ESLint を使う前提です。`node_modules` がないと、
     環境側の古い ESLint が実行されることがあります。
 - E2E テスト（Playwright）を初回実行する前に、次を準備してください。
-  - `npx playwright install chromium webkit`
-  - Linux では、WebKit が使うライブラリを `sudo npx playwright install-deps webkit` で入れること
+  - `npx playwright install chromium webkit firefox`
+  - Linux では、WebKit と Firefox が使うライブラリを `sudo npx playwright install-deps webkit firefox` で入れること
   - `python3` が PATH 上で利用できること
 - Playwright は 1.63.0 に固定しています。
   - 1.60.0 より前は、Node 24.16 でブラウザのインストールが展開の途中で止まります。
@@ -145,7 +145,7 @@ flowchart LR
 | --- | --- | --- | --- |
 | 単体テスト | `tests/*.test.mts` | `tsx` 経由で `app/**/*.mts` を直接 import | ロジック、controller、DOM モックでの状態遷移 |
 | scripts のテスト | `tests/*.test.mts`（一部） | scripts 経由で `_build/app` を読む | 曲JSON・build・配布成果物の整合性 |
-| E2E | `tests/e2e/*.spec.mts` | Playwright（Chromium・WebKit）で `_site` を検証 | 起動順序、保存状態、レイアウト、キーボード操作、再生、axe によるアクセシビリティの自動検査 |
+| E2E | `tests/e2e/*.spec.mts` | Playwright（Chromium・WebKit・Firefox）で `_site` を検証 | 起動順序、保存状態、レイアウト、キーボード操作、再生、axe によるアクセシビリティの自動検査 |
 
 - `npm run test:unit` は、scripts のテストが生成 module を読むため事前に `build:ts` を実行します。
   `tsx` は型検査をしないため、`npm run typecheck` も併せて実行してください。
@@ -160,8 +160,13 @@ flowchart LR
 - 配信するポート（既定は 4173）がすでに使われていると、E2E は開始時に失敗します。動いているサーバーは使い回しません。
   使い回すと、同じ機械の別の作業が配信している別の `_site` を相手にテストが動き、結果が当てにならなくなるためです。
   その場合は、`E2E_PORT=4174 npm run test:e2e` のように、空いているポートを指定します。
-- E2E は Chromium と WebKit で実行します。WebKit は Safari と同じエンジンですが、iOS の判定（`isIOSWebKit`）は真にならず、
+- E2E は Chromium・WebKit・Firefox で実行します。WebKit は Safari と同じエンジンですが、iOS の判定（`isIOSWebKit`）は真にならず、
   長押しの操作も再現できません。iOS Safari は実機または手動で確認してください。
+- 一部の E2E は、ブラウザの違いで前提の状態を作れないため、そのブラウザでは skip します。理由は各テストの `test.skip` に書いています。
+  - 指でなぞる操作、かな漢字変換の途中の状態、スタイルの再計算の回数は、Chromium の DevTools Protocol でしか扱えないので、Chromium でだけ動かします。
+  - Linux の画面なしの WebKit と Firefox では、スクロールバーが幅を取りません。スクロールバーを扱うテストは、幅が 0 のときに skip します。
+  - Firefox は、Tab でフォーカスをモーダルのダイアログの外へ出さず、Linux 版は文字入力欄の中の PageDown でページを送りません。
+    これらを前提にするテストは、Firefox では skip します。
 - WebKit では、Playwright の screenshot のたびに CSP の違反（`style-src-elem`）が 1 件記録されます。
   Playwright が撮影時に style を差し込むためです。CSP の違反が 0 件であることを確かめるテストでは、確かめる前に撮影しないでください。
 
@@ -207,7 +212,7 @@ npm run render:brand-assets
 | Workflow | 役割 |
 | --- | --- |
 | `update-songs-json.yml` | 1日2回 CSV から曲JSONを生成・検証し、差分があれば `main` へコミット。ブックマークのキーが別の歌唱を指すようになったら Issue で通知 |
-| `ci.yml` | `main` への push / PR で、`test` job の build・検証・型検査・lint・単体テストと、`e2e` job の Chromium・WebKit の E2E |
+| `ci.yml` | `main` への push / PR で、`test` job の build・検証・型検査・lint・単体テストと、`e2e` job の Chromium・WebKit・Firefox の E2E |
 | `deploy-pages.yml` | `main` の CI（`test` と `e2e`）成功後に GitHub Pages へ deploy し、公開を確認。失敗時は Issue で通知 |
 
 `main` へのマージには、CI の `test` と `e2e` の成功を必須にしています（`.github/rulesets/main.json`）。
