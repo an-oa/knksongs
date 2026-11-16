@@ -82,7 +82,9 @@ test("after typing in the search box, scrolling down with the wheel hides the he
     expect(await page.evaluate(() => window.scrollY)).toBeGreaterThan(headerHeight);
 });
 
-test("after typing in the search box, paging down with PageDown hides the header", async ({ page }) => {
+test("after typing in the search box, paging down with PageDown hides the header", async ({ page, browserName }) => {
+    // Windows の Firefox は検索窓の中でもページを送り、ヘッダーが隠れることを実機で確かめている (PR #66)。
+    test.skip(browserName === "firefox", "Playwright の Linux 版 Firefox は、文字入力欄の中の PageDown でページを送らない");
     await typeSearchForScrollableResults(page);
     const header = page.locator(".header");
 
