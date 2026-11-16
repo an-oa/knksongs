@@ -7,15 +7,15 @@ const SONG_DATA_ROUTES = ["**/data/songs.json*", "**/data/songs-meta.json*", "ht
 
 /**
  * 読み込めなくするアプリのコード。どれが失敗しても、同じ表示を出す。
- * refetchedRequestCount は、失敗を出すまでにサーバーへ届く、そのファイルへの要求の数 (最初の取得と、裏での取り直し)。
+ * refetchCount は、失敗を出した後に、ページがそのファイルを裏で取り直す回数。先読みしたファイルだけを取り直す。
  */
 const APP_CODE_FAILURES = [
     // UI のコード。入口の script は動くので、app/startup-error.mts が失敗を出す。
-    { code: "the UI code", route: /\/browser\/bootstrap-[^/]+\.mjs/, refetchedRequestCount: 2 },
+    { code: "the UI code", route: /\/browser\/bootstrap-[^/]+\.mjs/, refetchCount: 1 },
     // 入口の script。アプリのコードが 1 行も動かないので、index.html の埋め込みスクリプトが失敗を出す。先読みしないので取り直さない。
-    { code: "the entry script", route: /\/browser\/startup-[^/]+\.mjs/, refetchedRequestCount: 1 },
+    { code: "the entry script", route: /\/browser\/startup-[^/]+\.mjs/, refetchCount: 0 },
     // 入口の script が import する共有のコード。これも埋め込みスクリプトが出す。
-    { code: "the shared code", route: /\/browser\/chunk-[^/]+\.mjs/, refetchedRequestCount: 2 }
+    { code: "the shared code", route: /\/browser\/chunk-[^/]+\.mjs/, refetchCount: 1 }
 ];
 
 /**
@@ -98,7 +98,7 @@ test.describe("when the app code cannot be loaded", () => {
         });
     }
 
-    for (const { code, route, refetchedRequestCount } of APP_CODE_FAILURES) {
+    for (const { code, route, refetchCount } of APP_CODE_FAILURES) {
         for (const { way, reloadPage } of [
             { way: "the browser's own reload", reloadPage: (page: Page) => page.reload() },
             { way: "the reload button", reloadPage: (page: Page) => page.getByRole("button", { name: "再読み込み" }).click() }
@@ -112,7 +112,8 @@ test.describe("when the app code cannot be loaded", () => {
                     await page.goto(server.url);
                     await expect(page.locator("#resultList .result-load-error")).toBeVisible();
                     // 失敗を出した時に、ページは先読みした module を裏で取り直す。サーバーはまだ失敗を返す。
-                    await expect.poll(() => server.getFailedRequestCount()).toBe(refetchedRequestCount);
+                    // 取り直しも失敗したことを確かめてから復旧させる。取り直しが失敗しても、WebKit が先読みの失敗を忘れることを確かめる。
+                    await expect.poll(() => server.getFailedRefetchCount()).toBe(refetchCount);
 
                     server.recover();
                     await reloadPage(page);

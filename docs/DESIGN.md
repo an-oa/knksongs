@@ -17,10 +17,10 @@
 - データ取得：事前生成JSON（`data/songs.json` / `data/songs-meta.json`）を優先し、唯一のマスターである公開スプレッドシートのCSVを生成元とフォールバックに使う
 - データ生成/公開：GitHub Actions でCSVから派生JSONを生成・検証し、差分を `main` へコミットして CI を起動する。CI 成功後、検証済み commit を deploy 前後に現在の `main` と照合し、公開された `deployment.json` の commit SHA を確認する
 - CI：GitHub Actions で TypeScript emit、曲データ検証、typecheck、lint、unit test、静的 site build を実行する。
-  同じ workflow の別の job で、Chromium と WebKit の E2E を並行して実行する
+  同じ workflow の別の job で、Chromium・WebKit・Firefox の E2E を並行して実行する
 - 実行時の同梱外部ライブラリ依存：なし
 - 埋め込み再生まわりでは YouTube Iframe API を動的に利用し、標準では `youtube.com`、プライバシー強化設定ON時は `youtube-nocookie.com` の埋め込みURLを使う
-- 開発時確認：TypeScript emit 同期、曲データJSON検証、TypeScript noEmit typecheck、ESLint、Node.js 標準 `node:test`、Playwright（Chromium・WebKit）の smoke を利用
+- 開発時確認：TypeScript emit 同期、曲データJSON検証、TypeScript noEmit typecheck、ESLint、Node.js 標準 `node:test`、Playwright（Chromium・WebKit・Firefox）の smoke を利用
 - 型安全性は `app/**/*.mts` の TypeScript source を中心に高め、生成 JavaScript は `_build/app`（emit）と `_build/browser`（ブラウザbundle）に置く。
   実行時に npm 等の同梱依存は持たず、配布物は HTML/CSS/JavaScript の静的 asset とする。
 
@@ -750,7 +750,7 @@ IndexedDB保存：
 | Workflow | 起動条件 | 役割 |
 | --- | --- | --- |
 | `update-songs-json.yml` | 1日2回の定期実行 / 手動実行 | CSVから曲JSONを生成・検証し、差分があれば `main` へコミットする。ブックマークのキーが別の歌唱を指すようになったら Issue で知らせる |
-| `ci.yml` | `main` へのpush / PR / 手動実行 | build後の曲JSON検証・型検査・emit検査・lint・単体テストと、Chromium・WebKit の E2E を別の job で実行する |
+| `ci.yml` | `main` へのpush / PR / 手動実行 | build後の曲JSON検証・型検査・emit検査・lint・単体テストと、Chromium・WebKit・Firefox の E2E を別の job で実行する |
 | `deploy-pages.yml` | `main` のCI成功 | 単体テストと E2E を通った commit を GitHub Pages へdeployし、公開を確認する |
 
 ### 曲データ更新（update-songs-json.yml）
@@ -780,7 +780,7 @@ IndexedDB保存：
 - 曲データの自動更新も E2E の成功を待って公開する。E2E は曲データを fixture に置き換えるので、
   曲データの変更そのものは E2E では検証せず、E2E が失敗すると曲データの公開も止まる
 - `test` job は `npm run build` を実行後、曲JSON検証・型検査・emit検査・lint・単体テストの `:raw` コマンドを実行し、生成物を再利用する
-- `e2e` job は `npx playwright install --with-deps chromium webkit` でブラウザとOSの依存パッケージを入れ、`npm run test:e2e` を実行する。
+- `e2e` job は `npx playwright install --with-deps chromium webkit firefox` でブラウザとOSの依存パッケージを入れ、`npm run test:e2e` を実行する。
   失敗時は `test-results/` を artifact として7日間残す
 
 ### main の ruleset（.github/rulesets/main.json）

@@ -18,14 +18,16 @@ const CONTENT_TYPES: Record<string, string> = {
  * WebKit は、サーバーから実際に失敗を受け取った先読みを覚えていて、読み込み直しても取りに行かない。
  * Playwright の通信の差し替え (page.route) で失敗させた場合はこの挙動にならないので、実際のサーバーで失敗させる。
  * @param failingPath 失敗させる path の条件
- * @returns サーバーの URL、失敗させた回数、復旧と停止の操作
+ * @returns サーバーの URL、失敗させた取り直しの回数、復旧と停止の操作
  */
 export async function startFailingSiteServer(failingPath: RegExp) {
-    const state = { isFailing: true, failedRequestCount: 0 };
+    const state = { isFailing: true, failedRefetchCount: 0 };
     const server = createServer((request, response) => {
         const path = decodeURIComponent(new URL(request.url ?? "/", "http://localhost").pathname);
         if (state.isFailing && failingPath.test(path)) {
-            state.failedRequestCount += 1;
+            // ページが script から fetch() で取り直した要求だけを数える。ブラウザが module として読む要求は数えない。
+            // 先読みに失敗した module をもう一度取りに行くかどうかはブラウザで違い、Firefox は取りに行くので回数が揃わない。
+            if (request.headers["sec-fetch-dest"] === "empty") state.failedRefetchCount += 1;
             response.writeHead(503, { "content-type": "text/plain" }).end("unavailable");
             return;
         }
@@ -40,8 +42,8 @@ export async function startFailingSiteServer(failingPath: RegExp) {
     const { port } = server.address() as AddressInfo;
     return {
         url: `http://127.0.0.1:${port}/`,
-        /** 失敗させた要求の数を返す。 */
-        getFailedRequestCount: () => state.failedRequestCount,
+        /** 失敗させた要求のうち、ページが fetch() で取り直した要求の数を返す。 */
+        getFailedRefetchCount: () => state.failedRefetchCount,
         /** 以後の要求を成功させる。 */
         recover() { state.isFailing = false; },
         /** サーバーを止める。開いたままの接続も閉じる。 */

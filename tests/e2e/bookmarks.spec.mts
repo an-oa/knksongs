@@ -795,7 +795,10 @@ async function tabOutOfDialogs(page: Page) {
     expect(await isFocusOnPage(), "focus leaves the dialog").toBe(true);
 }
 
-test("Escape closes the dialog on top even when focus has left it, and never the panel behind it", async ({ page }) => {
+test("Escape closes the dialog on top even when focus has left it, and never the panel behind it", async ({ page, browserName }) => {
+    // In Firefox, Tab moves focus only among the controls of a modal dialog, so this test cannot get focus out of it.
+    // A click on the backdrop does not help either: it leaves focus on the dialog in all three browsers.
+    test.skip(browserName === "firefox", "Tab does not move focus out of a modal dialog in Firefox");
     await seedBookmarks(page, KEPT_BOOKMARKS);
     await openBookmarkPanel(page);
     const bookmarkPanel = page.locator("#bookmark-sidebar-panel");

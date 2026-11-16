@@ -1,6 +1,6 @@
 name: CI
 
-# 単体テストなどの test job と、Chromium・WebKit の e2e job を並行して実行する。
+# 単体テストなどの test job と、Chromium・WebKit・Firefox の e2e job を並行して実行する。
 # Deploy Pages はこのワークフローの完了を待つので、両方の job が成功した commit だけを公開する。
 on:
   push:
@@ -59,7 +59,7 @@ jobs:
       - run: npm ci
 
       - name: Install Playwright browsers and system dependencies
-        run: npx playwright install --with-deps chromium webkit
+        run: npx playwright install --with-deps chromium webkit firefox
 
       - run: npm run test:e2e
 
