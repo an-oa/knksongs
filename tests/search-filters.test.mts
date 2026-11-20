@@ -257,6 +257,38 @@ test("filterSongsByCriteria: English title, English artist, and artist sort name
     assert.deepEqual(search("starish"), ["マジLOVE1000%"]);
 });
 
+test("filterSongsByCriteria: title and artist readings find songs whose names do not contain the keyword", () => {
+    const rows = [
+        makeRow({
+            title: "残酷な天使のテーゼ",
+            artist: "高橋洋子",
+            titleYomi: "ザンコクナテンシノテーゼ",
+            artistYomi: "タカハシヨウコ"
+        }),
+        makeRow({
+            title: "千本桜",
+            artist: "黒うさP feat. 初音ミク",
+            titleYomi: "センボンザクラ",
+            artistYomi: "クロウサピーフィーチャリングハツネミク"
+        }),
+        makeRow({ title: "白い雲", artist: "C" })
+    ];
+    const search = (queryRaw: string) => filterSongsForTest(
+        rows,
+        { ...BASE_SEARCH_STATE, queryRaw },
+        new Set(["配信"])
+    ).map((row) => row.title);
+
+    // 曲名とアーティスト名は漢字で、検索語はどちらにも含まれない。読みだけに一致する。
+    assert.deepEqual(search("ザンコク"), ["残酷な天使のテーゼ"]);
+    assert.deepEqual(search("たかはし"), ["残酷な天使のテーゼ"], "hiragana matches the katakana reading");
+    assert.deepEqual(search("せんぼんざくら"), ["千本桜"]);
+    assert.deepEqual(search("はつね"), ["千本桜"]);
+    // 曲名の読みとアーティスト名の読みを組み合わせても、同じ曲行に一致する。
+    assert.deepEqual(search("せんぼん くろうさ"), ["千本桜"]);
+    assert.deepEqual(search("せんぼん たかはし"), []);
+});
+
 test("filterSongsByCriteria: keywords match regardless of symbols and spaces", () => {
     const rows = [
         makeRow({ title: "READY STEADY GO", artist: "L’Arc〜en〜Ciel" }),
