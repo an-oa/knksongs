@@ -1,7 +1,7 @@
 {
   "schemaVersion": 8,
-  "contentHash": "sha256:cf7d928ac1d29236089107d5a26ba58c8496af1ba8d1494c281684e37b657b29",
-  "generatedAt": "2026-11-22T14:36:46.743Z",
+  "contentHash": "sha256:226ded6d28684ed100c8e3c7635fe99550e4d3db2264a02750a7432ad40bcf7f",
+  "generatedAt": "2026-11-23T18:11:48.635Z",
   "songInfos": [
     {
       "songInfoKey": "9ncVbGGivis::1",
@@ -762,16 +762,16 @@
     {
       "songInfoKey": "L_7YvdjO9_k::4",
       "title": "めざせポケモンマスター",
-      "artist": "サトシ(松本梨香)",
+      "artist": "松本梨香",
       "titleEn": "Mezase Pokemon Master",
-      "artistEn": "Satoshi (CV: Rica Matsumoto)",
+      "artistEn": "Rica Matsumoto",
       "titleNorm": "メザセポケモンマスター",
-      "artistNorm": "サトシ(松本梨香)",
+      "artistNorm": "松本梨香",
       "titleYomiNorm": "メザセポケモンマスター",
-      "artistYomiNorm": "サトシマツモトリカ",
+      "artistYomiNorm": "マツモトリカ",
       "titleEnNorm": "mezase pokemon master",
-      "artistEnNorm": "satoshi (cv: rica matsumoto)",
-      "artistSortNorm": "satoshi (cv: matsumoto, rica)"
+      "artistEnNorm": "rica matsumoto",
+      "artistSortNorm": "matsumoto, rica"
     },
     {
       "songInfoKey": "L_7YvdjO9_k::6",
@@ -4474,14 +4474,14 @@
       "title": "スパート!",
       "artist": "サトシ(松本梨香)",
       "titleEn": "Spurt!",
-      "artistEn": "Satoshi (CV: Rica Matsumoto)",
+      "artistEn": "Rica Matsumoto",
       "titleNorm": "スパート!",
       "artistNorm": "サトシ(松本梨香)",
       "titleYomiNorm": "スパート",
       "artistYomiNorm": "サトシマツモトリカ",
       "titleEnNorm": "spurt!",
-      "artistEnNorm": "satoshi (cv: rica matsumoto)",
-      "artistSortNorm": "satoshi (cv: matsumoto, rica)"
+      "artistEnNorm": "rica matsumoto",
+      "artistSortNorm": "matsumoto, rica"
     },
     {
       "songInfoKey": "n5W1IQp-zmU::15",
