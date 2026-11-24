@@ -40,6 +40,8 @@ export function parseArgs(args: string[]): { outputDir: string } {
 /**
  * design/brand の HTML を Chromium で描画し、指定サイズの PNG として保存する。
  * query は描画元に渡す URL の query で、同じ描画元から文字だけ違う画像を作るときに使う。
+ * Chromium は CSS や Web フォントを読めなくても別の書体で描き続けるので、
+ * 読み込みに失敗した通信やフォントが1つでもあれば、書き出さずにエラーにする。
  */
 async function renderHtml(
     browser: Browser,
@@ -50,9 +52,21 @@ async function renderHtml(
     query = ""
 ): Promise<void> {
     const page = await browser.newPage({ viewport: { width, height }, deviceScaleFactor: 1 });
+    const failures: string[] = [];
+    page.on("requestfailed", (request) => failures.push(`${request.url()} (${request.failure()?.errorText ?? "failed"})`));
+    page.on("response", (response) => {
+        if (response.status() >= 400) failures.push(`${response.url()} (HTTP ${response.status()})`);
+    });
     try {
         await page.goto(`${pathToFileURL(resolve(BRAND_SOURCE_DIR, source)).href}${query}`);
-        await page.evaluate(() => document.fonts.ready);
+        const failedFonts = await page.evaluate(async () => {
+            await document.fonts.ready;
+            return [...document.fonts].filter((face) => face.status === "error").map((face) => face.family);
+        });
+        failures.push(...failedFonts.map((family) => `font ${family}`));
+        if (failures.length > 0) {
+            throw new Error(`Failed to load resources for ${source}${query}: ${failures.join(", ")}`);
+        }
         await page.screenshot({ path: outputPath });
     } finally {
         await page.close();
@@ -81,6 +95,7 @@ async function renderFaviconPng(browser: Browser, outputPath: string): Promise<v
 /**
  * OGP 画像・apple-touch-icon・PNG favicon を描画元から作り直す。
  * 描画は Chromium と OS の日本語フォント（Noto Sans CJK JP）に依存する。
+ * OGP の透かしの欧文は Google Fonts から読み込むので、書き出しにはネットワークも要る。
  */
 export async function renderBrandAssets(options: { outputDir: string }): Promise<string[]> {
     const outputDir = resolveProjectPath({
