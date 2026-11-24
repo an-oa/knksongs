@@ -23,10 +23,9 @@ import {
 import type { YoutubeTarget } from "../lib/youtube/embed.mjs";
 import {
     destroyYoutubeSharedPlaybackPlayer,
-    ensureYoutubeSharedPlaybackElements,
     getYoutubeSharedPlaybackState,
     getYoutubeSharedPlaybackThumb,
-    setPendingYoutubeSharedPlaybackAttach,
+    prepareYoutubeSharedPlaybackElements,
     setYoutubeSharedPlaybackSessionId,
     syncYoutubeSharedPlaybackIframe
 } from "../lib/youtube/shared-playback.mjs";
@@ -173,13 +172,6 @@ export function createYoutubeController({ ui, youtube, constants }: YoutubeContr
      */
     function setSharedPlaybackSessionId(sessionId: number) {
         setYoutubeSharedPlaybackSessionId(youtube, sessionId);
-    }
-
-    /**
-     * 共有プレーヤー初期化待ち中に使う最新の紐付け要求を保存する。
-     */
-    function setPendingSharedPlaybackAttach(iframe: HTMLIFrameElement | null, playbackSessionId: number) {
-        setPendingYoutubeSharedPlaybackAttach(youtube, iframe, playbackSessionId);
     }
 
     /**
@@ -399,12 +391,6 @@ export function createYoutubeController({ ui, youtube, constants }: YoutubeContr
 
     const youtubePlayerAdapter = createYoutubePlayerAdapter({
         getSharedPlaybackState,
-        setPendingAttach: (iframe, playbackSessionId) => {
-            setPendingSharedPlaybackAttach(iframe, playbackSessionId);
-        },
-        setSessionId: (playbackSessionId) => {
-            setSharedPlaybackSessionId(playbackSessionId);
-        },
         ensureReady: () => youtubeApi.ensureReady(),
         applyIframeAttributes: (iframe) => applyYoutubePlayerIframeAttributes(iframe),
         syncIframe: () => syncSharedPlaybackIframe(),
@@ -603,12 +589,12 @@ export function createYoutubeController({ ui, youtube, constants }: YoutubeContr
     }
 
     /**
-     * 共有 iframe と閉じるボタンを必要に応じて生成する。
+     * 次の再生に使う iframe を新しく作り、閉じるボタンはまだなければ作る。
+     * 前の iframe は destroySharedPlaybackPlayer で破棄してから呼ぶ。
      */
-    function ensureSharedPlaybackElements() {
-        return ensureYoutubeSharedPlaybackElements({
+    function prepareSharedPlaybackElements() {
+        return prepareYoutubeSharedPlaybackElements({
             youtube,
-            syncIframe: () => syncSharedPlaybackIframe(),
             createFrame: () => createSharedPlaybackFrame(),
             createCloseButton: () => createSharedPlaybackCloseButton()
         });
@@ -644,12 +630,6 @@ export function createYoutubeController({ ui, youtube, constants }: YoutubeContr
      */
     function detachSharedPlayback(thumbDiv: Element | null | undefined, options?: { stopPlayback?: boolean }) {
         if (!isSharedPlaybackMountedInThumb(thumbDiv)) {
-            const sharedPlayback = getSharedPlaybackState();
-            if (sharedPlayback.hostThumb === thumbDiv) {
-                postPlaybackAdRestore.clear();
-                sharedPlayback.hostThumb = null;
-                setSharedPlaybackSessionId(0);
-            }
             debugPlayback("youtube", "detachSharedPlayback skipped because iframe is not mounted in thumb", {
                 songKey: getSongKeyFromYoutubeThumb(thumbDiv)
             });
@@ -707,8 +687,8 @@ export function createYoutubeController({ ui, youtube, constants }: YoutubeContr
             });
             destroySharedPlaybackPlayer();
         }
-        sharedPlayback = ensureSharedPlaybackElements();
-        const iframe = syncSharedPlaybackIframe() || sharedPlayback.iframe;
+        sharedPlayback = prepareSharedPlaybackElements();
+        const iframe = sharedPlayback.iframe;
         if (!isHtmlElement(iframe) || !isHtmlElement(sharedPlayback.closeButton)) {
             return Promise.resolve(false);
         }

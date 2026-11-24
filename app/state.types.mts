@@ -260,7 +260,7 @@ export type AppUiState = {
 export type AppYoutubeRuntimeState = {
   /** YouTube IFrame API の読み込み Promise。 */
   apiPromise: Promise<unknown> | null;
-  /** カード間で再利用する共有プレーヤー状態。 */
+  /** カードが順に使う、同時に 1 つだけのプレーヤーの状態。再生のたびに作り直す。 */
   sharedPlayback: YoutubeSharedPlaybackState | null;
 };
 

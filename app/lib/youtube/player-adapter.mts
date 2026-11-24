@@ -4,10 +4,7 @@ import type { YoutubeSharedPlaybackState } from "./shared-playback.mjs";
 import type { YoutubePlayerEvent, YoutubePlayerLike } from "./iframe-api.types.mjs";
 
 type YoutubePlayerAdapterInput = {
-    getSharedPlaybackState: () => Pick<YoutubeSharedPlaybackState,
-        "player" | "playerPromise" | "pendingAttach">;
-    setPendingAttach: (iframe: HTMLIFrameElement | null, playbackSessionId: number) => void;
-    setSessionId: (playbackSessionId: number) => void;
+    getSharedPlaybackState: () => Pick<YoutubeSharedPlaybackState, "player">;
     ensureReady: () => Promise<unknown>;
     applyIframeAttributes: (iframe: Element | null) => void;
     syncIframe: () => void;
@@ -17,12 +14,10 @@ type YoutubePlayerAdapterInput = {
     debug?: (message: string, details: unknown) => void;
 };
 
-/** 共有 iframe に YouTube Iframe API の Player を紐付ける adapter を作成する。 */
+/** 再生のたびに作る iframe へ、YouTube IFrame API の Player を紐付ける adapter を作成する。 */
 export function createYoutubePlayerAdapter(input: YoutubePlayerAdapterInput) {
     const {
         getSharedPlaybackState,
-        setPendingAttach,
-        setSessionId,
         ensureReady,
         applyIframeAttributes,
         syncIframe,
@@ -34,63 +29,45 @@ export function createYoutubePlayerAdapter(input: YoutubePlayerAdapterInput) {
 
     /**
      * 生成済み iframe へ YouTube プレイヤーを紐付ける。
-     * @param iframe プレーヤーを紐付けるiframe
-     * @param {number} playbackSessionId
-     * @returns 作成したプレーヤー、または紐付け不要な場合はnull
+     * API の準備を待つ間に別の再生が始まると、この iframe は破棄されて DOM から外れるので、紐付けずに null を返す。
+     * @param iframe プレーヤーを紐付ける iframe
+     * @param playbackSessionId プレーヤーのイベントを対応付ける再生セッション ID
+     * @returns 作成したプレーヤー。紐付けなかった場合は null
      */
     function attach(iframe: HTMLIFrameElement | null, playbackSessionId: number): Promise<YoutubePlayerLike | null> {
-        const sharedPlayback = getSharedPlaybackState();
-        setPendingAttach(iframe, playbackSessionId);
-        if (sharedPlayback.playerPromise) {
-            setSessionId(playbackSessionId);
-            if (typeof debug === "function") {
-                debug("attachPlayer waiting for existing playerPromise", { playbackSessionId });
-            }
-            return sharedPlayback.playerPromise;
-        }
-        setSessionId(playbackSessionId);
         if (typeof debug === "function") {
             debug("attachPlayer creating player", { playbackSessionId });
         }
-        sharedPlayback.playerPromise = ensureReady().then(() => {
-            const latestSharedPlayback = getSharedPlaybackState();
-            const pendingAttach = latestSharedPlayback.pendingAttach;
-            if (!pendingAttach) return null;
-            const nextIframe = pendingAttach.iframe;
-            const nextPlaybackSessionId = pendingAttach.playbackSessionId;
-            setSessionId(nextPlaybackSessionId);
-            if (!isHtmlElement(nextIframe)) return null;
-            if (!document.body.contains(nextIframe)) return null;
-            if (latestSharedPlayback.player) return latestSharedPlayback.player;
-            latestSharedPlayback.player = new window.YT.Player(nextIframe, {
-                host: resolveYoutubeEmbedHostFromUrl(nextIframe.src),
+        return ensureReady().then(() => {
+            if (!isHtmlElement(iframe)) return null;
+            if (!document.body.contains(iframe)) return null;
+            const sharedPlayback = getSharedPlaybackState();
+            sharedPlayback.player = new window.YT.Player(iframe, {
+                host: resolveYoutubeEmbedHostFromUrl(iframe.src),
                 events: {
                     onReady: (event) => {
                         applyIframeAttributes(
                             event && event.target && typeof event.target.getIframe === "function"
                                 ? event.target.getIframe()
-                                : nextIframe
+                                : iframe
                         );
                     },
-                    onStateChange: (event) => handleStateChange(event, nextPlaybackSessionId),
-                    onError: (event) => handlePlayerError(event, nextPlaybackSessionId)
+                    onStateChange: (event) => handleStateChange(event, playbackSessionId),
+                    onError: (event) => handlePlayerError(event, playbackSessionId)
                 }
             });
-            applyIframeAttributes(nextIframe);
+            applyIframeAttributes(iframe);
             syncIframe();
             if (typeof debug === "function") {
-                debug("attachPlayer created player", { playbackSessionId: nextPlaybackSessionId });
+                debug("attachPlayer created player", { playbackSessionId });
             }
-            return latestSharedPlayback.player;
+            return sharedPlayback.player;
         }).catch((error) => {
             if (typeof handleAttachFailure === "function") {
                 return handleAttachFailure(error, playbackSessionId);
             }
             throw error;
-        }).finally(() => {
-            sharedPlayback.playerPromise = null;
         });
-        return sharedPlayback.playerPromise;
     }
 
     return { attach };

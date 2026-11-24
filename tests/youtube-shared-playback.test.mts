@@ -2,33 +2,27 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
     destroyYoutubeSharedPlaybackPlayer,
-    ensureYoutubeSharedPlaybackElements,
     getYoutubeSharedPlaybackState,
     getYoutubeSharedPlaybackThumb,
-    setPendingYoutubeSharedPlaybackAttach,
+    prepareYoutubeSharedPlaybackElements,
     setYoutubeSharedPlaybackSessionId,
     syncYoutubeSharedPlaybackIframe
 } from "../app/lib/youtube/shared-playback.mts";
 import type { YoutubePlaybackStartAttempt } from "../app/lib/youtube/playback-start-attempt.mts";
 import { installFakeDom, installFakeTimeouts } from "./test-helpers.mts";
 
-test("youtube shared playback: state initializes and keeps pending attach/session metadata", (t) => {
-    t.after(installFakeDom());
-    const iframe = document.createElement("iframe");
+test("youtube shared playback: state initializes empty and keeps the session id", () => {
     const youtube = {};
     const sharedPlayback = getYoutubeSharedPlaybackState(youtube);
 
+    assert.equal(sharedPlayback.player, null);
+    assert.equal(sharedPlayback.iframe, null);
     assert.equal(sharedPlayback.sessionId, 0);
-    assert.equal(sharedPlayback.pendingAttach, null);
 
     setYoutubeSharedPlaybackSessionId(youtube, 5);
-    setPendingYoutubeSharedPlaybackAttach(youtube, iframe, 5);
 
     assert.equal(sharedPlayback.sessionId, 5);
-    assert.deepEqual(sharedPlayback.pendingAttach, {
-        iframe,
-        playbackSessionId: 5
-    });
+    assert.equal(getYoutubeSharedPlaybackState(youtube), sharedPlayback);
 });
 
 test("youtube shared playback: sync/update helpers keep iframe and active thumb in sync", () => {
@@ -59,13 +53,49 @@ test("youtube shared playback: sync/update helpers keep iframe and active thumb 
     }
 });
 
+test("youtube shared playback: prepare creates a fresh iframe for each playback and keeps the close button", () => {
+    const cleanup = installFakeDom();
+    try {
+        const youtube = {};
+        let frameCount = 0;
+        let closeButtonCount = 0;
+        const input = {
+            youtube,
+            createFrame: () => {
+                frameCount += 1;
+                return document.createElement("iframe");
+            },
+            createCloseButton: () => {
+                closeButtonCount += 1;
+                return document.createElement("button");
+            }
+        };
+
+        const first = prepareYoutubeSharedPlaybackElements(input);
+        const firstIframe = first.iframe;
+        const closeButton = first.closeButton;
+        assert.ok(firstIframe);
+        assert.ok(closeButton);
+
+        destroyYoutubeSharedPlaybackPlayer({ youtube });
+        const second = prepareYoutubeSharedPlaybackElements(input);
+
+        assert.ok(second.iframe);
+        assert.notEqual(second.iframe, firstIframe);
+        assert.equal(second.closeButton, closeButton);
+        assert.equal(frameCount, 2);
+        assert.equal(closeButtonCount, 1);
+    } finally {
+        cleanup();
+    }
+});
+
 test("youtube shared playback: destroy removes player elements and retains the reusable close button", () => {
     const cleanup = installFakeDom();
     try {
         const youtube = {};
-        const sharedPlayback = ensureYoutubeSharedPlaybackElements({
+        const sharedPlayback = prepareYoutubeSharedPlaybackElements({
             youtube,
-            syncIframe: () => null,
             createFrame: () => document.createElement("iframe"),
             createCloseButton: () => document.createElement("button")
         });
@@ -84,7 +114,6 @@ test("youtube shared playback: destroy removes player elements and retains the r
             }
         };
         sharedPlayback.hostThumb = thumb;
-        sharedPlayback.pendingAttach = { iframe: sharedPlayback.iframe, playbackSessionId: 3 };
         setYoutubeSharedPlaybackSessionId(youtube, 3);
 
         destroyYoutubeSharedPlaybackPlayer({
@@ -94,8 +123,6 @@ test("youtube shared playback: destroy removes player elements and retains the r
 
         assert.equal(destroyCount, 1);
         assert.equal(sharedPlayback.player, null);
-        assert.equal(sharedPlayback.playerPromise, null);
-        assert.equal(sharedPlayback.pendingAttach, null);
         assert.equal(sharedPlayback.iframe, null);
         assert.equal(sharedPlayback.hostThumb, null);
         assert.equal(sharedPlayback.sessionId, 0);
