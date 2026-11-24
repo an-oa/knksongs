@@ -779,3 +779,74 @@ export function installFakeAnimationFrames() {
         }
     };
 }
+
+/** 見えている割合を指定して、知らせを手で送れる IntersectionObserver の偽物。 */
+class FakeIntersectionObserver implements IntersectionObserver {
+    readonly root = null;
+    readonly rootMargin: string;
+    readonly scrollMargin = "0px";
+    readonly thresholds: readonly number[];
+    readonly targets: Element[] = [];
+    readonly callback: IntersectionObserverCallback;
+    disconnected = false;
+
+    constructor(callback: IntersectionObserverCallback, options?: IntersectionObserverInit) {
+        this.callback = callback;
+        this.rootMargin = options?.rootMargin ?? "0px";
+        const threshold = options?.threshold ?? 0;
+        this.thresholds = Array.isArray(threshold) ? threshold : [threshold];
+    }
+
+    /** 監視対象を記録する。 */
+    observe(target: Element) { this.targets.push(target); }
+
+    /** 監視対象を解除する。 */
+    unobserve(target: Element) {
+        const index = this.targets.indexOf(target);
+        if (index >= 0) this.targets.splice(index, 1);
+    }
+
+    /** 監視解除を記録する。 */
+    disconnect() { this.disconnected = true; }
+
+    /** 未配信の観測結果は保持しない。 */
+    takeRecords(): IntersectionObserverEntry[] { return []; }
+
+    /**
+     * 記録した対象すべてについて、指定した割合だけ見えていると知らせる。
+     * @param intersectionRatio 見えている割合 (0〜1)
+     */
+    trigger(intersectionRatio: number) {
+        this.callback(this.targets.map((target) => ({
+            target,
+            isIntersecting: intersectionRatio > 0,
+            intersectionRatio,
+            time: 0,
+            boundingClientRect: target.getBoundingClientRect(),
+            intersectionRect: target.getBoundingClientRect(),
+            rootBounds: null
+        })), this);
+    }
+}
+
+/**
+ * IntersectionObserver を、知らせを手で送れる偽物に差し替える。installFakeDom の後に呼ぶ。
+ * @returns 作られた observer の一覧と、差し替える前に戻す関数
+ */
+export function installFakeIntersectionObservers() {
+    const previous = globalThis.IntersectionObserver;
+    const observers: FakeIntersectionObserver[] = [];
+    setGlobalValue("IntersectionObserver", class extends FakeIntersectionObserver {
+        constructor(callback: IntersectionObserverCallback, options?: IntersectionObserverInit) {
+            super(callback, options);
+            observers.push(this);
+        }
+    });
+    return {
+        observers,
+        /** 差し替える前の IntersectionObserver に戻す。 */
+        cleanup() {
+            setGlobalValue("IntersectionObserver", previous);
+        }
+    };
+}

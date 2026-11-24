@@ -3,8 +3,9 @@
  *
  * 再生が終わったときや再生開始に失敗したときに、bootstrap.mts が配線した hook から呼ばれる。
  * 現在の検索結果と設定から次の候補を並べ (../lib/playback-sequence)、開始できなかった候補は飛ばす。
- * 開始が未確定のときや、別の再生に切り替わったときは進めずに止まる。
- * 再生と追従スクロールの実処理は callbacks 経由で render controller に任せる。
+ * YouTube の規約に合わせ、次の曲のカードを見える位置へ動かし、プレーヤーの半分より多くが見えてから自動再生する。
+ * 見えなかったときや、開始が未確定のとき、別の再生に切り替わったときは進めずに止まる。
+ * カードを見える位置へ動かす処理と再生の実処理は、callbacks 経由で render controller に任せる。
  *
  * 設定の値の管理は ./playback-settings.mts、プレーヤーの制御は ./youtube.mts が担当する。
  */
@@ -18,8 +19,9 @@ import type { YoutubePlaybackStartResult } from "../lib/youtube/playback-start-a
 import type { AppDataState, AppUiState } from "../state.types.mjs";
 
 type PlaybackSessionCallbacks = {
+    /** 曲のカードを見える位置へ動かし、プレーヤーの半分より多くが見えたら true を返す。 */
+    revealSongForAutoplay: (songKey: string) => Promise<boolean> | boolean;
     playSongByKey: (songKey: string) => Promise<YoutubePlaybackStartResult> | YoutubePlaybackStartResult;
-    scrollSongIntoView: (songKey: string) => void;
 };
 
 type PlaybackSessionControllerInput = {
@@ -31,18 +33,18 @@ type PlaybackSessionControllerInput = {
 };
 
 /**
- * 再生終了後の継続再生と追従スクロールを制御する。
- * @param {PlaybackSessionControllerInput} input
+ * 再生終了後の継続再生と、次の曲のカードを見える位置へ動かす処理を制御する。
+ * @param input 検索結果、再生設定、render controller への callbacks
  */
 export function createPlaybackSessionController({ data, ui, callbacks }: PlaybackSessionControllerInput) {
     const playbackUi = ui.playback;
-    const playSongByKey = callbacks.playSongByKey;
-    const scrollSongIntoView = callbacks.scrollSongIntoView;
+    const { revealSongForAutoplay, playSongByKey } = callbacks;
 
     /**
      * 現在の再生設定に従い、終了した曲の次候補を順に再生する。
-     * @param {string} finishedSongKey
-     * @returns {Promise<boolean>}
+     * 候補ごとに、カードを見える位置へ動かして、プレーヤーの半分より多くが見えてから自動再生を始める。
+     * @param finishedSongKey 終わった曲、または開始できなかった曲の参照キー
+     * @returns 次の曲の再生が始まったら true
      */
     async function continuePlayback(finishedSongKey: string): Promise<boolean> {
         const candidates = getPlaybackContinuationCandidates(
@@ -60,6 +62,21 @@ export function createPlaybackSessionController({ data, ui, callbacks }: Playbac
             loopPlayback: playbackUi.loopPlayback
         });
         for (const songKey of candidates) {
+            const isPlayerVisible = await Promise.resolve(revealSongForAutoplay(songKey));
+            if (playbackUi.activeThumb) {
+                debugPlayback("playback-session", "continuePlayback stopped because playback was taken over while revealing", {
+                    finishedSongKey,
+                    candidateSongKey: songKey
+                });
+                return false;
+            }
+            if (!isPlayerVisible) {
+                debugPlayback("playback-session", "continuePlayback stopped because the next player did not become visible", {
+                    finishedSongKey,
+                    candidateSongKey: songKey
+                });
+                return false;
+            }
             const playbackResult = await Promise.resolve(playSongByKey(songKey));
             const didStartPlayback = isYoutubePlaybackStarted(playbackResult);
             const isStartUnconfirmed = isYoutubePlaybackStartUnconfirmed(playbackResult);
@@ -70,13 +87,6 @@ export function createPlaybackSessionController({ data, ui, callbacks }: Playbac
                 playbackResult,
                 hasActiveThumb: wasPlaybackTakenOver
             });
-            if (
-                didStartPlayback ||
-                isStartUnconfirmed ||
-                !wasPlaybackTakenOver
-            ) {
-                scrollSongIntoView(songKey);
-            }
             if (didStartPlayback) {
                 debugPlayback("playback-session", "continuePlayback advanced", {
                     finishedSongKey,

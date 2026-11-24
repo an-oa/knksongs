@@ -3,6 +3,9 @@ import { installNetworkMocks } from "./support/network-mocks.mts";
 import { endLatestMockPlayback, setMockVideoBehavior, waitForMockYoutube } from "./support/mock-youtube.mts";
 import { enablePlaybackSettings, filterBySongTitle, getControlLabel, getSongCard, openSettingsPanel, waitForInitialLoad } from "./support/ui-helpers.mts";
 
+/** 動画が入った瞬間にプレーヤーが見えていた割合を、テストの間だけ持たせたサムネイル要素。 */
+type ThumbWithRatioAtMount = Element & { ratioAtMount?: Promise<number> };
+
 test.beforeEach(async ({ page }) => {
     await installNetworkMocks(page);
     await page.goto("/");
@@ -228,6 +231,56 @@ test("continuous playback advances to the next result after the current song end
     await endLatestMockPlayback(page);
 
     await expect(secondCard.locator("iframe")).toBeVisible();
+    await expect.poll(async () => {
+        return page.evaluate(() => window.__knkMockYoutube?.latestVideoId());
+    }).toBe("chain-beta1");
+});
+
+test("continuous playback starts the next song only after its player is mostly on screen", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 400 });
+    await enablePlaybackSettings(page, { continuousPlayback: true });
+    await setMockVideoBehavior(page, "chain-beta1", "auto-playing");
+    await filterBySongTitle(page, "Chain");
+
+    const firstCard = getSongCard(page, "Chain Alpha");
+    const secondCard = getSongCard(page, "Chain Beta");
+    const secondThumb = secondCard.locator(".thumb");
+    await firstCard.locator(".thumb").click();
+    await expect(firstCard.locator("iframe")).toBeVisible();
+
+    // 再生中のカードの下端を画面の下端にそろえ、次の曲のプレーヤーを画面の外へ出す。
+    await firstCard.evaluate((card) => card.scrollIntoView({ block: "end", behavior: "instant" }));
+    const ratioBeforeEnd = await secondThumb.evaluate((thumb) => {
+        const header = document.querySelector(".header");
+        const viewTop = Math.max(0, header ? header.getBoundingClientRect().bottom : 0);
+        const rect = thumb.getBoundingClientRect();
+        const visibleHeight = Math.min(rect.bottom, window.innerHeight) - Math.max(rect.top, viewTop);
+        return rect.height > 0 ? Math.max(0, visibleHeight) / rect.height : 0;
+    });
+    expect(ratioBeforeEnd).toBeLessThan(0.5);
+
+    // 次の曲のサムネイルに動画が入った瞬間に、プレーヤーの見えている割合を測る。
+    // 再生を終える前に監視を置き終えるよう、結果の Promise はサムネイル要素に持たせる。
+    await secondThumb.evaluate((thumb) => {
+        (thumb as ThumbWithRatioAtMount).ratioAtMount = new Promise<number>((resolve) => {
+            const observer = new MutationObserver(() => {
+                if (!thumb.querySelector("iframe")) return;
+                observer.disconnect();
+                const header = document.querySelector(".header");
+                const viewTop = Math.max(0, header ? header.getBoundingClientRect().bottom : 0);
+                const rect = thumb.getBoundingClientRect();
+                const visibleHeight = Math.min(rect.bottom, window.innerHeight) - Math.max(rect.top, viewTop);
+                resolve(rect.height > 0 ? Math.max(0, visibleHeight) / rect.height : 0);
+            });
+            observer.observe(thumb, { childList: true });
+        });
+    });
+
+    await endLatestMockPlayback(page);
+
+    await expect(secondCard.locator("iframe")).toBeVisible();
+    const ratioAtMount = await secondThumb.evaluate((thumb) => (thumb as ThumbWithRatioAtMount).ratioAtMount);
+    expect(ratioAtMount).toBeGreaterThan(0.5);
     await expect.poll(async () => {
         return page.evaluate(() => window.__knkMockYoutube?.latestVideoId());
     }).toBe("chain-beta1");

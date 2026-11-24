@@ -44,7 +44,7 @@ function playbackUnconfirmed() {
     return createYoutubePlaybackStartResult(YOUTUBE_PLAYBACK_START_STATUS.UNCONFIRMED);
 }
 
-test("playback session: advances to next song and scrolls it into view", async () => {
+test("playback session: reveals the next song before starting it", async () => {
     const data = {
         currentResults: [
             createSongFixture({ songKey: "song:1" }),
@@ -58,12 +58,13 @@ test("playback session: advances to next song and scrolls it into view", async (
         data,
         ui,
         callbacks: {
+            revealSongForAutoplay: (songKey) => {
+                calls.push(`reveal:${songKey}`);
+                return true;
+            },
             playSongByKey: (songKey) => {
                 calls.push(`play:${songKey}`);
                 return playbackStarted();
-            },
-            scrollSongIntoView: (songKey) => {
-                calls.push(`scroll:${songKey}`);
             }
         }
     });
@@ -71,7 +72,7 @@ test("playback session: advances to next song and scrolls it into view", async (
     const continued = await controller.continuePlayback("song:1");
 
     assert.equal(continued, true);
-    assert.deepEqual(calls, ["play:song:2", "scroll:song:2"]);
+    assert.deepEqual(calls, ["reveal:song:2", "play:song:2"]);
 });
 
 test("playback session: tries later candidates when the next song cannot start", async () => {
@@ -88,12 +89,13 @@ test("playback session: tries later candidates when the next song cannot start",
         data,
         ui,
         callbacks: {
+            revealSongForAutoplay: (songKey) => {
+                calls.push(`reveal:${songKey}`);
+                return true;
+            },
             playSongByKey: (songKey) => {
                 calls.push(`play:${songKey}`);
                 return songKey === "song:3" ? playbackStarted() : playbackFailed();
-            },
-            scrollSongIntoView: (songKey) => {
-                calls.push(`scroll:${songKey}`);
             }
         }
     });
@@ -101,7 +103,7 @@ test("playback session: tries later candidates when the next song cannot start",
     const continued = await controller.continuePlayback("song:1");
 
     assert.equal(continued, true);
-    assert.deepEqual(calls, ["play:song:2", "scroll:song:2", "play:song:3", "scroll:song:3"]);
+    assert.deepEqual(calls, ["reveal:song:2", "play:song:2", "reveal:song:3", "play:song:3"]);
 });
 
 test("playback session: repeats current song when loop-only mode is enabled", async () => {
@@ -117,12 +119,13 @@ test("playback session: repeats current song when loop-only mode is enabled", as
         data,
         ui,
         callbacks: {
+            revealSongForAutoplay: (songKey) => {
+                calls.push(`reveal:${songKey}`);
+                return true;
+            },
             playSongByKey: (songKey) => {
                 calls.push(`play:${songKey}`);
                 return playbackStarted();
-            },
-            scrollSongIntoView: (songKey) => {
-                calls.push(`scroll:${songKey}`);
             }
         }
     });
@@ -130,7 +133,7 @@ test("playback session: repeats current song when loop-only mode is enabled", as
     const continued = await controller.continuePlayback("song:2");
 
     assert.equal(continued, true);
-    assert.deepEqual(calls, ["play:song:2", "scroll:song:2"]);
+    assert.deepEqual(calls, ["reveal:song:2", "play:song:2"]);
 });
 
 test("playback session: awaits async playback failure before trying the next candidate", async () => {
@@ -147,12 +150,13 @@ test("playback session: awaits async playback failure before trying the next can
         data,
         ui,
         callbacks: {
+            revealSongForAutoplay: (songKey) => {
+                calls.push(`reveal:${songKey}`);
+                return true;
+            },
             playSongByKey: (songKey) => {
                 calls.push(`play:${songKey}`);
                 return Promise.resolve(songKey === "song:3" ? playbackStarted() : playbackFailed());
-            },
-            scrollSongIntoView: (songKey) => {
-                calls.push(`scroll:${songKey}`);
             }
         }
     });
@@ -160,10 +164,10 @@ test("playback session: awaits async playback failure before trying the next can
     const continued = await controller.continuePlayback("song:1");
 
     assert.equal(continued, true);
-    assert.deepEqual(calls, ["play:song:2", "scroll:song:2", "play:song:3", "scroll:song:3"]);
+    assert.deepEqual(calls, ["reveal:song:2", "play:song:2", "reveal:song:3", "play:song:3"]);
 });
 
-test("playback session: scrolls wrapped loop candidate even when playback cannot start", async () => {
+test("playback session: reveals wrapped loop candidate even when playback cannot start", async () => {
     const data = {
         currentResults: [
             createSongFixture({ songKey: "song:1" }),
@@ -176,12 +180,13 @@ test("playback session: scrolls wrapped loop candidate even when playback cannot
         data,
         ui,
         callbacks: {
+            revealSongForAutoplay: (songKey) => {
+                calls.push(`reveal:${songKey}`);
+                return true;
+            },
             playSongByKey: (songKey) => {
                 calls.push(`play:${songKey}`);
                 return playbackFailed();
-            },
-            scrollSongIntoView: (songKey) => {
-                calls.push(`scroll:${songKey}`);
             }
         }
     });
@@ -189,7 +194,7 @@ test("playback session: scrolls wrapped loop candidate even when playback cannot
     const continued = await controller.continuePlayback("song:2");
 
     assert.equal(continued, false);
-    assert.deepEqual(calls, ["play:song:1", "scroll:song:1"]);
+    assert.deepEqual(calls, ["reveal:song:1", "play:song:1"]);
 });
 
 test("playback session: stops trying later candidates when playback start is unconfirmed", async () => {
@@ -206,12 +211,13 @@ test("playback session: stops trying later candidates when playback start is unc
         data,
         ui,
         callbacks: {
+            revealSongForAutoplay: (songKey) => {
+                calls.push(`reveal:${songKey}`);
+                return true;
+            },
             playSongByKey: (songKey) => {
                 calls.push(`play:${songKey}`);
                 return playbackUnconfirmed();
-            },
-            scrollSongIntoView: (songKey) => {
-                calls.push(`scroll:${songKey}`);
             }
         }
     });
@@ -219,7 +225,7 @@ test("playback session: stops trying later candidates when playback start is unc
     const continued = await controller.continuePlayback("song:1");
 
     assert.equal(continued, false);
-    assert.deepEqual(calls, ["play:song:2", "scroll:song:2"]);
+    assert.deepEqual(calls, ["reveal:song:2", "play:song:2"]);
 });
 
 test("playback session: stops trying later candidates after manual playback takes over", async (t) => {
@@ -238,6 +244,10 @@ test("playback session: stops trying later candidates after manual playback take
         data,
         ui,
         callbacks: {
+            revealSongForAutoplay: (songKey) => {
+                calls.push(`reveal:${songKey}`);
+                return true;
+            },
             playSongByKey: async (songKey) => {
                 calls.push(`play:${songKey}`);
                 if (songKey === "song:2") {
@@ -246,9 +256,6 @@ test("playback session: stops trying later candidates after manual playback take
                     return playbackFailed();
                 }
                 return playbackStarted();
-            },
-            scrollSongIntoView: (songKey) => {
-                calls.push(`scroll:${songKey}`);
             }
         }
     });
@@ -256,5 +263,106 @@ test("playback session: stops trying later candidates after manual playback take
     const continued = await controller.continuePlayback("song:1");
 
     assert.equal(continued, false);
-    assert.deepEqual(calls, ["play:song:2"]);
+    assert.deepEqual(calls, ["reveal:song:2", "play:song:2"]);
+});
+
+test("playback session: waits for the next player to become visible before starting it", async () => {
+    const data = {
+        currentResults: [
+            createSongFixture({ songKey: "song:1" }),
+            createSongFixture({ songKey: "song:2" })
+        ]
+    };
+    const ui = createPlaybackUi({ continuousPlayback: true });
+    const calls: string[] = [];
+    const visible = Promise.withResolvers<boolean>();
+    const controller = createPlaybackSessionController({
+        data,
+        ui,
+        callbacks: {
+            revealSongForAutoplay: (songKey) => {
+                calls.push(`reveal:${songKey}`);
+                return visible.promise;
+            },
+            playSongByKey: (songKey) => {
+                calls.push(`play:${songKey}`);
+                return playbackStarted();
+            }
+        }
+    });
+
+    const continuing = controller.continuePlayback("song:1");
+    await Promise.resolve();
+    assert.deepEqual(calls, ["reveal:song:2"], "playback waits until the player is visible");
+
+    visible.resolve(true);
+
+    assert.equal(await continuing, true);
+    assert.deepEqual(calls, ["reveal:song:2", "play:song:2"]);
+});
+
+test("playback session: does not start the next song when its player does not become visible", async () => {
+    const data = {
+        currentResults: [
+            createSongFixture({ songKey: "song:1" }),
+            createSongFixture({ songKey: "song:2" }),
+            createSongFixture({ songKey: "song:3" })
+        ]
+    };
+    const ui = createPlaybackUi({ continuousPlayback: true });
+    const calls: string[] = [];
+    const controller = createPlaybackSessionController({
+        data,
+        ui,
+        callbacks: {
+            revealSongForAutoplay: async (songKey) => {
+                calls.push(`reveal:${songKey}`);
+                return false;
+            },
+            playSongByKey: (songKey) => {
+                calls.push(`play:${songKey}`);
+                return playbackStarted();
+            }
+        }
+    });
+
+    const continued = await controller.continuePlayback("song:1");
+
+    assert.equal(continued, false);
+    assert.deepEqual(calls, ["reveal:song:2"], "later candidates are not revealed either");
+});
+
+test("playback session: stops without playing when manual playback takes over while revealing", async (t) => {
+    const cleanup = installFakeDom();
+    t.after(cleanup);
+    const data = {
+        currentResults: [
+            createSongFixture({ songKey: "song:1" }),
+            createSongFixture({ songKey: "song:2" }),
+            createSongFixture({ songKey: "song:3" })
+        ]
+    };
+    const ui = createPlaybackUi({ continuousPlayback: true });
+    const calls: string[] = [];
+    const controller = createPlaybackSessionController({
+        data,
+        ui,
+        callbacks: {
+            revealSongForAutoplay: async (songKey) => {
+                calls.push(`reveal:${songKey}`);
+                ui.playback.activeThumb = document.createElement("div");
+                ui.playback.activeThumb.dataset.songKey = "song:manual";
+                return true;
+            },
+            playSongByKey: (songKey) => {
+                calls.push(`play:${songKey}`);
+                return playbackStarted();
+            }
+        }
+    });
+
+    const continued = await controller.continuePlayback("song:1");
+
+    assert.equal(continued, false);
+    assert.deepEqual(calls, ["reveal:song:2"]);
 });

@@ -332,8 +332,8 @@ function createAppControllers() {
         data: appDataState,
         ui: appUiState,
         callbacks: {
-            playSongByKey: (songKey) => renderController.playSongByKey(songKey),
-            scrollSongIntoView: (songKey) => renderController.scrollSongIntoView(songKey)
+            revealSongForAutoplay: (songKey) => renderController.revealSongForAutoplay(songKey),
+            playSongByKey: (songKey) => renderController.playSongByKey(songKey)
         }
     });
 

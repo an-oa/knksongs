@@ -3,7 +3,7 @@
  *
  * data.currentResults を、カード要素を再利用しながら一覧へ差分反映する。
  * 前回と同じ内容のカードは中身を書き直さず、追加表示のたびに全カードを作り直さない。
- * 再生中のカードは位置を保ち、表示から外れたら再生を止める。
+ * 再生中のカードは位置を保ち、表示から外れたら再生を止める。連続再生の次の曲は、カードが見えてから再生する。
  * masonry レイアウト (../lib/render)、末尾到達での追加表示、ブックマーク内のドラッグ並べ替え、
  * 指したカードで収まらない曲名を流す動き、空結果と読み込み失敗の表示、言語切り替え時の文言の書き直しもここで行う。
  *
@@ -12,6 +12,7 @@
  * サイドバーとブックマーク UI へ、callbacks 経由で委ねる。
  */
 import { getHeaderHeight } from "../lib/dom-utils.mjs";
+import { waitForElementMostlyVisible } from "../lib/element-visibility.mjs";
 import { hasStreamRole } from "../lib/stream-role.mjs";
 import { tracePlayback } from "../lib/playback-debug.mjs";
 import { scheduleScrollElementIntoView } from "../lib/results-scroll.mjs";
@@ -41,6 +42,12 @@ import type {
 } from "../state.types.mjs";
 
 const DEFAULT_RESULT_DISPLAY_BATCH_SIZE = 48;
+
+/**
+ * 連続再生で、次の曲のプレーヤーが見えるまで待つ上限 (ミリ秒)。遠くのカードへのスムーズスクロールも収まる長さにする。
+ * これを過ぎても見えないのは、利用者が別の場所へスクロールしたときなので、自動再生を始めない。
+ */
+const AUTOPLAY_VISIBILITY_TIMEOUT_MS = 5000;
 
 type RenderUiElements = {
     resultList?: HTMLElement | null;
@@ -532,40 +539,56 @@ export function createRenderController({
     }
 
     /**
-     * 曲キーに対応するカードを必要に応じて描画し、再生開始する。
-     * @param {string} songKey
-     * @returns {Promise<YoutubePlaybackStartResult>}
+     * 曲キーに対応するカードを、表示範囲外なら表示上限を広げて描画し、結果の位置と一緒に返す。
+     * @param songKey 曲の参照キー
+     * @returns 結果の位置とカード。結果にない曲か、描画できなかったときは null
      */
-    function playSongByKey(songKey: string) {
+    function getRenderedSongCard(songKey: string): { index: number; entry: RenderCardEntry } | null {
         const index = data.currentResults.findIndex((row) => row && row.songKey === songKey);
-        if (index === -1) {
-            return Promise.resolve(createYoutubePlaybackStartResult(YOUTUBE_PLAYBACK_START_STATUS.FAILED));
-        }
+        if (index === -1) return null;
         ensureResultVisible(index);
         let entry = getCardEntryBySongKey(songKey);
         if (!entry) {
             updateDisplay();
             entry = getCardEntryBySongKey(songKey);
         }
-        if (!entry) {
+        return entry ? { index, entry } : null;
+    }
+
+    /**
+     * 曲キーに対応するカードを必要に応じて描画し、自動再生を始める。
+     * @param songKey 再生する曲の参照キー
+     * @returns 再生開始の結果
+     */
+    function playSongByKey(songKey: string): Promise<YoutubePlaybackStartResult> {
+        const rendered = getRenderedSongCard(songKey);
+        if (!rendered) {
             return Promise.resolve(createYoutubePlaybackStartResult(YOUTUBE_PLAYBACK_START_STATUS.FAILED));
         }
-        return Promise.resolve(playThumbnail(entry.thumbDiv, getYoutubeTarget(data.currentResults[index]), {
+        return Promise.resolve(playThumbnail(rendered.entry.thumbDiv, getYoutubeTarget(data.currentResults[rendered.index]), {
             playbackMode: "autoplay"
         }));
     }
 
     /**
-     * 指定曲のカードが見える位置まで、固定ヘッダーを避けてスクロールする。
-     * @param {string} songKey
+     * 連続再生で次に自動再生する曲のカードを、固定ヘッダーを避けて見える位置までスクロールし、
+     * サムネイルの半分より多くが見えるまで待つ。YouTube の規約は、自動再生をプレーヤーの半分より多くが
+     * 見えてから始めることを求めるため。
+     * @param songKey 次に再生する曲の参照キー
+     * @returns 見えたら true。カードがないか、上限の時間までに見えなければ false
      */
-    function scrollSongIntoView(songKey: string) {
-        const entry = getCardEntryBySongKey(songKey);
-        if (!entry) return;
-        void scheduleScrollElementIntoView(entry.card, {
-            topOffset: getHeaderHeight(),
+    function revealSongForAutoplay(songKey: string): Promise<boolean> {
+        const rendered = getRenderedSongCard(songKey);
+        if (!rendered) return Promise.resolve(false);
+        const topInset = getHeaderHeight();
+        void scheduleScrollElementIntoView(rendered.entry.card, {
+            topOffset: topInset,
             behavior: "smooth",
             force: true
+        });
+        return waitForElementMostlyVisible(rendered.entry.thumbDiv, {
+            topInset,
+            timeoutMs: AUTOPLAY_VISIBILITY_TIMEOUT_MS
         });
     }
 
@@ -857,7 +880,7 @@ export function createRenderController({
 
     return {
         playSongByKey,
-        scrollSongIntoView,
+        revealSongForAutoplay,
         updateDisplay,
         showLoadError,
         refreshText,

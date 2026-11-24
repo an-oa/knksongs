@@ -13,6 +13,7 @@ import {
 } from "../app/lib/youtube/playback-start-attempt.mts";
 import {
     installFakeDom,
+    installFakeIntersectionObservers,
     makeRenderRow,
     invokeListener,
     getFakeElement
@@ -832,6 +833,57 @@ test("render: playSongByKey expands display limit in increment-sized chunks", as
     } finally {
         cleanup();
     }
+});
+
+test("render: revealSongForAutoplay draws a hidden result and waits until its thumbnail is mostly visible", async (t) => {
+    t.after(installFakeDom());
+    const intersectionObservers = installFakeIntersectionObservers();
+    t.after(() => intersectionObservers.cleanup());
+    const rows = [
+        makeRenderRow({ songKey: "song:1", url: "https://youtu.be/video1" }),
+        makeRenderRow({ songKey: "song:2", url: "https://youtu.be/video2" }),
+        makeRenderRow({ songKey: "song:3", url: "https://youtu.be/video3" })
+    ];
+    const data = createRenderDataState({
+        currentResults: rows,
+        displayLimit: 1,
+        activeBookmark: null
+    });
+    const ui = createRenderUiState({
+        el: {
+            resultList: document.createElement("div"),
+            resultTailSentinel: document.createElement("div")
+        }
+    });
+    let playCount = 0;
+    const controller = createRenderController({
+        data,
+        ui,
+        isAllFormatsSelected: () => true,
+        resultDisplayBatchSize: 2,
+        callbacks: createRenderCallbacks({
+            extractYoutubeInfo,
+            playThumbnail: () => {
+                playCount += 1;
+                return playbackStartResult(YOUTUBE_PLAYBACK_START_STATUS.STARTED);
+            }
+        })
+    });
+
+    controller.updateDisplay();
+    const revealing = controller.revealSongForAutoplay("song:3");
+
+    assert.equal(data.displayLimit, 3);
+    const entry = ui.render.cardEntriesBySongKey.get("song:3");
+    assert.ok(entry);
+    const thumbObserver = intersectionObservers.observers.find((observer) => observer.targets.includes(entry.thumbDiv));
+    assert.ok(thumbObserver, "the thumbnail of the revealed card is observed");
+
+    thumbObserver.trigger(1);
+
+    assert.equal(await revealing, true);
+    assert.equal(playCount, 0, "revealing does not start playback by itself");
+    assert.equal(await controller.revealSongForAutoplay("song:missing"), false);
 });
 
 test("bookmark: observes result tail and increases by RESULT_DISPLAY_BATCH_SIZE (48)", () => {
