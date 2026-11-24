@@ -1,29 +1,21 @@
 import { isHtmlElement } from "../dom-utils.mjs";
 import type { YoutubePlayerLike } from "./iframe-api.types.mjs";
 
-/** 共有プレーヤー初期化待ち中の最新 iframe 紐付け要求。 */
-export type YoutubeSharedPlaybackPendingAttach = {
-    /** プレーヤー化する iframe。 */
-    iframe: HTMLIFrameElement | null;
-    /** iframe を紐付ける再生セッション ID。 */
-    playbackSessionId: number;
-};
-
-/** 複数カード間で再利用する YouTube 共有 iframe / Player の状態。 */
+/**
+ * カードが順に使う、YouTube の iframe と Player の状態。同時に 1 つだけで、再生のたびに作り直す。
+ * 破棄のたびに消えるのは Player・iframe・載せているサムネイル・セッション ID で、
+ * 閉じるボタンと、再生開始の待ちと未確定の記録は、作り直しをまたいで残す。
+ */
 export type YoutubeSharedPlaybackState = {
-    /** 共有 iframe に紐付いた YouTube Player。 */
+    /** iframe に紐付いた YouTube Player。 */
     player: YoutubePlayerLike | null;
-    /** Player 初期化中に共有する Promise。 */
-    playerPromise: Promise<YoutubePlayerLike | null> | null;
-    /** Player 初期化待ち中に処理する最新の iframe 紐付け要求。 */
-    pendingAttach: YoutubeSharedPlaybackPendingAttach | null;
-    /** 共有プレーヤーとして使う iframe。 */
+    /** 今の再生に使う iframe。 */
     iframe: HTMLIFrameElement | null;
-    /** 共有プレーヤーを閉じるボタン。 */
+    /** 再生を閉じるボタン。作り直さずに次の再生でも使う。 */
     closeButton: HTMLButtonElement | null;
-    /** 現在共有プレーヤーを表示しているサムネイル。 */
+    /** iframe を載せているサムネイル。 */
     hostThumb: HTMLElement | null;
-    /** 現在の共有プレーヤー再生セッション ID。 */
+    /** 今の Player のイベントをカードへ対応付ける再生セッション ID。 */
     sessionId: number;
     /** 再生開始待ち中の attempt。 */
     playbackStartAttempt: import("./playback-start-attempt.mjs").YoutubePlaybackStartAttempt | null;
@@ -37,7 +29,6 @@ type SharedPlaybackInput = {
 
 type SharedPlaybackElementsInput = {
     youtube: SharedPlaybackInput;
-    syncIframe?: () => HTMLIFrameElement | null;
     createFrame?: () => HTMLIFrameElement | null;
     createCloseButton?: () => HTMLButtonElement | null;
 };
@@ -49,15 +40,13 @@ type DestroySharedPlaybackPlayerInput = {
 };
 
 /**
- * 共有埋め込みプレーヤーの保持領域を返す。
- * @param {SharedPlaybackInput} youtube
+ * 埋め込みプレーヤーの保持領域を返す。まだなければ空の状態で作る。
+ * @param youtube 保持領域を持つ YouTube のランタイム状態
  */
 export function getYoutubeSharedPlaybackState(youtube: SharedPlaybackInput): YoutubeSharedPlaybackState {
     if (!youtube.sharedPlayback) {
         youtube.sharedPlayback = {
             player: null,
-            playerPromise: null,
-            pendingAttach: null,
             iframe: null,
             closeButton: null,
             hostThumb: null,
@@ -96,24 +85,6 @@ export function setYoutubeSharedPlaybackSessionId(youtube: SharedPlaybackInput, 
 }
 
 /**
- * 共有プレーヤー初期化待ち中に使う最新の紐付け要求を保存する。
- * @param {SharedPlaybackInput} youtube
- * @param {HTMLIFrameElement | null} iframe
- * @param {number} playbackSessionId
- */
-export function setPendingYoutubeSharedPlaybackAttach(
-    youtube: SharedPlaybackInput,
-    iframe: HTMLIFrameElement | null,
-    playbackSessionId: number
-) {
-    const sharedPlayback = getYoutubeSharedPlaybackState(youtube);
-    sharedPlayback.pendingAttach = {
-        iframe,
-        playbackSessionId
-    };
-}
-
-/**
  * 指定セッションの現在の再生サムネイルを返す。
  * @param {SharedPlaybackInput} youtube
  * @param {number} sessionId
@@ -126,22 +97,17 @@ export function getYoutubeSharedPlaybackThumb(youtube: SharedPlaybackInput, sess
 }
 
 /**
- * 共有 iframe と閉じるボタンを必要に応じて生成する。
- * @param {SharedPlaybackElementsInput} input
+ * 次の再生に使う iframe を新しく作り、閉じるボタンはまだなければ作る。
+ * iframe は再生のたびに作り直すので、前の iframe を destroyYoutubeSharedPlaybackPlayer で破棄してから呼ぶ。
+ * @param input 状態の保持領域と、iframe・閉じるボタンを作る関数
  */
-export function ensureYoutubeSharedPlaybackElements({
+export function prepareYoutubeSharedPlaybackElements({
     youtube,
-    syncIframe,
     createFrame,
     createCloseButton
 }: SharedPlaybackElementsInput): YoutubeSharedPlaybackState {
     const sharedPlayback = getYoutubeSharedPlaybackState(youtube);
-    if (typeof syncIframe === "function") {
-        syncIframe();
-    }
-    if (!isHtmlElement(sharedPlayback.iframe)) {
-        sharedPlayback.iframe = typeof createFrame === "function" ? createFrame() : null;
-    }
+    sharedPlayback.iframe = typeof createFrame === "function" ? createFrame() : null;
     if (!isHtmlElement(sharedPlayback.closeButton)) {
         sharedPlayback.closeButton = typeof createCloseButton === "function"
             ? createCloseButton()
@@ -151,10 +117,10 @@ export function ensureYoutubeSharedPlaybackElements({
 }
 
 /**
- * 共有プレーヤー実体とカードへの紐付けを破棄する。
- * 再生成前に作成した playbackStartAttempt と未確定セッションは保持し、
- * その完了・解除は各管理モジュールへ委ねる。閉じるボタンも再利用する。
- * @param {DestroySharedPlaybackPlayerInput} input
+ * Player と iframe、カードへの紐付けを破棄する。
+ * 作り直す前に作成した playbackStartAttempt と未確定セッションは保持し、
+ * その完了・解除は各管理モジュールへ委ねる。閉じるボタンは次の再生でも使うので残す。
+ * @param input 状態の保持領域と、iframe の同期・デバッグ出力の関数
  */
 export function destroyYoutubeSharedPlaybackPlayer({ youtube, syncIframe, debug }: DestroySharedPlaybackPlayerInput) {
     const sharedPlayback = getYoutubeSharedPlaybackState(youtube);
@@ -181,8 +147,6 @@ export function destroyYoutubeSharedPlaybackPlayer({ youtube, syncIframe, debug 
         sharedPlayback.closeButton.parentNode.removeChild(sharedPlayback.closeButton);
     }
     sharedPlayback.player = null;
-    sharedPlayback.playerPromise = null;
-    sharedPlayback.pendingAttach = null;
     sharedPlayback.iframe = null;
     sharedPlayback.hostThumb = null;
     sharedPlayback.sessionId = 0;
