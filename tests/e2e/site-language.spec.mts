@@ -173,6 +173,38 @@ test.describe("header layout", () => {
     });
 });
 
+test.describe("result list layout", () => {
+    test.use({ locale: "ja-JP", viewport: { width: 1280, height: 720 } });
+
+    test("switching the language keeps the recommended cards in place", async ({ page }) => {
+        await installNetworkMocks(page);
+        // おすすめは何度も歌った曲から選ぶが、オリ曲は 1 回でも選ぶので、どの曲もおすすめに出るようオリ曲にする。
+        const songs = createSongsNamedInBothLanguages(8).map((song) => ({ ...song, format: "オリ曲" }));
+        await routeSongsJsonFixture(page, songs);
+        await page.goto("/");
+        await page.evaluate(() => localStorage.clear());
+        await page.reload();
+        await waitForInitialLoad(page);
+        const resultCount = page.locator("#resultCount");
+        const languageButton = page.locator("#site-language-btn");
+        // おすすめの表示では件数の行に条件のチップが無く、見出しの文字の高さがそのまま行の高さになる。
+        // 日本語の文字は欧文と別のフォントで描かれるので、見出しの行の高さを固定していないと、
+        // 切り替えるたびに下のカードが上下に動く。
+        const readFirstCardTop = () => page.locator("#resultList .song-card").first()
+            .evaluate((card) => card.getBoundingClientRect().top + window.scrollY);
+        await expect(resultCount).toHaveText("おすすめを表示中");
+        const japaneseTop = await readFirstCardTop();
+
+        await languageButton.click();
+        await expect(resultCount).toHaveText("Showing recommendations");
+        expect(await readFirstCardTop()).toBe(japaneseTop);
+
+        await languageButton.click();
+        await expect(resultCount).toHaveText("おすすめを表示中");
+        expect(await readFirstCardTop()).toBe(japaneseTop);
+    });
+});
+
 test.describe("header spots", () => {
     test.use({ locale: "en-US", viewport: { width: 1280, height: 720 } });
 

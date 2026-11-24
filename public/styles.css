@@ -1333,10 +1333,16 @@ input[type="text"][aria-invalid="true"] {
   margin: 6px 0 12px;
 }
 
+/*
+ * 行の高さは数値で固定する。normal のままだと、日本語の文字を描く代わりのフォントの高さで行が高くなる。
+ * おすすめの表示など条件のチップが無いときは、この高さが件数の行の高さになるので、
+ * 言語を切り替えるたびに下のカードが上下に動く。24px はいまの日本語の行とほぼ同じ高さ。
+ */
 .result-summary-count {
   margin: 0 6px 0 0;
   font-size: 16px;
   font-weight: 900;
+  line-height: 1.5;
 }
 
 .result-conditions {
