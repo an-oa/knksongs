@@ -9,11 +9,20 @@ import { PUBLIC_ASSET_DIR } from "./lib/site-assets.mts";
 
 const BRAND_SOURCE_DIR = "design/brand";
 
-/** 書き出すブランド画像と、その描画元・画像サイズ。 */
+/** 書き出す前に読み込めている必要のある Web フォントの family と、そのフォントで描く文字。 */
+interface RequiredFont {
+    family: string;
+    text: string;
+}
+
+// ogp.html の透かしの欧文。Google Fonts の CSS が空だったり HTML だったりすると、エラーにならずに登録されない。
+const OGP_FONTS: readonly RequiredFont[] = [{ family: "Abril Fatface", text: "Unofficial" }];
+
+/** 書き出すブランド画像と、その描画元・画像サイズ・読み込めている必要のある Web フォント。 */
 const BRAND_ASSETS = [
-    { fileName: "ogp.png", source: "ogp.html", width: 1200, height: 630 },
+    { fileName: "ogp.png", source: "ogp.html", width: 1200, height: 630, fonts: OGP_FONTS },
     // 英語の OGP 用。同じ描画元を ?lang=en で開き、文字だけを英語にする。
-    { fileName: "ogp-en.png", source: "ogp.html", query: "?lang=en", width: 1200, height: 630 },
+    { fileName: "ogp-en.png", source: "ogp.html", query: "?lang=en", width: 1200, height: 630, fonts: OGP_FONTS },
     { fileName: "apple-touch-icon.png", source: "apple-touch-icon.html", width: 180, height: 180 }
 ] as const;
 const FAVICON_PNG = { fileName: "favicon-32.png", source: "favicon.svg", size: 32 } as const;
@@ -38,34 +47,51 @@ export function parseArgs(args: string[]): { outputDir: string } {
 }
 
 /**
- * design/brand の HTML を Chromium で描画し、指定サイズの PNG として保存する。
- * query は描画元に渡す URL の query で、同じ描画元から文字だけ違う画像を作るときに使う。
- * Chromium は CSS や Web フォントを読めなくても別の書体で描き続けるので、
- * 読み込みに失敗した通信やフォントが1つでもあれば、書き出さずにエラーにする。
+ * design/brand の HTML を Chromium で描画し、asset の画像サイズの PNG として保存する。
+ * asset の query は描画元に渡す URL の query で、同じ描画元から文字だけ違う画像を作るときに使う。
+ * Chromium は Web フォントや画像を読めなくても、別の書体や壊れた画像の印で描き続ける。
+ * 次のどれかがあれば、書き出さずにエラーにする。
+ * - 失敗した通信（HTTP 400 以上の応答を含む）
+ * - 読み込めない、または描画元に登録されていない asset.fonts のフォント
+ * - 読み込みに失敗したフォント
+ * - デコードできない画像
  */
-async function renderHtml(
-    browser: Browser,
-    source: string,
-    outputPath: string,
-    width: number,
-    height: number,
-    query = ""
-): Promise<void> {
-    const page = await browser.newPage({ viewport: { width, height }, deviceScaleFactor: 1 });
+async function renderHtml(browser: Browser, asset: (typeof BRAND_ASSETS)[number], outputPath: string): Promise<void> {
+    const query = "query" in asset ? asset.query : "";
+    const fonts = "fonts" in asset ? asset.fonts : [];
+    const page = await browser.newPage({ viewport: { width: asset.width, height: asset.height }, deviceScaleFactor: 1 });
     const failures: string[] = [];
     page.on("requestfailed", (request) => failures.push(`${request.url()} (${request.failure()?.errorText ?? "failed"})`));
     page.on("response", (response) => {
         if (response.status() >= 400) failures.push(`${response.url()} (HTTP ${response.status()})`);
     });
     try {
-        await page.goto(`${pathToFileURL(resolve(BRAND_SOURCE_DIR, source)).href}${query}`);
-        const failedFonts = await page.evaluate(async () => {
+        await page.goto(`${pathToFileURL(resolve(BRAND_SOURCE_DIR, asset.source)).href}${query}`);
+        const pageProblems = await page.evaluate(async (requiredFonts) => {
             await document.fonts.ready;
-            return [...document.fonts].filter((face) => face.status === "error").map((face) => face.family);
-        });
-        failures.push(...failedFonts.map((family) => `font ${family}`));
+            const problems: string[] = [];
+            for (const { family, text } of requiredFonts) {
+                try {
+                    // 描画元がこの family を登録していなければ、load は空の配列を返す。
+                    const faces = await document.fonts.load(`16px "${family}"`, text);
+                    if (faces.length === 0) problems.push(`font ${family} (not registered by the page)`);
+                } catch (error) {
+                    problems.push(`font ${family} (${String(error)})`);
+                }
+            }
+            for (const face of document.fonts) {
+                if (face.status === "error") problems.push(`font ${face.family} (failed to load)`);
+            }
+            const images = [...document.images];
+            const decoded = await Promise.allSettled(images.map((image) => image.decode()));
+            decoded.forEach((result, index) => {
+                if (result.status === "rejected") problems.push(`image ${images[index].src} (cannot be decoded)`);
+            });
+            return problems;
+        }, fonts);
+        failures.push(...pageProblems);
         if (failures.length > 0) {
-            throw new Error(`Failed to load resources for ${source}${query}: ${failures.join(", ")}`);
+            throw new Error(`Failed to load resources for ${asset.source}${query}: ${failures.join(", ")}`);
         }
         await page.screenshot({ path: outputPath });
     } finally {
@@ -108,7 +134,7 @@ export async function renderBrandAssets(options: { outputDir: string }): Promise
         const written: string[] = [];
         for (const asset of BRAND_ASSETS) {
             const outputPath = join(outputDir, asset.fileName);
-            await renderHtml(browser, asset.source, outputPath, asset.width, asset.height, "query" in asset ? asset.query : "");
+            await renderHtml(browser, asset, outputPath);
             written.push(outputPath);
         }
         const faviconPath = join(outputDir, FAVICON_PNG.fileName);

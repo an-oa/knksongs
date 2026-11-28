@@ -179,8 +179,6 @@
     </div>
   </div>
   <script>
-    // 透かしのフォントは書き出しが document.fonts.ready で待てるよう、ページを開いた時点で読み込みを始める。
-    document.fonts.load('92px "Abril Fatface"');
     // 英語の文字は app/lib/ui-text.mts のロゴと検索窓の文言と同じにする。
     if (new URLSearchParams(location.search).get("lang") === "en") {
       document.documentElement.lang = "en";
