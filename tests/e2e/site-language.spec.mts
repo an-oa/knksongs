@@ -3,7 +3,16 @@ import { normalizeForSearch } from "../../app/lib/search-normalization.mts";
 import { installNetworkMocks } from "./support/network-mocks.mts";
 import { routeSongsJsonFixture } from "./support/songs-network.mts";
 import { createScrollableResultSongs } from "./support/song-fixtures.mts";
-import { expectBookmarkToast, openBookmarkPanel, openSidebar, waitForInitialLoad } from "./support/ui-helpers.mts";
+import { routeSolidColorThumbnails } from "./support/mock-youtube.mts";
+import {
+    PLAY_MARK_AREA,
+    expectBookmarkToast,
+    openBookmarkPanel,
+    openSidebar,
+    showsOnlyThumbnailImage,
+    waitForInitialLoad,
+    waitForThumbnailImage
+} from "./support/ui-helpers.mts";
 
 /**
  * 曲名・アーティスト名を差し替え、検索に使う正規化済みの値も同じ名前から作り直す。
@@ -202,6 +211,29 @@ test.describe("result list layout", () => {
         await languageButton.click();
         await expect(resultCount).toHaveText("おすすめを表示中");
         expect(await readFirstCardTop()).toBe(japaneseTop);
+    });
+
+    test("switching the language keeps the play mark on the thumbnails unchanged", async ({ page }) => {
+        await installNetworkMocks(page);
+        await routeSongsJsonFixture(page, createEnglishNamedSongs());
+        await routeSolidColorThumbnails(page, "#000");
+        // サイドバーで設定を変えると、閉じる途中の暗い背景が写り込むことがあるので、表示する設定を保存してから開く。
+        await page.addInitScript(() => localStorage.setItem("showThumbnails", "true"));
+        await page.goto("/");
+        await waitForInitialLoad(page);
+        await page.locator("#searchBox").fill("表記テスト");
+        const thumb = page.locator("#resultList .song-card").filter({ hasText: /アイネクライネ|Eine Kleine/ }).locator(".thumb");
+        await waitForThumbnailImage(thumb);
+        // 印が描かれていなくても、切り替えの前後の絵は一致する。比べる前に、印が描かれていることを確かめる。
+        expect(await showsOnlyThumbnailImage(page, thumb, PLAY_MARK_AREA), "the play mark is drawn on the thumbnail").toBe(false);
+        const japaneseThumb = await thumb.screenshot();
+
+        await page.locator("#site-language-btn").click();
+        await expect(page.locator("#resultCount")).toHaveText("2 results");
+
+        // 印を文字で描くと、ページの言語で選ばれる代わりのフォントが変わり、形と位置が変わる。
+        // Linux の Firefox では、日本語と英語で違うフォントの▶が描かれた。Windows の Chrome でも大きさが変わった。
+        expect((await thumb.screenshot()).equals(japaneseThumb), "the play mark looks the same in both languages").toBe(true);
     });
 });
 
