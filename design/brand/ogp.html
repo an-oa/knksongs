@@ -5,7 +5,14 @@
 <!--
   ogp.png（1200x630）の描画元。npm run render:brand-assets で書き出す。
   ?lang=en で開いたときは文字を英語に差し替え、英語の OGP 用の ogp-en.png として書き出す。
+  非公式のサイトであることが共有された画像でも分かるよう、背景に「Unofficial」の透かしを薄く重ねる。
+  透かしは背景（帯・白い面・チェック柄）にだけ重ね、ゴーグル・題字・検索窓はその手前に置く。
 -->
+<!--
+  透かしの欧文は、Google Fonts の Abril Fatface（TypeTogether 作、SIL OFL 1.1）を書き出すときに読み込んで描く。
+  フォントのファイルはリポジトリに置かない。読み込めなかったときは、render:brand-assets が書き出しを止める。
+-->
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Abril+Fatface&display=block">
 <style>
   * { box-sizing: border-box; }
   html, body { margin: 0; }
@@ -33,33 +40,41 @@
     border-right: 6px solid #ffc928;
   }
   .panel .spots { position: absolute; inset: 0; width: 100%; height: 100%; }
-  /* ゴーグルは白い面の幅いっぱいに置き、バンドを面の左右の端まで届かせる。 */
-  .panel .goggles {
-    position: absolute;
-    width: 100%;
-    aspect-ratio: 1;
-    left: 0;
-    top: 50%;
-    transform: translateY(-50%);
-  }
-  /* styles.css のダークのヘッダーと同じチェック柄を、画像の大きさに合わせて約1.4倍にする。 */
-  .wrap {
+  .check, .wrap {
     position: absolute;
     top: 14px;
     bottom: 14px;
     left: 400px;
     right: 0;
-    padding: 0 64px 0 72px;
-    display: flex;
-    flex-direction: column;
-    /* タイトルと検索窓は左の鐘と同じ高さを中心に置く。 */
-    justify-content: center;
+  }
+  /* styles.css のダークのヘッダーと同じチェック柄を、画像の大きさに合わせて約1.4倍にする。 */
+  .check {
     background:
       repeating-linear-gradient(90deg, rgba(0,0,0,.28) 0 14px, transparent 14px 64px),
       repeating-linear-gradient(0deg, rgba(0,0,0,.22) 0 11px, transparent 11px 45px),
       repeating-linear-gradient(90deg, transparent 0 31px, rgba(255,255,255,.14) 31px 34px, transparent 34px 64px),
       repeating-linear-gradient(0deg, transparent 0 25px, rgba(255,201,40,.22) 25px 28px, transparent 28px 45px),
       #a61d1d;
+  }
+  .watermark { position: absolute; top: 0; left: 0; }
+  /*
+   * ゴーグルは白い面の幅（仕切りを除いた 394px）いっぱいに置き、バンドを面の左右の端まで届かせる。
+   * 透かしより手前に重ねるため白い面の外に置き、白い面の縦の中央（画像の中央と同じ）に合わせる。
+   */
+  .goggles {
+    position: absolute;
+    left: 0;
+    top: 50%;
+    width: 394px;
+    aspect-ratio: 1;
+    transform: translateY(-50%);
+  }
+  .wrap {
+    padding: 0 64px 0 72px;
+    display: flex;
+    flex-direction: column;
+    /* タイトルと検索窓は左の鐘と同じ高さを中心に置く。 */
+    justify-content: center;
   }
   /*
    * ヘッダーの文字ロゴと同じく「鐘輝かう」を大きく金色に、「歌サーチ」を小さく添える。
@@ -107,15 +122,55 @@
 </head>
 <body>
   <div class="panel">
-    <svg class="spots" viewBox="0 0 400 602" preserveAspectRatio="none"><g fill="#1b1b1b">
-      <path d="M-20 -20h170c10 34-12 58-46 66-34 9-46 40-84 36-22-2-24-40-40-102z"/>
-      <path d="M300 40c30-14 80 0 110 30v120c-30 16-64 6-78-18-14-22-44-30-46-60-2-30-4-58 14-72z"/>
-      <path d="M-20 400c34-18 76 0 90 30 14 30 0 70-18 104-14 26-40 60-72 80z"/>
-      <path d="M270 470c26-22 74-18 92 10 12 18 10 46 0 70-6 16-14 40-24 64h-110c-8-48 4-112 42-144z"/>
-      <path d="M150 290c10-8 26-6 30 4 4 9-4 20-16 22-12 2-20-14-14-26z"/>
-    </g></svg>
-    <img class="goggles" src="goggles.svg" alt="">
+    <!-- 斑点の形は、透かしを斑点の上だけ白くする範囲にも使う。 -->
+    <svg class="spots" viewBox="0 0 400 602" preserveAspectRatio="none">
+      <path id="spot-shapes" fill="#1b1b1b" d="M-20 -20h170c10 34-12 58-46 66-34 9-46 40-84 36-22-2-24-40-40-102z
+        M300 40c30-14 80 0 110 30v120c-30 16-64 6-78-18-14-22-44-30-46-60-2-30-4-58 14-72z
+        M-20 400c34-18 76 0 90 30 14 30 0 70-18 104-14 26-40 60-72 80z
+        M270 470c26-22 74-18 92 10 12 18 10 46 0 70-6 16-14 40-24 64h-110c-8-48 4-112 42-144z
+        M150 290c10-8 26-6 30 4 4 9-4 20-16 22-12 2-20-14-14-26z"/>
+    </svg>
   </div>
+  <div class="check"></div>
+  <!--
+    透かしの「Unofficial」。凹凸は付けず、背景の明るさに合わせた色の薄い文字にする。
+    白い面と帯には黒の 12%、斑点とチェック柄には白の 20% を重ね、どこでも同じくらいの薄さに見せる。
+    -24° に傾けた行を 172.8px ごとに並べ、1行おきに語の間隔の半分だけずらす。
+    語の間隔 484.16px は、92px の「Unofficial」の幅 412.16px に 72px の空きを足したもの。
+    行は画像の四隅まで届くよう、画像の外にはみ出して並べる。
+  -->
+  <svg class="watermark" width="1200" height="630" viewBox="0 0 1200 630">
+    <defs>
+      <g id="watermark-row">
+        <text x="-968.32">Unofficial</text>
+        <text x="-484.16">Unofficial</text>
+        <text x="0">Unofficial</text>
+        <text x="484.16">Unofficial</text>
+        <text x="968.32">Unofficial</text>
+      </g>
+      <g id="watermark-words" transform="rotate(-24 600 315)" font-family="Abril Fatface" font-size="92">
+        <use href="#watermark-row" y="-345.6"/>
+        <use href="#watermark-row" x="242.08" y="-172.8"/>
+        <use href="#watermark-row" y="0"/>
+        <use href="#watermark-row" x="242.08" y="172.8"/>
+        <use href="#watermark-row" y="345.6"/>
+        <use href="#watermark-row" x="242.08" y="518.4"/>
+        <use href="#watermark-row" y="691.2"/>
+        <use href="#watermark-row" x="242.08" y="864"/>
+        <use href="#watermark-row" y="1036.8"/>
+      </g>
+      <!-- 色を分ける範囲。位置と大きさは CSS の帯・白い面・仕切り・チェック柄に合わせる。 -->
+      <clipPath id="on-light"><path d="M0 0H1200V14H400V616H1200V630H0Z"/></clipPath>
+      <clipPath id="on-panel"><rect x="0" y="14" width="394" height="602"/></clipPath>
+      <!-- 斑点は .spots と同じく viewBox（400x602）を白い面（394x602）へ横だけ縮めて置き、はみ出した分を白い面の枠で切る。 -->
+      <clipPath id="on-spots" clip-path="url(#on-panel)"><use href="#spot-shapes" transform="translate(0 14) scale(0.985 1)"/></clipPath>
+      <clipPath id="on-check"><rect x="400" y="14" width="800" height="602"/></clipPath>
+    </defs>
+    <g clip-path="url(#on-light)"><use href="#watermark-words" fill="#1b1b1b" fill-opacity="0.12"/></g>
+    <g clip-path="url(#on-spots)"><use href="#watermark-words" fill="#fff" fill-opacity="0.2"/></g>
+    <g clip-path="url(#on-check)"><use href="#watermark-words" fill="#fff" fill-opacity="0.2"/></g>
+  </svg>
+  <img class="goggles" src="goggles.svg" alt="">
   <div class="wrap">
     <h1 class="title"><span class="main">鐘輝かう</span><span class="sub">歌サーチ</span></h1>
     <div class="search">

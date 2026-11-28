@@ -206,6 +206,10 @@ npm run render:brand-assets
 
 - 描画には Playwright の Chromium と OS の日本語フォント（Noto Sans CJK JP）を使います。
   フォントが異なる環境では文字の見た目が変わります。
+- OGP 画像の透かしの「Unofficial」は、Google Fonts の Abril Fatface（SIL OFL）を書き出すときに読み込んで描くので、
+  書き出しにはネットワークが必要です。フォントのファイルはリポジトリにもサイトにも置きません。
+- 書き出す前に、失敗した通信がないこと、透かしの Abril Fatface を読み込めたこと、描画元の画像をデコードできることを確かめます。
+  どれかがだめなときは、別の書体や欠けた画像を書き出さないよう、エラーで止めます。
 
 ## CI・デプロイ
 
