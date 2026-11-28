@@ -218,3 +218,50 @@ export async function pressTabUntilFocused(page: Page, target: Locator, maxPress
     }
     await expect(target).toBeFocused();
 }
+
+/**
+ * サムネイルの画像を読み込み終えるまで待つ。印を撮って比べる前に、画像の描画を揃える。
+ * @param thumb 待つサムネイルの枠
+ */
+export async function waitForThumbnailImage(thumb: Locator) {
+    await expect(thumb).toBeVisible();
+    await expect.poll(() => thumb.locator("img").evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth > 0)).toBe(true);
+}
+
+/** サムネイルの中の正方形の範囲。中心の位置はサムネイルの中心からのずれで、どれも CSS ピクセルで表す。 */
+export interface ThumbnailArea {
+    x: number;
+    y: number;
+    size: number;
+}
+
+/** 再生の印を丸ごと含む範囲。印は 19×22px の三角で、強制色モードの縁取りを足しても収まる。 */
+export const PLAY_MARK_AREA: ThumbnailArea = { x: 0, y: 0, size: 28 };
+
+/** 印から離れていて、サムネイルの画像だけが写る範囲の、中心からの横のずれ。 */
+const THUMBNAIL_IMAGE_ONLY_OFFSET_X = -60;
+
+/**
+ * サムネイルのうち、指定した範囲に画像しか写っていないかを調べる。
+ * 1 色で塗ったサムネイルでは、同じ大きさで印から離れた範囲と同じ画像になれば、その範囲には何も描かれていない。
+ * 画素を読まずに、印が描かれているか、印の形の外が塗られていないかを確かめるために使う。
+ * @param page 撮るページ
+ * @param thumb 調べるサムネイルの枠
+ * @param area 調べる範囲
+ * @returns 範囲に画像しか写っていなければ true
+ */
+export async function showsOnlyThumbnailImage(page: Page, thumb: Locator, area: ThumbnailArea) {
+    const box = await thumb.boundingBox();
+    if (!box) throw new Error("The thumbnail is not shown");
+    const capture = (x: number, y: number) => page.screenshot({
+        clip: {
+            x: box.x + box.width / 2 + x - area.size / 2,
+            y: box.y + box.height / 2 + y - area.size / 2,
+            width: area.size,
+            height: area.size
+        }
+    });
+    const target = await capture(area.x, area.y);
+    const imageOnly = await capture(THUMBNAIL_IMAGE_ONLY_OFFSET_X, 0);
+    return target.equals(imageOnly);
+}

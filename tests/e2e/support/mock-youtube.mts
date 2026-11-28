@@ -37,6 +37,23 @@ export async function installYoutubeNetworkMocks(page: Page): Promise<void> {
 }
 
 /**
+ * サムネイルの画像を、1 色で塗っただけの画像で返す。画像の中身に左右されずに、上に重ねた再生の印を撮って比べるために使う。
+ * 空の応答では、WebKit が壊れた画像の印を出し、撮るたびに絵が変わることがある。
+ * installYoutubeNetworkMocks の空の応答より優先されるよう、その後に登録する。
+ * @param page 応答を差し替えるページ
+ * @param color 塗る色。CSS の色の書き方で指定する
+ */
+export async function routeSolidColorThumbnails(page: Page, color: string): Promise<void> {
+    await page.route("https://i.ytimg.com/**", async (route) => {
+        await route.fulfill({
+            status: 200,
+            contentType: "image/svg+xml",
+            body: `<svg xmlns="http://www.w3.org/2000/svg" width="320" height="180"><rect width="320" height="180" fill="${color}"/></svg>`
+        });
+    });
+}
+
+/**
  * YouTube API mock の利用可能化を待つ。
  */
 export async function waitForMockYoutube(page: Page) {

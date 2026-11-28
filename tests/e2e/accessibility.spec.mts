@@ -1,8 +1,9 @@
 import AxeBuilder from "@axe-core/playwright";
 import { test, expect, type Page } from "@playwright/test";
 import { installNetworkMocks } from "./support/network-mocks.mts";
-import { waitForMockYoutube } from "./support/mock-youtube.mts";
+import { routeSolidColorThumbnails, waitForMockYoutube } from "./support/mock-youtube.mts";
 import {
+    PLAY_MARK_AREA,
     closeSidebar,
     createBookmarkFromSong,
     enablePlaybackSettings,
@@ -11,7 +12,10 @@ import {
     getSongCard,
     openBookmarkPanel,
     openSidebar,
-    waitForInitialLoad
+    showsOnlyThumbnailImage,
+    waitForInitialLoad,
+    waitForThumbnailImage,
+    type ThumbnailArea
 } from "./support/ui-helpers.mts";
 
 /**
@@ -164,5 +168,38 @@ for (const { colorScheme, locale, songTitle } of [
             await expect(page.locator("#resultList .song-card .remove-from-bookmark-btn")).toHaveCount(1);
             await expectNoAccessibilityViolations(page, "bookmark view with reorder handles");
         });
+    });
+}
+
+/**
+ * 再生の印を囲む長方形の右上の隅で、三角の外側。印は中心から左右に 9.5px、上下に 11px の三角で、
+ * この範囲は三角の斜めの辺から 3px 以上離れているので、縁取りを含めても三角なら塗られない。
+ */
+const PLAY_MARK_TOP_RIGHT_OUTSIDE: ThumbnailArea = { x: 7, y: -9, size: 4 };
+
+for (const colorScheme of ["light", "dark"] as const) {
+    test.describe(`forced colors with ${colorScheme} system colors`, () => {
+        test.use({ forcedColors: "active", colorScheme });
+
+        for (const thumbnailColor of ["#000", "#fff"]) {
+            test(`the play mark stays a triangle that stands out on a ${thumbnailColor} thumbnail`, async ({ page }) => {
+                await routeSolidColorThumbnails(page, thumbnailColor);
+                await page.addInitScript(() => localStorage.setItem("showThumbnails", "true"));
+                await page.goto("/");
+                await waitForInitialLoad(page);
+                await filterBySongTitle(page, "Manual Song");
+                const thumb = getSongCard(page, "Manual Song").locator(".thumb");
+                await waitForThumbnailImage(thumb);
+
+                // 強制色モードでは枠線の色がシステムの色に置き換わる。置き換えたままだと、透明な上下の枠線も塗られて四角になり、
+                // システムの色がサムネイルと同じ色だと、印が見えなくなる。
+                // WebKit は色を置き換えないが、forced-colors の指定は効くので、縁取った三角が描かれることを確かめられる。
+                expect(await showsOnlyThumbnailImage(page, thumb, PLAY_MARK_AREA), "the play mark stands out from the thumbnail").toBe(false);
+                expect(
+                    await showsOnlyThumbnailImage(page, thumb, PLAY_MARK_TOP_RIGHT_OUTSIDE),
+                    "the corner outside the triangle is left unpainted"
+                ).toBe(true);
+            });
+        }
     });
 }

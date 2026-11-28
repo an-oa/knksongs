@@ -1541,10 +1541,12 @@ body.hide-thumbs .song-card { border-radius: 12px; }
  * 動画は別オリジンの iframe で、イベントが iframe に渡ると、動画の上で並べ替えられない。
  * ドラッグ中は結果一覧がポインタをキャプチャするので、Chromium と WebKit は覆いがなくても一覧に届く（E2E で確認した）。
  * Firefox やモバイルの実機では確かめていないので、覆いを残す。
+ * 覆いは再生の印と同じ擬似要素なので、印を描く枠線を消して透明にする。
  */
 #resultList:has(.song-card.dragging) .thumb:has(iframe)::after {
   content: "";
   inset: 0;
+  border: 0;
   transform: none;
   z-index: 2;
   pointer-events: auto;
@@ -1628,9 +1630,41 @@ body.hide-thumbs .song-card { border-radius: 12px; }
   outline-offset: -6px;
   pointer-events: none;
 }
-/* 再生の印は飾りなので、押した操作は下の再生ボタンへ通す。 */
-.thumb::after { content: '▶'; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: white; font-size: 24px; opacity: 0.5; pointer-events: none; }
-.thumb.playing::after { content: ""; }
+/*
+ * 再生の印は飾りなので、押した操作は下の再生ボタンへ通す。
+ * 印は文字の ▶ ではなく、枠線で三角に描く。ページの欧文のフォントは ▶ を持たないことがあり、
+ * 代わりに描くフォントがページの言語で選ばれるので、言語を切り替えるたびに印の大きさと位置が変わる。
+ * 大きさは、文字で描いていたころに日本語のページで描かれた ▶ に合わせる（手元の計測で 19×22px）。
+ */
+.thumb::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  border-style: solid;
+  border-width: 11px 0 11px 19px;
+  border-color: transparent transparent transparent #fff;
+  opacity: 0.5;
+  pointer-events: none;
+}
+/*
+ * 強制色モード（Windows のコントラスト テーマなど）では枠線の色がシステムの色に置き換わり、
+ * 透明にした上下の枠線まで塗られて、印が四角になる。色の置き換えを止めて三角を保つ。
+ * 置き換えを止めた分はシステムの色を自分で使い、文字の色の三角を背景の色で縁取って、
+ * 暗い画像の上でも明るい画像の上でも見分けられるようにする。
+ * 縁取りは影で付ける。clip-path で三角に切り抜くと、縁取りの影も切り取られる。
+ */
+@media (forced-colors: active) {
+  .thumb::after {
+    forced-color-adjust: none;
+    border-left-color: CanvasText;
+    opacity: 1;
+    filter: drop-shadow(1px 0 0 Canvas) drop-shadow(-1px 0 0 Canvas) drop-shadow(0 1px 0 Canvas) drop-shadow(0 -1px 0 Canvas);
+  }
+}
+/* 印は中身が空でも枠線で描かれるので、出さないときは擬似要素ごと作らない。 */
+.thumb.playing::after { content: none; }
 .thumb iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; z-index: 1; }
 .thumb-close-btn {
   position: absolute;
@@ -1649,7 +1683,7 @@ body.hide-thumbs .song-card { border-radius: 12px; }
 }
 .thumb-close-btn:hover { background: rgba(0, 0, 0, 0.85); }
 .thumb-close-btn:active { transform: translateY(1px); }
-.thumb[data-video-id=""]::after { content: ""; }
+.thumb[data-video-id=""]::after { content: none; }
 .thumb[data-video-id=""] { cursor: default; }
 
 .content { padding: 10px 12px 6px; flex-grow: 1; position: relative; }
